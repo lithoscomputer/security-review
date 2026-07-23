@@ -240,4 +240,66 @@ describe("scan inventory handling", () => {
 			),
 		).toBe(false);
 	});
+
+	test("falls back to the repository when the inventory returns zero components", async () => {
+		const scan = await loadScan();
+		const fixture = createScanFixture({
+			responseForAgent: (call) => {
+				if (call.options.label === "inventory") {
+					return {
+						components: [],
+						securityScanSkippedComponents: [],
+					};
+				}
+				return respondWithDefaults(call);
+			},
+		});
+
+		const result = await runScan(scan, fixture);
+
+		expect(result.coverage.inventoryFallback).toBe("empty-partition");
+		expect(result.coverage.inventoryRejected).toEqual([]);
+		expect(result.coverage.components).toEqual([
+			{
+				name: "repository",
+				paths: ["."],
+			},
+		]);
+		expect(fixture.calls.log).toContain(
+			"inventory returned nothing — falling back to a single whole-repository component",
+		);
+	});
+
+	test("marks completeness not checkable when empty topLevelDirs conflicts with subdirectory paths", async () => {
+		const scan = await loadScan();
+		const fixture = createScanFixture({
+			args: createScanArgs({
+				topLevelDirs: [],
+			}),
+			responseForAgent: (call) => {
+				if (call.options.label === "inventory") {
+					return {
+						components: [
+							{
+								name: "web",
+								paths: ["src/api"],
+								language: "TypeScript",
+							},
+						],
+						securityScanSkippedComponents: [],
+					};
+				}
+				return respondWithDefaults(call);
+			},
+		});
+
+		const result = await runScan(scan, fixture);
+
+		expect(result.coverage.completenessCheckOutcome).toBe("not-checkable");
+		expect(result.coverage.topLevelCount).toBe(0);
+		expect(result.coverage.topLevelRejected).toBe(
+			"topLevelDirs was empty, but the inventory names paths inside subdirectories -- the list looks empty or truncated",
+		);
+		expect(result.coverage.unaccountedTopLevelDirs).toEqual([]);
+	});
 });

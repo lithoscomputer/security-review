@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { loadScan } from "./load-scan.js";
-import { createScanArgs, createScanFixture, runScan } from "./scan-fixture.js";
+import {
+	createScanArgs,
+	createScanFixture,
+	respondWithDefaults,
+	runScan,
+} from "./scan-fixture.js";
 
 describe("scan effort shapes", () => {
 	test("low effort runs one whole-repository researcher without inventory or sweeps", async () => {
@@ -205,5 +210,52 @@ describe("scan attack-surface shape", () => {
 			researchersDispatched: 5,
 			researchersReturned: 5,
 		});
+	});
+});
+
+describe("scan category lens pruning", () => {
+	test("prunes the memory lens for a managed language and records the bucket", async () => {
+		const scan = await loadScan();
+		const fixture = createScanFixture();
+
+		const result = await runScan(scan, fixture);
+
+		expect(
+			fixture.calls.agent.map(({ options }) => options.label),
+		).not.toContain("research:web:memory-and-unsafe");
+		expect(result.coverage.prunedBuckets).toEqual(["web:memory-and-unsafe"]);
+		expect(fixture.calls.log).toContain(
+			"web: skipping memory-and-unsafe (managed language: TypeScript)",
+		);
+	});
+
+	test("keeps the memory lens for an unmanaged language", async () => {
+		const scan = await loadScan();
+		const fixture = createScanFixture({
+			responseForAgent: (call) => {
+				if (call.options.label === "inventory") {
+					return {
+						components: [
+							{
+								name: "native",
+								paths: ["src"],
+								language: "C",
+								role: "Native parser",
+							},
+						],
+						securityScanSkippedComponents: [],
+					};
+				}
+				return respondWithDefaults(call);
+			},
+		});
+
+		const result = await runScan(scan, fixture);
+
+		expect(fixture.calls.agent.map(({ options }) => options.label)).toContain(
+			"research:native:memory-and-unsafe",
+		);
+		expect(result.coverage.prunedBuckets).toEqual([]);
+		expect(result.coverage.researchersDispatched).toBe(5);
 	});
 });

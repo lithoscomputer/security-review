@@ -168,4 +168,28 @@ describe("scan candidate processing", () => {
 		expect(result.votes.unreviewed_candidate_sites).toBe(2);
 		expect(result.coverage.unverifiedByCap).toBe(2);
 	});
+
+	test("counts unique candidates dropped by the cap as unreviewed sites", async () => {
+		const scan = await loadScan();
+		const uniqueFindings = createUniqueFindings(402);
+		const fixture = createScanFixture({
+			responseForAgent: (call) => {
+				if (call.options.label === "research:web:injection-and-input") {
+					return {
+						findings: uniqueFindings,
+					};
+				}
+				return respondWithDefaults(call);
+			},
+		});
+
+		const result = await runScan(scan, fixture);
+
+		expect(result.votes.candidates).toBe(402);
+		expect(result.votes.candidates_deduped).toBe(400);
+		expect(result.coverage.candidatesDroppedByCap).toBe(2);
+		expect(result.coverage.unverifiedByCap).toBe(355);
+		expect(result.votes.unreviewed_candidate_sites).toBe(357);
+		expect(result.findings).toHaveLength(45);
+	});
 });
