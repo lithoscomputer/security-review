@@ -37,7 +37,9 @@ SMALL_DIFF_MAX_LINES = 300
 SMALL_SCOPE_MAX_FILES = 5
 MAX_COMPONENTS_DEFAULT = 12
 MAX_COMPONENTS_EXPANDED = 24
-MAX_STDIN_BYTES = 50 * 1024 * 1024
+# Fabro resolves stdin_source before starting a command and enforces this same
+# ceiling. Keep the driver's direct-input guard aligned with that transport.
+MAX_STDIN_BYTES = 10 * 1024 * 1024
 MAX_RESULT_TEXT = 8000
 
 EFFORT_TIERS = ("low", "medium", "high", "max")
