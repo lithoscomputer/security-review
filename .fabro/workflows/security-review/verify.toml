@@ -1,0 +1,64 @@
+_version = 1
+
+[workflow]
+graph = "security-review.fabro"
+
+[run]
+goal = "Verify the security-review workflow against its deliberate command-injection fixture."
+
+[run.inputs]
+mode = "scan"
+effort = "low"
+scope = ".fabro/workflows/security-review/fixtures/command_injection.py"
+base = ""
+commit = ""
+range = ""
+focus = ""
+bootstrap_wait = "90"
+
+[run.clone]
+enabled = false
+
+[run.run_branch]
+enabled = false
+
+[run.model]
+name = "sonnet"
+provider = "openrouter"
+
+[run.model.controls]
+reasoning_effort = "low"
+
+[run.environment.network]
+mode = "block"
+
+[run.environment.env]
+GITHUB_TOKEN = ""
+GH_TOKEN = ""
+
+[run.agent]
+permissions = "full"
+
+[[run.hooks]]
+id = "security-review-tool-guard"
+name = "Security-review read-only tool guard"
+event = "pre_tool_use"
+script = "python3 .fabro/workflows/security-review/scripts/tool_guard.py"
+blocking = true
+sandbox = true
+timeout = "10s"
+
+[run.checkpoint]
+exclude_globs = [
+  "CLAUDE-SECURITY-*/**",
+  ".fabro/blobs/**",
+  ".fabro/workflows/security-review/runtime/**",
+]
+
+[run.artifacts]
+include = [
+  "CLAUDE-SECURITY-*/.gitignore",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
+]

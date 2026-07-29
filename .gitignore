@@ -1,1 +1,4 @@
 node_modules/
+__pycache__/
+*.pyc
+/security-review-fabro-workflow.png

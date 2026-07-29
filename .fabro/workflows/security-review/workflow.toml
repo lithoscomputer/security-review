@@ -1,0 +1,60 @@
+_version = 1
+
+[workflow]
+graph = "security-review.fabro"
+
+[run]
+goal = "Perform an adversarial, read-only security review of this repository and report only panel-verified findings."
+
+[run.inputs]
+mode = "scan"
+effort = "medium"
+scope = ""
+base = ""
+commit = ""
+range = ""
+focus = ""
+bootstrap_wait = "0"
+
+[run.model]
+name = "sonnet"
+provider = "openrouter"
+
+[run.model.controls]
+reasoning_effort = "low"
+
+[run.environment.network]
+mode = "block"
+
+[run.environment.env]
+GITHUB_TOKEN = ""
+GH_TOKEN = ""
+
+# Fabro currently gives API workflow agents the full native tool set. The
+# blocking pre_tool_use hook below enforces the narrower per-role contract.
+[run.agent]
+permissions = "full"
+
+[[run.hooks]]
+id = "security-review-tool-guard"
+name = "Security-review read-only tool guard"
+event = "pre_tool_use"
+script = "python3 .fabro/workflows/security-review/scripts/tool_guard.py"
+blocking = true
+sandbox = true
+timeout = "10s"
+
+[run.checkpoint]
+exclude_globs = [
+  "CLAUDE-SECURITY-*/**",
+  ".fabro/blobs/**",
+  ".fabro/workflows/security-review/runtime/**",
+]
+
+[run.artifacts]
+include = [
+  "CLAUDE-SECURITY-*/.gitignore",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
+  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
+]
