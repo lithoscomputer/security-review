@@ -28,7 +28,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 WORKFLOW_ROOT = Path(".fabro/workflows/security-review")
 CONTROL_DIR = WORKFLOW_ROOT / "runtime"
 STATE_PATH = CONTROL_DIR / "state.json"
-RENDERER_PATH = Path("scripts/render_report.py")
+RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
 
 CANDIDATE_CAP = 400
 VERIFICATION_CAP = 45

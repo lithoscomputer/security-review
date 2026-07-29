@@ -22,6 +22,8 @@ WORKFLOW_ROOT = REPOSITORY_ROOT / ".fabro/workflows/security-review"
 DRIVER_PATH = WORKFLOW_ROOT / "scripts/security_review.py"
 GUARD_PATH = WORKFLOW_ROOT / "scripts/tool_guard.py"
 GIT_WRAPPER_PATH = WORKFLOW_ROOT / "scripts/git_readonly.py"
+RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
+REPORT_SPEC_PATH = WORKFLOW_ROOT / "specs/report-spec.md"
 GRAPH_PATH = WORKFLOW_ROOT / "security-review.fabro"
 
 
@@ -62,10 +64,11 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         run("git", "add", "src/app.py", cwd=self.root)
         run("git", "commit", "-qm", "fixture", cwd=self.root)
 
-        (self.root / "scripts").mkdir()
+        renderer = self.root / DRIVER.RENDERER_PATH
+        renderer.parent.mkdir(parents=True)
         shutil.copy(
-            REPOSITORY_ROOT / "scripts/render_report.py",
-            self.root / "scripts/render_report.py",
+            RENDERER_PATH,
+            renderer,
         )
         self.previous_cwd = Path.cwd()
         os.chdir(self.root)
@@ -376,7 +379,13 @@ class FabroWorkflowDriverTest(unittest.TestCase):
 class FabroWorkflowStaticContractTest(unittest.TestCase):
     def test_graph_pins_all_executable_support_files(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
-        for path in (DRIVER_PATH, GUARD_PATH, GIT_WRAPPER_PATH):
+        for path in (
+            DRIVER_PATH,
+            GUARD_PATH,
+            GIT_WRAPPER_PATH,
+            RENDERER_PATH,
+            REPORT_SPEC_PATH,
+        ):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertEqual(graph.count(digest), 1, path.name)
         self.assertNotIn("__SUPPORT_HASH_ARGUMENTS__", graph)
@@ -492,8 +501,9 @@ class ToolGuardTest(unittest.TestCase):
             json.dumps({"run_dir": run_dir.as_posix()}),
             encoding="utf-8",
         )
-        (self.root / "skills/claude-security/specs").mkdir(parents=True)
-        (self.root / GUARD.REPORT_SPEC).write_text("spec\n", encoding="utf-8")
+        report_spec = self.root / GUARD.REPORT_SPEC
+        report_spec.parent.mkdir(parents=True)
+        report_spec.write_text("spec\n", encoding="utf-8")
         self.run_dir = run_dir
         self.previous_cwd = Path.cwd()
         os.chdir(self.root)

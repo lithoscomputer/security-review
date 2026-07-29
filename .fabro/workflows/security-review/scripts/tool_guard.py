@@ -20,7 +20,7 @@ from typing import Any, Dict, Iterable, Mapping, Sequence
 WORKFLOW_ROOT = Path(".fabro/workflows/security-review")
 GIT_WRAPPER = (WORKFLOW_ROOT / "scripts/git_readonly.py").as_posix()
 STATE_PATH = WORKFLOW_ROOT / "runtime/state.json"
-REPORT_SPEC = Path("skills/claude-security/specs/report-spec.md")
+REPORT_SPEC = WORKFLOW_ROOT / "specs/report-spec.md"
 
 READ_TOOLS = {"read_file", "read_many_files", "list_dir", "grep", "glob"}
 SOURCE_NODES = {
