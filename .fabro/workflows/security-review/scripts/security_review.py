@@ -621,6 +621,11 @@ def prepare(args: argparse.Namespace) -> None:
             f"mode must be one of {', '.join(SCAN_MODES)}, got {args.mode!r}"
         )
     effort = args.effort if args.effort in EFFORT_TIERS else "medium"
+    if args.effort and args.effort not in EFFORT_TIERS:
+        print(
+            f'unknown effort "{one_line(args.effort, 60)}" -- using medium '
+            f"(tiers: {', '.join(EFFORT_TIERS)})"
+        )
     focus = "attack-surface" if args.focus == "attack-surface" else None
     scope = parse_scope(args.scope)
     base_input = args.base.strip()

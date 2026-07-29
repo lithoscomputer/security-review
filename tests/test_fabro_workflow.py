@@ -321,6 +321,27 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "inventory-failed",
         )
 
+    def test_unknown_effort_tier_is_coerced_with_notice(self) -> None:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            DRIVER.prepare(
+                Namespace(
+                    mode="scan",
+                    effort="turbo",
+                    scope="",
+                    base="",
+                    commit="",
+                    range="",
+                    focus="",
+                )
+            )
+        self.assertEqual(DRIVER.load_state()["effort"], "medium")
+        self.assertIn(
+            'unknown effort "turbo" -- using medium (tiers: low, medium, '
+            "high, max)",
+            buffer.getvalue(),
+        )
+
     def test_inventory_correction_coaches_like_the_plugin(self) -> None:
         state = self.prepare(effort="high")
         inventory = {
