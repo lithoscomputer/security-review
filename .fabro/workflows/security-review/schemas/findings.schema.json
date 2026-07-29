@@ -13,7 +13,14 @@
           "severity",
           "confidence",
           "title",
-          "rationale"
+          "rationale",
+          "evidence",
+          "snippet",
+          "symbol",
+          "impact",
+          "exploitScenario",
+          "preconditions",
+          "recommendation"
         ],
         "properties": {
           "file": { "type": "string" },

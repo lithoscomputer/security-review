@@ -23,10 +23,14 @@ that crossing in the evidence.
 Every finding must:
 
 - name the exact repository-relative sink file and line;
+- put the complete source-to-sink proof in `evidence`;
 - quote that sink line verbatim in `snippet`;
 - name the enclosing function or method in `symbol`;
 - use `HIGH`, `MEDIUM`, or `LOW` for severity and confidence;
-- give a concrete impact, exploit scenario, preconditions, and root-cause fix.
+- put the concrete impact in `impact`;
+- put the exploit scenario in `exploitScenario`;
+- put every required condition for exploitation in `preconditions`;
+- put the root-cause fix in `recommendation`.
 
 Prefer these category slugs:
 

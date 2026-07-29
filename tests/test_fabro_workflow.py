@@ -411,6 +411,44 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn(f'for_each="context.{node}"', graph)
             self.assertIn(f"max_parallel={cap}", graph)
 
+    def test_finding_schema_requires_patch_ready_details(self) -> None:
+        schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/findings.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        required = set(
+            schema["properties"]["findings"]["items"]["required"]
+        )
+        self.assertTrue(
+            {
+                "file",
+                "line",
+                "rationale",
+                "evidence",
+                "snippet",
+                "symbol",
+                "impact",
+                "exploitScenario",
+                "preconditions",
+                "recommendation",
+            }.issubset(required)
+        )
+        for name in ("research.md", "sweep.md"):
+            prompt = (
+                WORKFLOW_ROOT / "prompts" / name
+            ).read_text(encoding="utf-8")
+            for field in (
+                "evidence",
+                "snippet",
+                "symbol",
+                "impact",
+                "exploitScenario",
+                "preconditions",
+                "recommendation",
+            ):
+                self.assertIn(f"`{field}`", prompt)
+
     def test_merges_pipe_context_directly_to_deterministic_scripts(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertEqual(
