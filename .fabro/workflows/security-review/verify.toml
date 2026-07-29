@@ -39,15 +39,6 @@ GH_TOKEN = ""
 [run.agent]
 permissions = "full"
 
-[[run.hooks]]
-id = "security-review-tool-guard"
-name = "Security-review read-only tool guard"
-event = "pre_tool_use"
-script = "python3 .fabro/workflows/security-review/scripts/tool_guard.py"
-blocking = true
-sandbox = true
-timeout = "10s"
-
 [run.checkpoint]
 exclude_globs = [
   "CLAUDE-SECURITY-*/**",

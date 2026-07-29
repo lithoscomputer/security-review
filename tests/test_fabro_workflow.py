@@ -20,7 +20,6 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_ROOT = REPOSITORY_ROOT / ".fabro/workflows/security-review"
 DRIVER_PATH = WORKFLOW_ROOT / "scripts/security_review.py"
-GUARD_PATH = WORKFLOW_ROOT / "scripts/tool_guard.py"
 GIT_WRAPPER_PATH = WORKFLOW_ROOT / "scripts/git_readonly.py"
 RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
 REPORT_SPEC_PATH = WORKFLOW_ROOT / "specs/report-spec.md"
@@ -36,7 +35,6 @@ def load_module(name: str, path: Path):
 
 
 DRIVER = load_module("fabro_security_review_driver", DRIVER_PATH)
-GUARD = load_module("fabro_security_review_guard", GUARD_PATH)
 
 
 def run(*args: str, cwd: Path) -> subprocess.CompletedProcess:
@@ -510,7 +508,6 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for path in (
             DRIVER_PATH,
-            GUARD_PATH,
             GIT_WRAPPER_PATH,
             RENDERER_PATH,
             REPORT_SPEC_PATH,
@@ -673,6 +670,27 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("\n        max_retries=0", graph)
         self.assertRegex(graph, r"(?s)report_author \[[^\]]*max_retries=2")
 
+    def test_nothing_enforces_the_read_only_rule(self) -> None:
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            self.assertNotIn("run.hooks", config, config_name)
+            self.assertNotIn("pre_tool_use", config, config_name)
+        self.assertFalse((WORKFLOW_ROOT / "scripts/tool_guard.py").exists())
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("tool_guard", graph)
+
+    def test_report_never_claims_nothing_was_executed(self) -> None:
+        # The read-only rule is instructed, not enforced, so the report may
+        # not vouch for it. See test_nothing_enforces_the_read_only_rule.
+        spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
+        report_prompt = (WORKFLOW_ROOT / "prompts/report.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("nothing enforces that instruction", spec)
+        self.assertNotIn("no tests were run", spec)
+        self.assertIn("do not assert that nothing was run", report_prompt)
+        self.assertNotIn("read source and history only", report_prompt)
+
     def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
         for name in (
             "threat-model.md",
@@ -707,164 +725,6 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn(".claude-security-run/**", config)
         self.assertNotIn("reports/**", config)
 
-
-class ToolGuardTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
-        (self.root / "src").mkdir()
-        (self.root / "src/app.py").write_text("safe\n", encoding="utf-8")
-        run_dir = self.root / "CLAUDE-SECURITY-20260729-120000/.claude-security-run"
-        run_dir.mkdir(parents=True)
-        state_path = self.root / GUARD.STATE_PATH
-        state_path.parent.mkdir(parents=True)
-        state_path.write_text(
-            json.dumps({"run_dir": run_dir.as_posix()}),
-            encoding="utf-8",
-        )
-        report_spec = self.root / GUARD.REPORT_SPEC
-        report_spec.parent.mkdir(parents=True)
-        report_spec.write_text("spec\n", encoding="utf-8")
-        self.run_dir = run_dir
-        self.previous_cwd = Path.cwd()
-        os.chdir(self.root)
-
-    def tearDown(self) -> None:
-        os.chdir(self.previous_cwd)
-        self.temporary.cleanup()
-
-    def test_scan_agent_is_read_only_with_restricted_git(self) -> None:
-        GUARD.handle(
-            {
-                "node_id": "researcher",
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": "rg -n run_report --glob '!*.pyc'"
-                },
-            }
-        )
-        GUARD.handle(
-            {
-                "node_id": "researcher",
-                "tool_name": "read_file",
-                "tool_input": {
-                    "file_path": (self.root / "src/app.py").as_posix()
-                },
-            }
-        )
-        GUARD.handle(
-            {
-                "node_id": "researcher",
-                "tool_name": "shell",
-                "tool_input": {
-                    "command": (
-                        "python3 .fabro/workflows/security-review/scripts/"
-                        "git_readonly.py diff HEAD^..HEAD"
-                    )
-                },
-            }
-        )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "researcher",
-                    "tool_name": "shell",
-                    "tool_input": {"command": "git diff HEAD^..HEAD"},
-                }
-            )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "researcher",
-                    "tool_name": "Bash",
-                    "tool_input": {
-                        "command": "rg --pre 'sh -c id' run_report"
-                    },
-                }
-            )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "researcher",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "rg run_report ../outside"},
-                }
-            )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "researcher",
-                    "tool_name": "write_file",
-                    "tool_input": {
-                        "file_path": (self.root / "src/app.py").as_posix(),
-                        "content": "changed",
-                    },
-                }
-            )
-
-    def test_explore_capable_nodes_may_spawn_read_only_helpers(self) -> None:
-        GUARD.handle(
-            {
-                "node_id": "researcher",
-                "tool_name": "spawn_agent",
-                "tool_input": {"task": "map every caller of run()"},
-            }
-        )
-        GUARD.handle(
-            {
-                "node_id": "panel_verifier",
-                "tool_name": "wait",
-                "tool_input": {"agent_id": "abc123"},
-            }
-        )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "researcher",
-                    "tool_name": "spawn_agent",
-                    "tool_input": {"task": "   "},
-                }
-            )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "inventory",
-                    "tool_name": "spawn_agent",
-                    "tool_input": {"task": "map the tree"},
-                }
-            )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "report_author",
-                    "tool_name": "spawn_agent",
-                    "tool_input": {"task": "summarize the findings"},
-                }
-            )
-
-    def test_report_author_has_one_write_path(self) -> None:
-        expected = self.run_dir / "CLAUDE-SECURITY-RESULTS.md"
-        GUARD.handle(
-            {
-                "node_id": "report_author",
-                "tool_name": "write_file",
-                "tool_input": {
-                    "file_path": expected.as_posix(),
-                    "content": "# report\n",
-                },
-            }
-        )
-        with self.assertRaises(GUARD.GuardError):
-            GUARD.handle(
-                {
-                    "node_id": "report_author",
-                    "tool_name": "write_file",
-                    "tool_input": {
-                        "file_path": (self.root / "src/app.py").as_posix(),
-                        "content": "changed",
-                    },
-                }
-            )
 
 if __name__ == "__main__":
     unittest.main()

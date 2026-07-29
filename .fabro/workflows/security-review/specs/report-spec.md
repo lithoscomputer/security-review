@@ -108,7 +108,7 @@ it -- do not bury it.>
 
 **No hedging, no padding.** Do not soften a real finding to be polite about the code, and do not inflate a nit to look thorough. "No findings" is a complete report, and writing it well — what you covered, what you did not — is more valuable than a page of maybes.
 
-**Never claim something ran that did not.** Nothing in a scan executes the repository's code: no tests were run, no exploit was fired, no proof-of-concept was validated. Every finding is derived from reading. Say so rather than implying a demonstration.
+**Never claim something ran that did not.** Findings are derived from reading source and history, so never imply a demonstration: no finding here was proven by firing an exploit or validating a proof-of-concept. Do not make the mirror-image claim either. The scan's agents are instructed to read rather than build, test, or execute, and nothing enforces that instruction, so a report asserting that nothing ran would be vouching for what it cannot check.
 
 ## Example of the bar
 

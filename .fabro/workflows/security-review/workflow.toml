@@ -30,19 +30,11 @@ mode = "block"
 GITHUB_TOKEN = ""
 GH_TOKEN = ""
 
-# Fabro currently gives API workflow agents the full native tool set. The
-# blocking pre_tool_use hook below enforces the narrower per-role contract.
+# Fabro gives API workflow agents the full native tool set. The agents are
+# instructed to read rather than execute; nothing enforces that, so the
+# disposable sandbox is the boundary.
 [run.agent]
 permissions = "full"
-
-[[run.hooks]]
-id = "security-review-tool-guard"
-name = "Security-review read-only tool guard"
-event = "pre_tool_use"
-script = "python3 .fabro/workflows/security-review/scripts/tool_guard.py"
-blocking = true
-sandbox = true
-timeout = "10s"
 
 [run.checkpoint]
 exclude_globs = [

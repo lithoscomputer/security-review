@@ -62,12 +62,15 @@ cross-user data exposure. `MEDIUM` means real but bounded harm, such as a
 non-default precondition, authenticated access, or victim interaction. `LOW`
 means a real defense-in-depth issue. Put uncertainty in confidence.
 
-You may use `Read` or a standalone read-only `rg` command with no shell
-operators. When history is needed, the only other permitted shell form is:
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`.
-Do not invoke `git` directly. Never build, test, execute, install, fetch, use
-the network, or modify files. If execution would be required to settle a
-claim, lower confidence and say so; never invent output.
+Read and search with whatever read-only commands suit the question, history
+included. Never build, test, execute, install, fetch, use the network, or
+modify files. Nothing blocks those here; not attempting them is the rule you
+follow. If execution would be required to settle a claim, lower confidence and
+say so; never invent output, and never describe output you did not see. For
+history on an untrusted tree, prefer the wrapper named in the appended target --
+`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+-- which disables the external diff and textconv drivers a repository can point
+at a command of its choosing.
 
 When answering means first mapping unfamiliar territory — every caller of a
 function, how a request flows across files, where a configuration value is

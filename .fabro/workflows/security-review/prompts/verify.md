@@ -28,12 +28,16 @@ mitigation between them. Cite the decisive repository-relative `file:line`
 locations in `reasoning`. Do not invent a defense. Judge the finding as written;
 a different nearby bug does not make it true.
 
-You may use `Read` or a standalone read-only `rg` command with no shell
-operators. When history is needed, use only:
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`.
-Do not invoke `git` directly. Do not build, test, execute, install, fetch, use
-the network, or modify files. If code execution is the only way to settle the
-claim, vote `FALSE_POSITIVE` and name what could not be confirmed.
+Read and search with whatever read-only commands suit the question, history
+included. Do not build, test, execute, install, fetch, use the network, or
+modify files. Nothing blocks those here; not attempting them is the rule you
+follow. If code execution is the only way to settle the claim, vote
+`FALSE_POSITIVE` and name what could not be confirmed; never describe output
+you did not see. For history on an untrusted tree, prefer the wrapper named in
+the appended target --
+`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+-- which disables the external diff and textconv drivers a repository can point
+at a command of its choosing.
 
 When answering means first mapping unfamiliar territory — every caller of a
 function, how a request flows across files, where a configuration value is
