@@ -29,6 +29,9 @@ provider = "openrouter"
 [run.model.controls]
 reasoning_effort = "low"
 
+[run.environment]
+id = "security-review"
+
 [run.environment.network]
 mode = "block"
 
@@ -53,3 +56,20 @@ include = [
   "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
   "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
 ]
+
+[environments.security-review]
+provider = "daytona"
+
+# The scan's agents search the tree constantly. buildpack-deps:noble, the
+# Daytona default base, ships grep but not ripgrep, which respects .gitignore
+# and is far faster on a large repository. Installed at image build time
+# because the run itself has no network.
+[environments.security-review.image]
+dockerfile = """
+FROM buildpack-deps:noble
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
+"""
+
+[environments.security-review.resources]
+cpu = 2
+memory = "4GB"
