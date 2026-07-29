@@ -5,12 +5,12 @@ digraph SecurityReview {
         default_fidelity="compact",
         stall_timeout="3600s",
         model_stylesheet="
-            * { model: sonnet; provider: openrouter; reasoning_effort: low; }
-            .inventory { model: sonnet; provider: openrouter; reasoning_effort: medium; }
-            .threat-model { model: opus; provider: openrouter; reasoning_effort: medium; }
-            .research { model: opus; provider: openrouter; reasoning_effort: xhigh; }
-            .verification { model: opus; provider: openrouter; reasoning_effort: xhigh; }
-            .report-author { model: opus; provider: openrouter; reasoning_effort: xhigh; }
+            * { model: sonnet; reasoning_effort: low; }
+            .inventory { model: sonnet; reasoning_effort: medium; }
+            .threat-model { model: opus; reasoning_effort: medium; }
+            .research { model: opus; reasoning_effort: xhigh; }
+            .verification { model: opus; reasoning_effort: xhigh; }
+            .report-author { model: opus; reasoning_effort: xhigh; }
         "
     ]
     rankdir=LR

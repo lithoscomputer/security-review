@@ -522,11 +522,11 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
     def test_model_stylesheet_and_concurrency_caps_match_decisions(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for rule in (
-            ".inventory { model: sonnet; provider: openrouter; reasoning_effort: medium; }",
-            ".threat-model { model: opus; provider: openrouter; reasoning_effort: medium; }",
-            ".research { model: opus; provider: openrouter; reasoning_effort: xhigh; }",
-            ".verification { model: opus; provider: openrouter; reasoning_effort: xhigh; }",
-            ".report-author { model: opus; provider: openrouter; reasoning_effort: xhigh; }",
+            ".inventory { model: sonnet; reasoning_effort: medium; }",
+            ".threat-model { model: opus; reasoning_effort: medium; }",
+            ".research { model: opus; reasoning_effort: xhigh; }",
+            ".verification { model: opus; reasoning_effort: xhigh; }",
+            ".report-author { model: opus; reasoning_effort: xhigh; }",
         ):
             self.assertIn(rule, graph)
         for node, cap in (
