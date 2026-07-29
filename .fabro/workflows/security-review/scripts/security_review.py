@@ -874,6 +874,25 @@ def prepare(args: argparse.Namespace) -> None:
         "topLevelDirectories": state["top_level_dirs"],
         "wholeTreeCompletenessRequired": whole_tree_inventory,
     }
+    if collapsed == "small-diff":
+        print(
+            f"small diff ({diff_file_count} file"
+            f"{'' if diff_file_count == 1 else 's'}"
+            + (f", {diff_lines} lines" if diff_lines is not None else "")
+            + f" changed): running the single-researcher shape at {effort} "
+            "instead of the full component matrix -- proportionate to the "
+            "change, still panel-verified"
+        )
+    elif collapsed == "small-scope":
+        print(
+            f"small scope ({scope_file_count} file"
+            f"{'' if scope_file_count == 1 else 's'}): running the "
+            f"single-researcher shape at {effort} instead of the full "
+            "component matrix -- proportionate to the scope, still "
+            "panel-verified"
+        )
+    elif use_single:
+        print("low effort: one whole-repository component")
     shape = "single-researcher" if use_single else "component-matrix"
     print(f"Prepared {effort} {mode} security review using the {shape} shape")
     emit(
@@ -1296,7 +1315,34 @@ def plan_matrix() -> None:
         build_cells(state)
         updates.update(research_sweep_updates(state))
     save_state(state)
-    print(f"Planned {len(planned)} component(s)")
+    fallback = state.get("inventory_fallback")
+    if fallback:
+        print(
+            f"inventory fallback ({fallback}): scanning the whole target "
+            "as one component so nothing goes unscanned"
+        )
+    skipped = state.get("skipped_components") or []
+    if skipped:
+        print(
+            "inventory: not scanned, by the componentizer's account "
+            f"({len(skipped)}): "
+            + "; ".join(
+                f"{entry.get('name')} -- {entry.get('reason')}"
+                for entry in skipped
+                if isinstance(entry, dict)
+            )
+        )
+    dropped_names = state.get("dropped_components") or []
+    if dropped_names:
+        print(
+            f"inventory cap: keeping {len(planned)} of "
+            f"{len(planned) + len(dropped_names)} components, dropped: "
+            + ", ".join(dropped_names)
+        )
+    print(
+        f"Planned {len(planned)} component(s): "
+        + ", ".join(component["name"] for component in planned)
+    )
     emit(**updates)
 
 
@@ -1464,6 +1510,8 @@ def build_cells(state: Dict[str, Any]) -> None:
     state["run_sweeps"] = bool(sweep_jobs)
     set_phase_jobs(state, "research", research_jobs)
     set_phase_jobs(state, "sweep", sweep_jobs)
+    for bucket in pruned:
+        print(f"{bucket}: skipped (managed language)")
 
 
 def research_sweep_updates(state: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1647,10 +1695,21 @@ def merge(phase: str) -> None:
     raw = read_merge_input()
     if phase == "inventory":
         updates = merge_inventory(state, raw)
+        print(
+            "Merged inventory output"
+            + (
+                " -- rejected once, correction requested"
+                if updates.get("inventory_correction")
+                else ""
+            )
+        )
     else:
         updates = merge_phase(state, phase, raw)
+        print(
+            f"Merged {phase}: "
+            f"{updates[f'{phase}_results_merged']} result(s) recorded"
+        )
     save_state(state)
-    print(f"Merged {phase} output")
     emit(**updates)
 
 
@@ -1813,6 +1872,23 @@ def dedup_rank() -> None:
     updates: Dict[str, Any] = {"run_panel": bool(verification_jobs)}
     if verification_jobs:
         updates.update(phase_jobs_context(state, "panel", verification_jobs))
+    if invalid_results:
+        print(
+            f"research: {len(invalid_results)} of {len(jobs)} research "
+            "agent(s) did not return a usable result"
+        )
+    if candidates_dropped:
+        print(
+            f"candidates: {len(raw_candidates)} exceed the cap of "
+            f"{CANDIDATE_CAP}; keeping the highest-severity {CANDIDATE_CAP} "
+            "-- the report will say so"
+        )
+    if state["unverified_by_cap"]:
+        print(
+            f"verification cap: {state['unverified_by_cap']} lower-ranked "
+            "candidate(s) will not be verified or reported -- the stamp "
+            "records them as unreviewed_candidate_sites"
+        )
     print(
         f"Candidates: {len(raw_candidates)} raw -> "
         f"{len(deduplicated)} deduplicated; "
@@ -2216,8 +2292,12 @@ def final_tally() -> None:
     state["final"] = result
     save_state(state)
     write_final_files(state, result)
+    for casualty in result["coverage"]["adversarialCasualties"]:
+        print(casualty)
     print(
-        f"Verified result: {len(result['findings'])} finding(s); "
+        f"Verified result: {len(result['findings'])} finding(s) kept of "
+        f"{len(state.get('reviewed') or [])} reviewed "
+        f"({result['votes']['unreviewed_candidate_sites']} unreviewed); "
         f"provisional status {result['verification']['status']}"
     )
     emit(
