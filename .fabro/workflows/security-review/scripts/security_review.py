@@ -1600,6 +1600,28 @@ def rank_key(finding: Mapping[str, Any]) -> Tuple[int, int]:
     )
 
 
+def verification_claim(candidate: Mapping[str, Any]) -> Dict[str, Any]:
+    """The subset of a candidate a verifier is shown.
+
+    Mirrors the plugin's formatFindingClaim: the reporter's claim and its
+    cited evidence only. The reporter's confidence, impact story, exploit
+    scenario, and recommendation are withheld — they could anchor a panel
+    that must default to FALSE_POSITIVE.
+    """
+    return {
+        "file": candidate.get("file"),
+        "line": candidate.get("line"),
+        "category": candidate.get("category"),
+        "severityAsReported": candidate.get("severity"),
+        "title": candidate.get("title"),
+        "rationale": candidate.get("rationale"),
+        "evidenceAsCited": candidate.get("evidence") or "(none)",
+        "snippetAsQuoted": candidate.get("snippet") or "(none)",
+        "symbol": candidate.get("symbol") or "(none)",
+        "reports": int(candidate.get("reports") or 1),
+    }
+
+
 def dedup_rank() -> None:
     state = load_state()
     research_jobs = list(state.get("research_jobs") or [])
@@ -1696,7 +1718,8 @@ def dedup_rank() -> None:
                 {
                     "name": f"{candidate['id']}:{lower_lens}",
                     "job_id": f"panel:{candidate['id']}:{lower_lens}",
-                    "finding": candidate,
+                    "candidate_id": candidate["id"],
+                    "finding": verification_claim(candidate),
                     "lens": lens,
                     "target": common_target(state),
                 }
@@ -1769,8 +1792,7 @@ def tally() -> None:
             job
             for job in jobs
             if isinstance(job, dict)
-            and isinstance(job.get("finding"), dict)
-            and job["finding"].get("id") == candidate.get("id")
+            and job.get("candidate_id") == candidate.get("id")
         ]
         votes = collect_votes(state, "panel", candidate_jobs)
         true_votes = sum(
@@ -1793,7 +1815,8 @@ def tally() -> None:
                         "job_id": (
                             f"repanel:{candidate['id']}:{lower_lens}"
                         ),
-                        "finding": candidate,
+                        "candidate_id": candidate["id"],
+                        "finding": verification_claim(candidate),
                         "lens": lens,
                         "target": common_target(state),
                     }
@@ -1838,8 +1861,7 @@ def adversarial_plan() -> None:
             job
             for job in repanel_jobs
             if isinstance(job, dict)
-            and isinstance(job.get("finding"), dict)
-            and job["finding"].get("id") == candidate_id
+            and job.get("candidate_id") == candidate_id
         ]
         votes = collect_votes(state, "repanel", jobs)
         true_votes = sum(
@@ -1873,7 +1895,8 @@ def adversarial_plan() -> None:
             {
                 "name": f"redteam:{candidate['id']}",
                 "job_id": f"redteam:{candidate['id']}",
-                "finding": candidate,
+                "candidate_id": candidate["id"],
+                "finding": verification_claim(candidate),
                 "target": common_target(state),
             }
         )
@@ -1999,9 +2022,9 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
     if state.get("effort") == "max":
         jobs = state.get("redteam_jobs") or []
         jobs_by_id = {
-            job["finding"]["id"]: job
+            job["candidate_id"]: job
             for job in jobs
-            if isinstance(job, dict) and isinstance(job.get("finding"), dict)
+            if isinstance(job, dict) and isinstance(job.get("candidate_id"), str)
         }
         for record in reviewed:
             if not isinstance(record, dict) or not record.get("kept"):

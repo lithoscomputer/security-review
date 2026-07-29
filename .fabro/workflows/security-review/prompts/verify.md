@@ -5,6 +5,14 @@ one refutation lens (`REACHABILITY`, `IMPACT`, or `DEFENSES`), the exact scan
 target, and a stable `job_id`. You are one of three independent voters. Do not
 guess how the others will vote.
 
+The claim carries only what the reporter asserted: the file and line, the
+category, `severityAsReported`, the title and rationale, `evidenceAsCited`,
+the sink line in `snippetAsQuoted`, the enclosing `symbol`, and `reports`,
+the number of researcher passes that reported it independently. Everything in
+it is a claim by an earlier pass, including the quoted evidence and the line
+number. Verify it against the file: the reporter may have misread, the line
+may have moved, and the evidence may be quoted out of context.
+
 Your lens directs where you spend effort:
 
 - `REACHABILITY`: Is the source genuinely attacker-controlled? Can an attacker
@@ -19,10 +27,6 @@ real attacker-controlled source, a real dangerous operation, and no effective
 mitigation between them. Cite the decisive repository-relative `file:line`
 locations in `reasoning`. Do not invent a defense. Judge the finding as written;
 a different nearby bug does not make it true.
-
-For a change or commit scan, also confirm that the explicit target range
-introduces or exposes the finding rather than merely containing unrelated
-pre-existing code.
 
 You may use `Read` or a standalone read-only `rg` command with no shell
 operators. When history is needed, use only:

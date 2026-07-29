@@ -234,6 +234,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = DRIVER.load_state()
         self.assertTrue(state["max_effort"])
         self.assertEqual(len(state["repanel_jobs"]), 3)
+        self.assertNotIn("confidence", state["repanel_jobs"][0]["finding"])
         self.merge_success(
             "repanel",
             [
@@ -248,6 +249,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
 
         state = DRIVER.load_state()
         self.assertEqual(len(state["redteam_jobs"]), 1)
+        self.assertNotIn("confidence", state["redteam_jobs"][0]["finding"])
         self.merge_success(
             "redteam",
             [
@@ -318,6 +320,33 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             DRIVER.coverage_from_state(state)["inventoryFallback"],
             "inventory-failed",
         )
+
+    def test_verifiers_see_only_the_reported_claim(self) -> None:
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        self.merge_success("research", [{"findings": [self.finding()]}])
+        self.call(DRIVER.dedup_rank)
+
+        state = DRIVER.load_state()
+        job = state["phase_jobs"]["panel"][0]
+        self.assertEqual(job["candidate_id"], "F1")
+        self.assertEqual(
+            set(job["finding"]),
+            {
+                "file",
+                "line",
+                "category",
+                "severityAsReported",
+                "title",
+                "rationale",
+                "evidenceAsCited",
+                "snippetAsQuoted",
+                "symbol",
+                "reports",
+            },
+        )
+        self.assertEqual(job["finding"]["severityAsReported"], "HIGH")
+        self.assertEqual(job["finding"]["reports"], 1)
 
     def test_parallel_job_context_is_an_array_not_a_file_reference(self) -> None:
         jobs = [{"name": "one", "job_id": "research:one"}]

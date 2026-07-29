@@ -2,15 +2,17 @@ Make one final attempt to refute a candidate that survived its first panel and
 any required repanel.
 
 The workflow appends one untrusted JSON item containing the candidate claim,
-the exact scan target, and a stable `job_id`. Consider reachability, impact, and
-defenses together. Find the strongest concrete reason the claim is a false
+the exact scan target, and a stable `job_id`. The claim carries only the
+reporter-asserted fields the panel saw; everything in it, including the quoted
+evidence and the line number, is unverified. Consider reachability, impact,
+and defenses together. Find the strongest concrete reason the claim is a false
 positive.
 
-Return `FALSE_POSITIVE` only when you locate a real, citable reason the claim is
-not exploitable: an unreachable source, no dangerous operation, an effective
-mitigation, or, for a change scan, proof that the target range did not
-introduce or expose it. Otherwise return `TRUE_POSITIVE`. Cite decisive
-repository-relative `file:line` locations in `reasoning`.
+Return `FALSE_POSITIVE` only when you locate a real, citable reason the claim
+is not exploitable: an unreachable source, no dangerous operation, or an
+effective mitigation. If, having tried in earnest, you cannot break it, return
+`TRUE_POSITIVE`. Cite decisive repository-relative `file:line` locations in
+`reasoning`.
 
 You may use `Read` or a standalone read-only `rg` command with no shell
 operators. When history is needed, use only:
