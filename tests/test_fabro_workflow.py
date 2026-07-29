@@ -684,12 +684,16 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             text = (WORKFLOW_ROOT / "prompts" / name).read_text(
                 encoding="utf-8"
             )
-            self.assertIn("`spawn_agent`", text, name)
+            self.assertIn("dispatch one read-only explorer", text, name)
             self.assertNotIn("spawn subagents", text, name)
+            # The Claude 5 profile exposes Agent/TaskOutput, the Fabro
+            # vocabulary spawn_agent/wait. Naming either misleads the other.
+            for vocabulary_name in ("spawn_agent", "`wait`", "TaskOutput"):
+                self.assertNotIn(vocabulary_name, text, name)
         inventory = (WORKFLOW_ROOT / "prompts/inventory.md").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn("spawn_agent", inventory)
+        self.assertNotIn("read-only explorer", inventory)
 
     def test_artifacts_export_only_final_bundle(self) -> None:
         config = (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
