@@ -321,6 +321,41 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "inventory-failed",
         )
 
+    def test_inventory_correction_coaches_like_the_plugin(self) -> None:
+        state = self.prepare(effort="high")
+        inventory = {
+            "components": [
+                {
+                    "name": f"component-{index}",
+                    "paths": ["docs"],
+                    "language": "Python",
+                }
+                for index in range(25)
+            ],
+            "securityScanSkippedComponents": [
+                {"name": "everything-else", "paths": ["."], "reason": "rest"}
+            ],
+        }
+        updates = DRIVER.merge_inventory(state, inventory)
+        self.assertTrue(updates["inventory_correction"])
+        feedback = updates["inventory_feedback"]
+        self.assertIn(
+            "YOUR PREVIOUS ANSWER WAS REJECTED and must be resubmitted "
+            "COMPLETE:",
+            feedback,
+        )
+        self.assertIn("A skip must NAME the directories it skips", feedback)
+        self.assertIn(
+            "<untrusted-directories>\nsrc\n</untrusted-directories>",
+            feedback,
+        )
+        self.assertIn(
+            "Only your first 24 components are used (you returned 25)",
+            feedback,
+        )
+        self.assertIn("This is your one correction", feedback)
+        self.assertIn("broad shared-parent paths", feedback)
+
     def test_verifiers_see_only_the_reported_claim(self) -> None:
         self.prepare(effort="low")
         self.call(DRIVER.plan_matrix)

@@ -997,16 +997,63 @@ def path_accounts_for(path: str, directory: str, skipped: bool) -> bool:
     )
 
 
-def inventory_feedback(problems: Sequence[str]) -> str:
-    return (
-        "YOUR PREVIOUS ANSWER WAS REJECTED. Return the complete inventory "
-        "again, including every component and every skipped entry. Correct "
-        "these problems: "
-        + "; ".join(problems)
-        + ". This is the one completeness correction. The next usable answer "
-        "is accepted as it stands unless it skips the whole target or contains "
-        "no usable in-tree path."
+def inventory_feedback(
+    whole_target_skip: bool,
+    unaccounted: Sequence[str],
+    overflow: int,
+    max_components: int,
+    component_count: int,
+    other_problems: Sequence[str],
+) -> str:
+    """The plugin's correction resend, translated for the appended context."""
+    parts = [
+        "YOUR PREVIOUS ANSWER WAS REJECTED and must be resubmitted COMPLETE:"
+    ]
+    if whole_target_skip:
+        parts.append(
+            "* A securityScanSkippedComponents entry names the whole scan "
+            'target ("." or the repository root). A skip must NAME the '
+            'directories it skips -- skipping "everything else" says nothing '
+            "about what was left out. If most of the tree is genuinely out "
+            "of scope, list those directories (or their common parents) as "
+            "separate skip entries, each with its reason."
+        )
+    if unaccounted:
+        preview = ", ".join(one_line(name, 200) for name in unaccounted[:40])
+        if len(unaccounted) > 40:
+            preview += f" [+{len(unaccounted) - 40} more]"
+        parts.append(
+            "* It accounted for only part of the scan target. These "
+            "top-level directories appeared in NO component's paths and NO "
+            "securityScanSkippedComponents entry:\n"
+            "<untrusted-directories>\n"
+            f"{preview}\n"
+            "</untrusted-directories>"
+        )
+    if overflow:
+        parts.append(
+            f"* Only your first {max_components} components are used (you "
+            f"returned {component_count}), so coverage placed in the "
+            "components beyond that cap does not count -- merge components "
+            "rather than exceeding it."
+        )
+    parts.extend(f"* {one_line(problem, 1000)}" for problem in other_problems)
+    parts.append(
+        "Return the COMPLETE inventory again -- every component AND every "
+        "skipped entry, not just the missing ones -- so that every top-level "
+        "directory of the target lands in one of the two lists. A directory "
+        "that does not warrant scanning goes in "
+        "securityScanSkippedComponents with a one-line reason; nothing may "
+        "be simply left out."
     )
+    parts.append(
+        "This is your one correction: your next answer is used as it "
+        "stands. Any top-level directory it still leaves out of both lists "
+        "is recorded in the report as unaccounted for -- so account for as "
+        "much of the tree as you honestly can, using broad shared-parent "
+        "paths where a per-directory listing would be long."
+    )
+    return "\n\n".join(parts)
 
 
 def merge_inventory(state: Dict[str, Any], raw: Any) -> Dict[str, Any]:
@@ -1060,16 +1107,19 @@ def merge_inventory(state: Dict[str, Any], raw: Any) -> Dict[str, Any]:
             if not scanned and not explicitly_skipped:
                 unaccounted.append(directory)
 
+    unsafe_problem = (
+        "paths with parent traversal or an absolute outside path account "
+        "for nothing: " + ", ".join(unsafe_paths[:40])
+        if unsafe_paths
+        else None
+    )
     problems = list(schema_errors)
     if whole_target_skip:
         problems.append(
             "a securityScanSkippedComponents entry names the whole scan target"
         )
-    if unsafe_paths:
-        problems.append(
-            "paths with parent traversal or an absolute outside path account "
-            "for nothing: " + ", ".join(unsafe_paths[:40])
-        )
+    if unsafe_problem:
+        problems.append(unsafe_problem)
     if unaccounted:
         problems.append(
             f"{len(unaccounted)} top-level directories are neither scanned nor "
@@ -1087,7 +1137,17 @@ def merge_inventory(state: Dict[str, Any], raw: Any) -> Dict[str, Any]:
         )
 
     if components and problems and attempt < 2:
-        feedback = inventory_feedback(problems)
+        feedback = inventory_feedback(
+            whole_target_skip=whole_target_skip,
+            unaccounted=unaccounted,
+            overflow=overflow,
+            max_components=max_components,
+            component_count=len(components),
+            other_problems=(
+                list(schema_errors)
+                + ([unsafe_problem] if unsafe_problem else [])
+            ),
+        )
         defaults["inventory_correction"] = True
         defaults["inventory_feedback"] = feedback
         state["inventory_feedback"] = feedback
