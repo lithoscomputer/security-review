@@ -1121,6 +1121,21 @@ def merge_inventory(state: Dict[str, Any], raw: Any) -> Dict[str, Any]:
     return defaults
 
 
+def inventory_failed() -> None:
+    state = load_state()
+    assert_workspace_unchanged(state)
+    state["inventory_fallback"] = "inventory-failed"
+    state["components"] = None
+    state["skipped_components"] = []
+    state.pop("inventory_feedback", None)
+    save_state(state)
+    print(
+        "Inventory agent failed after native retries; scanning the whole "
+        "target as one component"
+    )
+    emit(inventory_fallback="inventory-failed")
+
+
 def artifact_key(index: int, name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40]
     slug = slug or "component"
@@ -2187,6 +2202,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     for name in (
+        "inventory-failed",
         "plan-matrix",
         "zip-cells",
         "dedup-rank",
@@ -2204,6 +2220,7 @@ def main(argv: Sequence[str]) -> int:
     commands = {
         "prepare": lambda: prepare(args),
         "merge": lambda: merge(args.phase),
+        "inventory-failed": inventory_failed,
         "plan-matrix": plan_matrix,
         "zip-cells": zip_cells,
         "dedup-rank": dedup_rank,

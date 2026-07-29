@@ -300,6 +300,25 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertTrue(updates["inventory_done"])
         self.assertEqual(state["inventory_fallback"], "inventory-failed")
 
+    def test_inventory_agent_failure_falls_back_and_continues(self) -> None:
+        self.prepare(effort="high")
+        self.call(DRIVER.inventory_failed)
+        state = DRIVER.load_state()
+        self.assertEqual(state["inventory_fallback"], "inventory-failed")
+        self.assertIsNone(state["components"])
+
+        self.call(DRIVER.plan_matrix)
+        state = DRIVER.load_state()
+        self.assertEqual(
+            [component["name"] for component in state["planned_components"]],
+            ["repository"],
+        )
+        self.assertTrue(state["run_threat_models"])
+        self.assertEqual(
+            DRIVER.coverage_from_state(state)["inventoryFallback"],
+            "inventory-failed",
+        )
+
     def test_parallel_job_context_is_an_array_not_a_file_reference(self) -> None:
         jobs = [{"name": "one", "job_id": "research:one"}]
         updates = DRIVER.phase_jobs_context({}, "research", jobs)
@@ -530,7 +549,19 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertNotIn(f"wait_{phase}_", graph)
             self.assertNotIn(f"{phase}_retry_gate", graph)
-        self.assertEqual(graph.count("max_retries=2"), 7)
+        self.assertEqual(graph.count("max_retries=2"), 8)
+
+    def test_agent_failures_degrade_before_aborting(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertIn("    inventory -> inventory_failed\n", graph)
+        self.assertIn(
+            'inventory_failed -> plan_matrix [condition="outcome=succeeded"]',
+            graph,
+        )
+        self.assertIn("security_review.py inventory-failed", graph)
+        self.assertNotIn("    inventory -> abort\n", graph)
+        self.assertNotIn("\n        max_retries=0", graph)
+        self.assertRegex(graph, r"(?s)report_author \[[^\]]*max_retries=2")
 
     def test_artifacts_export_only_final_bundle(self) -> None:
         config = (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
