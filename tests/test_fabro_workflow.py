@@ -321,6 +321,17 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "inventory-failed",
         )
 
+    def test_top_level_directories_count_tracked_gitlinks(self) -> None:
+        # A submodule lists as a tracked top-level path that is a directory
+        # on disk; approximate one without submodule plumbing.
+        (self.root / "vendored").write_text("placeholder\n", encoding="utf-8")
+        run("git", "add", "vendored", cwd=self.root)
+        run("git", "commit", "-qm", "add vendored", cwd=self.root)
+        (self.root / "vendored").unlink()
+        (self.root / "vendored").mkdir()
+
+        self.assertEqual(DRIVER.top_level_directories(), ["src", "vendored"])
+
     def test_unknown_effort_tier_is_coerced_with_notice(self) -> None:
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):

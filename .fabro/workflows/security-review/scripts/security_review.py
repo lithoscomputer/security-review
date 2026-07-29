@@ -565,11 +565,15 @@ def revision_record(
 
 def top_level_directories() -> Optional[List[str]]:
     if inside_git_worktree():
-        names = {
-            path.split("/", 1)[0]
-            for path in tracked_files()
-            if "/" in path and path.split("/", 1)[0]
-        }
+        names = set()
+        for path in tracked_files():
+            top, separator, _rest = path.partition("/")
+            if separator and top:
+                names.add(top)
+            elif path and (root() / path).is_dir():
+                # A tracked top-level path that is a directory: a gitlink
+                # (submodule) lists this way in git ls-files.
+                names.add(path)
         return sorted(
             name for name in names if not name.startswith("CLAUDE-SECURITY-")
         )
