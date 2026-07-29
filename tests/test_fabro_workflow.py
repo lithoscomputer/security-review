@@ -388,11 +388,25 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(state["changed_files"], ["src/app.py"])
         self.assertEqual(state["collapsed"], "small-diff")
 
-    def test_source_change_fails_closed(self) -> None:
+    def test_source_change_fails_closed_at_publication(self) -> None:
         self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        (self.root / "src/app.py").write_text("changed\n", encoding="utf-8")
+        # Intermediate steps proceed; the digest gates publication only.
+        self.call(DRIVER.dedup_rank)
+        self.call(DRIVER.tally)
+        with self.assertRaisesRegex(DRIVER.WorkflowDataError, "source tree changed"):
+            self.call(DRIVER.final_tally)
+
+    def test_source_change_after_final_tally_blocks_rendering(self) -> None:
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        self.call(DRIVER.dedup_rank)
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
         (self.root / "src/app.py").write_text("changed\n", encoding="utf-8")
         with self.assertRaisesRegex(DRIVER.WorkflowDataError, "source tree changed"):
-            self.call(DRIVER.plan_matrix)
+            self.call(DRIVER.render_report)
 
 
 class FabroWorkflowStaticContractTest(unittest.TestCase):

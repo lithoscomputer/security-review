@@ -494,12 +494,20 @@ def workspace_digest() -> str:
 
 
 def assert_workspace_unchanged(state: Mapping[str, Any]) -> None:
+    """Refuse to publish results derived from a tampered source tree.
+
+    Tamper evidence behind the read-only tool guard: an agent that finds a
+    way to write could shape what the verifiers and the report see. Checked
+    only at the publication gates (final-tally and render-report) — one
+    full-tree digest there gives the same guarantee as checking at every
+    deterministic step, without the repeated O(repository) hashing.
+    """
     expected = state.get("workspace_digest")
     actual = workspace_digest()
     if not isinstance(expected, str) or actual != expected:
         raise WorkflowDataError(
-            "the reviewed source tree changed during an agent phase; refusing "
-            "to trust or combine its results"
+            "the reviewed source tree changed during the scan; refusing "
+            "to publish results derived from it"
         )
 
 
@@ -1123,7 +1131,6 @@ def merge_inventory(state: Dict[str, Any], raw: Any) -> Dict[str, Any]:
 
 def inventory_failed() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     state["inventory_fallback"] = "inventory-failed"
     state["components"] = None
     state["skipped_components"] = []
@@ -1179,7 +1186,6 @@ def fallback_component(state: Mapping[str, Any]) -> Dict[str, Any]:
 
 def plan_matrix() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     components = state.get("components")
     if not isinstance(components, list) or not components:
         components = [fallback_component(state)]
@@ -1407,7 +1413,6 @@ def research_sweep_updates(state: Mapping[str, Any]) -> Dict[str, Any]:
 
 def zip_cells() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     build_cells(state)
     save_state(state)
     print(
@@ -1570,7 +1575,6 @@ def merge_phase(
 
 def merge(phase: str) -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     raw = read_merge_input()
     if phase == "inventory":
         updates = merge_inventory(state, raw)
@@ -1598,7 +1602,6 @@ def rank_key(finding: Mapping[str, Any]) -> Tuple[int, int]:
 
 def dedup_rank() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     research_jobs = list(state.get("research_jobs") or [])
     sweep_jobs = list(state.get("sweep_jobs") or [])
     jobs = research_jobs + sweep_jobs
@@ -1755,7 +1758,6 @@ def collect_votes(
 
 def tally() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     candidates = state.get("verification_candidates") or []
     jobs = state.get("verification_jobs") or []
     reviewed: List[Dict[str, Any]] = []
@@ -1819,7 +1821,6 @@ def tally() -> None:
 
 def adversarial_plan() -> None:
     state = load_state()
-    assert_workspace_unchanged(state)
     reviewed = state.get("reviewed") or []
     repanel_jobs = state.get("repanel_jobs") or []
     casualties = list(state.get("adversarial_casualties") or [])
