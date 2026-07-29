@@ -11,6 +11,14 @@ to identify components such as an HTTP API, background worker, authentication
 library, parser, database layer, or command-line tool. Do not hunt for
 vulnerabilities or read code line by line for flaws.
 
+When the assignment's target has `focus` set to `attack-surface`, the
+repository is large. Partition it around the attack surface: production code
+that handles input, requests, files, credentials, or executes anything. Treat
+test files, fixtures, mocks, snapshots, generated code, build output, vendored
+copies, and third-party dependency trees as background you may read to
+understand the real code, not as components to scan, unless a live data flow
+from production code genuinely lands there.
+
 Your answer has two ledgers:
 
 - `components` lists what later agents will scan. Each component has a short,

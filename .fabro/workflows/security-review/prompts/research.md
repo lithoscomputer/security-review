@@ -20,6 +20,14 @@ change introduces or exposes, not unrelated pre-existing issues. For a scoped
 scan, stay in the scope unless the data flow crosses its boundary, and state
 that crossing in the evidence.
 
+When the appended target has `focus` set to `attack-surface`, the repository
+is large. Spend your effort on production code that handles input, requests,
+files, credentials, or executes anything. Treat test files, fixtures, mocks,
+snapshots, generated code, build output, vendored copies, and third-party
+dependency trees as background you may read to understand the real code, not
+as things to audit or report on, unless a live data flow from production code
+genuinely lands there.
+
 Every finding must:
 
 - name the exact repository-relative sink file and line;

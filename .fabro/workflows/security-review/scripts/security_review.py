@@ -1359,7 +1359,9 @@ def build_cells(state: Dict[str, Any]) -> None:
                 "ask": (
                     "Look for hardcoded secrets, credentials, tokens, and "
                     "private keys anywhere in the target, including tests, "
-                    "fixtures, and configuration."
+                    "fixtures, and configuration. For this pass the fixtures "
+                    "ARE in scope: a real key committed to a test file is a "
+                    "real leak."
                 ),
                 "coveredPaths": clean_text(covered_paths, MAX_RESULT_TEXT),
                 "target": target,

@@ -7,6 +7,14 @@ and enough surrounding source to judge it. Follow data flows outside the diff
 when needed, but keep the model centered on what the change introduces or
 exposes. For a scoped scan, stay inside the scope unless a data flow leads out.
 
+When the appended target has `focus` set to `attack-surface`, the repository
+is large. Center the model on production code that handles input, requests,
+files, credentials, or executes anything. Treat test files, fixtures, mocks,
+snapshots, generated code, build output, vendored copies, and third-party
+dependency trees as background you may read to understand the real code, not
+as things to model, unless a live data flow from production code genuinely
+lands there.
+
 Report concrete repository-relative `file:line` entries for:
 
 - `entryPoints`: where untrusted input enters the component.

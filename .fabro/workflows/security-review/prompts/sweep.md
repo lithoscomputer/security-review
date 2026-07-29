@@ -18,6 +18,17 @@ For a change or commit scan, examine only the explicit two-sided range and
 report findings the change introduces or exposes. For a scoped scan, respect
 the scope unless a data flow crosses it.
 
+When the appended target has `focus` set to `attack-surface` and your
+assignment is not the committed-secrets pass, the repository is large. Spend
+your effort on production code that handles input, requests, files,
+credentials, or executes anything. Treat test files, fixtures, mocks,
+snapshots, generated code, build output, vendored copies, and third-party
+dependency trees as background you may read to understand the real code, not
+as things to audit or report on, unless a live data flow from production code
+genuinely lands there. The committed-secrets pass is exempt: for it, tests and
+fixtures stay in scope, since a real key committed to a test file is a real
+leak.
+
 You may use `Read` or a standalone read-only `rg` command with no shell
 operators. When history is needed, use only:
 `python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`.
