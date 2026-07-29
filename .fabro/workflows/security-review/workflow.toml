@@ -14,7 +14,6 @@ base = ""
 commit = ""
 range = ""
 focus = ""
-bootstrap_wait = "0"
 
 [run.model]
 name = "sonnet"
@@ -27,7 +26,7 @@ reasoning_effort = "low"
 id = "security-review"
 
 [run.environment.network]
-mode = "block"
+mode = "allow_all"
 
 [run.environment.env]
 GITHUB_TOKEN = ""

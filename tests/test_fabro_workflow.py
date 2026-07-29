@@ -637,10 +637,10 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
 
     def test_phase_barriers_use_fabro_native_agent_retries(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
-        self.assertIn(
-            ".fabro/workflows/security-review/.sandbox-ready",
-            graph,
-        )
+        # The sandbox clones the repository itself, so prepare starts with the
+        # support-file pin check rather than waiting to be staged by hand.
+        self.assertNotIn(".sandbox-ready", graph)
+        self.assertNotIn("bootstrap_wait", graph)
         for phase, next_node in (
             ("threat", "zip_cells"),
             ("research", "sweep_gate"),
