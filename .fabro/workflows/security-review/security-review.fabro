@@ -21,7 +21,6 @@ digraph SecurityReview {
         shape=parallelogram,
         label="Abort after fatal deterministic failure",
         timeout="10s",
-        goal_gate=true,
         script="echo 'Security-review workflow stopped after a fatal deterministic failure.' >&2; exit 1"
     ]
 
@@ -311,23 +310,20 @@ digraph SecurityReview {
     prepare -> target_gate [condition="outcome=succeeded"]
     prepare -> abort
     target_gate -> exit [condition="context.empty_target=true"]
-    target_gate -> inventory [condition="context.empty_target=false && context.use_inventory=true"]
-    target_gate -> plan_matrix [condition="context.empty_target=false && context.use_inventory=false"]
-    target_gate -> abort
+    target_gate -> inventory [condition="context.use_inventory=true"]
+    target_gate -> plan_matrix
 
     inventory -> merge_inventory [condition="outcome=succeeded"]
     inventory -> abort
     merge_inventory -> inventory_gate [condition="outcome=succeeded"]
     merge_inventory -> abort
     inventory_gate -> inventory [condition="context.inventory_correction=true"]
-    inventory_gate -> plan_matrix [condition="context.inventory_done=true"]
-    inventory_gate -> abort
+    inventory_gate -> plan_matrix
 
     plan_matrix -> threat_gate [condition="outcome=succeeded"]
     plan_matrix -> abort
     threat_gate -> threat_models [condition="context.run_threat_models=true"]
-    threat_gate -> research_gate [condition="context.run_threat_models=false"]
-    threat_gate -> abort
+    threat_gate -> research_gate
     threat_models -> threat_model [fidelity="truncate"]
     threat_model -> threat_join -> merge_threat
     merge_threat -> zip_cells [condition="outcome=succeeded"]
@@ -336,16 +332,14 @@ digraph SecurityReview {
     zip_cells -> abort
 
     research_gate -> research [condition="context.run_research=true"]
-    research_gate -> sweep_gate [condition="context.run_research=false"]
-    research_gate -> abort
+    research_gate -> sweep_gate
     research -> researcher [fidelity="truncate"]
     researcher -> research_join -> merge_research
     merge_research -> sweep_gate [condition="outcome=succeeded"]
     merge_research -> abort
 
     sweep_gate -> sweep [condition="context.run_sweeps=true"]
-    sweep_gate -> dedup_rank [condition="context.run_sweeps=false"]
-    sweep_gate -> abort
+    sweep_gate -> dedup_rank
     sweep -> sweeper [fidelity="truncate"]
     sweeper -> sweep_join -> merge_sweep
     merge_sweep -> dedup_rank [condition="outcome=succeeded"]
@@ -354,8 +348,7 @@ digraph SecurityReview {
     dedup_rank -> panel_gate [condition="outcome=succeeded"]
     dedup_rank -> abort
     panel_gate -> panel [condition="context.run_panel=true"]
-    panel_gate -> tally [condition="context.run_panel=false"]
-    panel_gate -> abort
+    panel_gate -> tally
     panel -> panel_verifier [fidelity="truncate"]
     panel_verifier -> panel_join -> merge_panel
     merge_panel -> tally [condition="outcome=succeeded"]
@@ -364,11 +357,9 @@ digraph SecurityReview {
     tally -> effort_gate [condition="outcome=succeeded"]
     tally -> abort
     effort_gate -> repanel_gate [condition="context.max_effort=true"]
-    effort_gate -> final_tally [condition="context.max_effort=false"]
-    effort_gate -> abort
+    effort_gate -> final_tally
     repanel_gate -> repanel [condition="context.run_repanel=true"]
-    repanel_gate -> adversarial_plan [condition="context.run_repanel=false"]
-    repanel_gate -> abort
+    repanel_gate -> adversarial_plan
     repanel -> repanel_verifier [fidelity="truncate"]
     repanel_verifier -> repanel_join -> merge_repanel
     merge_repanel -> adversarial_plan [condition="outcome=succeeded"]
@@ -377,8 +368,7 @@ digraph SecurityReview {
     adversarial_plan -> redteam_gate [condition="outcome=succeeded"]
     adversarial_plan -> abort
     redteam_gate -> redteam [condition="context.run_redteam=true"]
-    redteam_gate -> final_tally [condition="context.run_redteam=false"]
-    redteam_gate -> abort
+    redteam_gate -> final_tally
     redteam -> redteam_verifier [fidelity="truncate"]
     redteam_verifier -> redteam_join -> merge_redteam
     merge_redteam -> final_tally [condition="outcome=succeeded"]
@@ -390,5 +380,4 @@ digraph SecurityReview {
     report_author -> abort
     render_report -> exit [condition="outcome=succeeded"]
     render_report -> abort
-    abort -> exit
 }

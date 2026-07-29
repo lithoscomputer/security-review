@@ -436,8 +436,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertIn(f"merge_{phase} [", graph)
         self.assertIn(
-            'target_gate -> inventory '
-            '[condition="context.empty_target=false && context.use_inventory=true"]',
+            'target_gate -> inventory [condition="context.use_inventory=true"]',
             graph,
         )
         self.assertIn(
@@ -450,6 +449,27 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             text = prompt.read_text(encoding="utf-8")
             self.assertNotIn("result_path", text)
             self.assertNotIn("write the exact JSON", text.lower())
+
+    def test_routing_fails_fast_and_uses_decision_defaults(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("goal_gate=true", graph)
+        self.assertNotIn("abort ->", graph)
+        for gate, conditional_target, default_target in (
+            ("target_gate", "inventory", "plan_matrix"),
+            ("inventory_gate", "inventory", "plan_matrix"),
+            ("threat_gate", "threat_models", "research_gate"),
+            ("research_gate", "research", "sweep_gate"),
+            ("sweep_gate", "sweep", "dedup_rank"),
+            ("panel_gate", "panel", "tally"),
+            ("effort_gate", "repanel_gate", "final_tally"),
+            ("repanel_gate", "repanel", "adversarial_plan"),
+            ("redteam_gate", "redteam", "final_tally"),
+        ):
+            self.assertRegex(
+                graph,
+                rf"{gate} -> {conditional_target} \[condition=",
+            )
+            self.assertIn(f"    {gate} -> {default_target}\n", graph)
 
     def test_phase_barriers_use_fabro_native_agent_retries(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
