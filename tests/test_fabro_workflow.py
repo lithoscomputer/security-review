@@ -673,6 +673,24 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("\n        max_retries=0", graph)
         self.assertRegex(graph, r"(?s)report_author \[[^\]]*max_retries=2")
 
+    def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
+        for name in (
+            "threat-model.md",
+            "research.md",
+            "sweep.md",
+            "verify.md",
+            "redteam.md",
+        ):
+            text = (WORKFLOW_ROOT / "prompts" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("`spawn_agent`", text, name)
+            self.assertNotIn("spawn subagents", text, name)
+        inventory = (WORKFLOW_ROOT / "prompts/inventory.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("spawn_agent", inventory)
+
     def test_artifacts_export_only_final_bundle(self) -> None:
         config = (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
         for artifact in (
@@ -777,6 +795,46 @@ class ToolGuardTest(unittest.TestCase):
                         "file_path": (self.root / "src/app.py").as_posix(),
                         "content": "changed",
                     },
+                }
+            )
+
+    def test_explore_capable_nodes_may_spawn_read_only_helpers(self) -> None:
+        GUARD.handle(
+            {
+                "node_id": "researcher",
+                "tool_name": "spawn_agent",
+                "tool_input": {"task": "map every caller of run()"},
+            }
+        )
+        GUARD.handle(
+            {
+                "node_id": "panel_verifier",
+                "tool_name": "wait",
+                "tool_input": {"agent_id": "abc123"},
+            }
+        )
+        with self.assertRaises(GUARD.GuardError):
+            GUARD.handle(
+                {
+                    "node_id": "researcher",
+                    "tool_name": "spawn_agent",
+                    "tool_input": {"task": "   "},
+                }
+            )
+        with self.assertRaises(GUARD.GuardError):
+            GUARD.handle(
+                {
+                    "node_id": "inventory",
+                    "tool_name": "spawn_agent",
+                    "tool_input": {"task": "map the tree"},
+                }
+            )
+        with self.assertRaises(GUARD.GuardError):
+            GUARD.handle(
+                {
+                    "node_id": "report_author",
+                    "tool_name": "spawn_agent",
+                    "tool_input": {"task": "summarize the findings"},
                 }
             )
 

@@ -41,7 +41,21 @@ TOOL_ALIASES = {
     "Read": "read_file",
     "Write": "write_file",
     "shell_command": "shell",
+    "Agent": "background_agent",
+    "TaskOutput": "agent_output",
+    "TaskStop": "stop_agent",
+    "SendMessage": "message_agent",
 }
+SUBAGENT_SPAWN_TOOLS = {"spawn_agent", "background_agent"}
+SUBAGENT_CONTROL_TOOLS = {
+    "send_input",
+    "wait",
+    "close_agent",
+    "agent_output",
+    "stop_agent",
+    "message_agent",
+}
+SUBAGENT_TOOLS = SUBAGENT_SPAWN_TOOLS | SUBAGENT_CONTROL_TOOLS
 SHELL_META_RE = re.compile(r"[\n\r;&|><`]|[$][(]")
 RG_FLAG_OPTIONS = {
     "--case-sensitive",
@@ -231,6 +245,20 @@ def allow_report_write(tool_name: str, tool_input: Mapping[str, Any]) -> None:
         raise GuardError("report content is missing")
 
 
+def allow_subagent(tool_name: str, tool_input: Mapping[str, Any]) -> None:
+    """Read-only explore helpers for research and verification nodes.
+
+    Child sessions fall under this same guard only on Fabro builds that
+    propagate tool hooks to subagent sessions (fabro-sh/fabro#681). On older
+    builds a child runs unguarded, behind only its task instructions and the
+    publication-gate workspace digest — an accepted interim state.
+    """
+    if tool_name in SUBAGENT_SPAWN_TOOLS:
+        task = tool_input.get("task", tool_input.get("prompt"))
+        if not isinstance(task, str) or not task.strip():
+            raise GuardError("subagent task is missing")
+
+
 def allow_git_wrapper(command: Any) -> None:
     if not isinstance(command, str) or not command:
         raise GuardError("shell command is missing")
@@ -365,9 +393,13 @@ def handle(context: Mapping[str, Any]) -> None:
             if node_id in GIT_NODES:
                 allow_git_wrapper(command)
                 return
+        if tool_name in SUBAGENT_TOOLS and node_id in GIT_NODES:
+            allow_subagent(tool_name, tool_input)
+            return
         raise GuardError(
             "scan agents are read-only and may use only repository reads, "
-            "searches, and the restricted Git wrapper"
+            "searches, the restricted Git wrapper, and read-only explore "
+            "subagents"
         )
 
     if node_id == REPORT_NODE:
