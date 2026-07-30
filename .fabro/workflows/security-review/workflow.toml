@@ -48,7 +48,9 @@ exclude_globs = [
 
 [run.artifacts]
 include = [
+  ".fabro/workflows/security-review/runtime/**",
   "CLAUDE-SECURITY-*/.gitignore",
+  "CLAUDE-SECURITY-*/.claude-security-run/**",
   "CLAUDE-SECURITY-*/scan-manifest.json",
   "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
   "CLAUDE-SECURITY-*/findings.json",

@@ -1324,23 +1324,34 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         )
         self.assertNotIn("read-only explorer", inventory)
 
-    def test_artifacts_export_only_final_bundle(self) -> None:
-        config = (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
-        for artifact in (
-            "CLAUDE-SECURITY-*/.gitignore",
-            "CLAUDE-SECURITY-*/scan-manifest.json",
-            "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
-            "CLAUDE-SECURITY-*/findings.json",
-            "CLAUDE-SECURITY-*/coverage.json",
-            "CLAUDE-SECURITY-*/panel-votes.jsonl",
-            "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
-            "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
-            "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
-        ):
-            self.assertIn(artifact, config)
-        self.assertNotIn(".claude-security-run/**", config)
-        self.assertNotIn("reports/**", config)
-        self.assertNotIn("SARIF", config.upper())
+    def test_artifacts_capture_all_workflow_output_paths(self) -> None:
+        artifact_sections = {}
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            artifact_sections[config_name] = config.split(
+                "[run.artifacts]\n",
+                1,
+            )[1].split("\n[", 1)[0]
+            for artifact in (
+                ".fabro/workflows/security-review/runtime/**",
+                "CLAUDE-SECURITY-*/.gitignore",
+                "CLAUDE-SECURITY-*/.claude-security-run/**",
+                "CLAUDE-SECURITY-*/scan-manifest.json",
+                "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
+                "CLAUDE-SECURITY-*/findings.json",
+                "CLAUDE-SECURITY-*/coverage.json",
+                "CLAUDE-SECURITY-*/panel-votes.jsonl",
+                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
+                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
+                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
+            ):
+                self.assertIn(artifact, artifact_sections[config_name])
+            self.assertNotIn("reports/**", artifact_sections[config_name])
+            self.assertNotIn("SARIF", artifact_sections[config_name].upper())
+        self.assertEqual(
+            artifact_sections["workflow.toml"],
+            artifact_sections["verify.toml"],
+        )
 
     def test_canonical_bundle_schemas_are_versioned_contracts(self) -> None:
         expected = {
