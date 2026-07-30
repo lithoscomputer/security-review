@@ -1,0 +1,2911 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A responsive example security assessment report."
+		/>
+		<title>Acme Portal — Security Assessment</title>
+		<style>
+:root {
+	--ink: #18181b;
+	--ink-soft: #3f3f46;
+	--muted: #71717a;
+	--line: #d4d4d8;
+	--line-strong: #a1a1aa;
+	--paper: #ffffff;
+	--canvas: #fafafa;
+	--surface: #f4f4f5;
+	--accent: #b42343;
+	--accent-dark: #861a33;
+	--accent-soft: #f8e7eb;
+	--high: #b42343;
+	--high-soft: #f7dce2;
+	--medium: #b45309;
+	--medium-soft: #f8e7cf;
+	--low: #047857;
+	--low-soft: #d7eee6;
+	--informational: #2563a6;
+	--informational-soft: #dceafb;
+	--undetermined: #64748b;
+	--undetermined-soft: #e6eaf0;
+	--difficulty-low: #b42343;
+	--difficulty-low-soft: #f7dce2;
+	--difficulty-medium: #b45309;
+	--difficulty-medium-soft: #f8e7cf;
+	--difficulty-high: #047857;
+	--difficulty-high-soft: #d7eee6;
+	--difficulty-undetermined: #64748b;
+	--difficulty-undetermined-soft: #e6eaf0;
+	--container: 70rem;
+	--reading-width: 68ch;
+	--font-sans:
+		"InterVariable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+		sans-serif;
+	--font-mono:
+		"SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	margin: 0;
+	background: var(--canvas);
+	color: var(--ink);
+	font-family: var(--font-sans);
+	font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+	font-size: 1rem;
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select {
+	font: inherit;
+}
+
+button,
+a,
+input,
+select {
+	-webkit-tap-highlight-color: transparent;
+}
+
+a {
+	color: inherit;
+}
+
+button {
+	cursor: pointer;
+}
+
+code,
+pre {
+	font-family: var(--font-mono);
+}
+
+::selection {
+	background: var(--accent-soft);
+	color: var(--accent-dark);
+}
+
+:focus-visible {
+	outline: 3px solid rgb(180 35 67 / 0.28);
+	outline-offset: 3px;
+}
+
+.page-container {
+	width: min(calc(100% - 3rem), var(--container));
+	margin-inline: auto;
+}
+
+.skip-link {
+	position: fixed;
+	z-index: 100;
+	top: 0.75rem;
+	left: 0.75rem;
+	padding: 0.75rem 1rem;
+	background: var(--ink);
+	color: white;
+	font-weight: 650;
+	text-decoration: none;
+	transform: translateY(-160%);
+}
+
+.skip-link:focus {
+	transform: translateY(0);
+}
+
+.report {
+	isolation: isolate;
+}
+
+.report-hero {
+	padding: 2.5rem 0 2.75rem;
+	background: var(--paper);
+}
+
+.report-hero__topline {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.report-hero__topline > p:last-child {
+	margin: 0;
+	color: var(--muted);
+	font-size: 0.75rem;
+}
+
+.eyebrow {
+	margin: 0;
+	color: var(--accent);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.report-hero h1 {
+	max-width: 24ch;
+	margin: 0.65rem 0 0;
+	font-size: clamp(2.25rem, 5vw, 3.5rem);
+	font-weight: 620;
+	letter-spacing: -0.045em;
+	line-height: 1.05;
+	text-wrap: balance;
+}
+
+.report-hero__summary {
+	max-width: 64ch;
+	margin: 0.75rem 0 0;
+	color: var(--ink-soft);
+	font-size: 1rem;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.scan-identity {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0;
+	max-width: 58rem;
+	padding: 1rem 0 0;
+	margin: 1.5rem 0 0;
+	border-top: 1px solid var(--line);
+}
+
+.scan-identity div {
+	display: grid;
+	gap: 0.25rem;
+	padding-inline: 1.25rem;
+	border-left: 1px solid var(--line);
+}
+
+.scan-identity div:first-child {
+	padding-left: 0;
+	border-left: 0;
+}
+
+.scan-identity dt,
+.scan-identity dd {
+	margin: 0;
+}
+
+.scan-identity dt {
+	color: var(--muted);
+	font-size: 0.75rem;
+}
+
+.scan-identity dd {
+	font-size: 0.9375rem;
+	font-weight: 620;
+}
+
+.scan-identity code {
+	font-size: 0.85em;
+}
+
+.report-section {
+	padding: 5.5rem 0 6rem;
+	border-top: 1px solid var(--line);
+	background: var(--paper);
+}
+
+.report-section--muted {
+	background: var(--surface);
+}
+
+.section-heading {
+	display: grid;
+	gap: 0.7rem;
+	max-width: var(--reading-width);
+}
+
+.section-heading h2 {
+	max-width: 22ch;
+	margin: 0;
+	font-size: clamp(2rem, 5vw, 3.25rem);
+	font-weight: 620;
+	letter-spacing: -0.04em;
+	text-wrap: balance;
+}
+
+.section-heading > p:last-child {
+	max-width: var(--reading-width);
+	margin: 0.35rem 0 0;
+	color: var(--ink-soft);
+	font-size: 1.0625rem;
+	line-height: 1.75;
+	text-wrap: pretty;
+}
+
+.subsection-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 0.9rem;
+	border-bottom: 2px solid var(--ink);
+}
+
+.subsection-heading h3 {
+	margin: 0;
+	font-size: 1.125rem;
+	font-weight: 650;
+}
+
+.count-label {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.overview-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 5rem;
+	padding-top: 3rem;
+}
+
+.overview-column {
+	min-width: 0;
+}
+
+.distribution-list,
+.category-list {
+	display: grid;
+	gap: 0;
+}
+
+.distribution-row,
+.category-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 0.55rem 1rem;
+	align-items: center;
+	padding: 0.9rem 0;
+	border-bottom: 1px solid var(--line);
+}
+
+.distribution-row__label,
+.category-row__label {
+	display: flex;
+	align-items: center;
+	gap: 0.65rem;
+	font-size: 0.9375rem;
+	font-weight: 590;
+}
+
+.distribution-row__swatch {
+	width: 0.65rem;
+	aspect-ratio: 1;
+	background: var(--tone);
+}
+
+.distribution-row__count,
+.category-row__count {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.distribution-row__track,
+.category-row__track {
+	grid-column: 1 / -1;
+	height: 0.35rem;
+	overflow: hidden;
+	background: #e4e4e7;
+}
+
+.distribution-row__fill,
+.category-row__fill {
+	display: block;
+	width: var(--bar-width);
+	height: 100%;
+	background: var(--tone, #8a94a3);
+}
+
+.scan-facts {
+	display: grid;
+	grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+	padding: 1.5rem 0;
+	margin: 3rem 0 0;
+	border-top: 1px solid var(--line-strong);
+	border-bottom: 1px solid var(--line-strong);
+}
+
+.scan-facts div {
+	display: grid;
+	gap: 0.3rem;
+	padding-inline: 1.25rem;
+	border-left: 1px solid var(--line);
+}
+
+.scan-facts div:first-child {
+	padding-left: 0;
+	border-left: 0;
+}
+
+.scan-facts dt,
+.scan-facts dd {
+	margin: 0;
+}
+
+.scan-facts dt {
+	color: var(--muted);
+	font-size: 0.75rem;
+}
+
+.scan-facts dd {
+	overflow-wrap: anywhere;
+	font-size: 0.9375rem;
+	font-weight: 620;
+}
+
+.scan-facts code {
+	font-size: 0.82em;
+}
+
+.coverage-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 5rem;
+	padding-top: 3rem;
+}
+
+.coverage-list {
+	display: grid;
+}
+
+.coverage-item {
+	display: grid;
+	gap: 0.45rem;
+	padding: 1rem 0;
+	border-bottom: 1px solid var(--line);
+}
+
+.coverage-item h4 {
+	margin: 0;
+	font-size: 0.975rem;
+	font-weight: 650;
+}
+
+.coverage-item__paths {
+	margin: 0;
+	color: var(--ink-soft);
+	font-family: var(--font-mono);
+	font-size: 0.775rem;
+	line-height: 1.65;
+	overflow-wrap: anywhere;
+}
+
+.coverage-item__reason {
+	max-width: 60ch;
+	margin: 0;
+	color: var(--muted);
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.coverage-note {
+	max-width: var(--reading-width);
+	padding: 1rem 1.1rem;
+	margin: 2.5rem 0 0;
+	border-left: 0.25rem solid var(--low);
+	background: var(--paper);
+	color: var(--ink-soft);
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.finding-filters {
+	display: grid;
+	grid-template-columns: minmax(15rem, 1.6fr) repeat(2, minmax(9rem, 0.7fr)) auto;
+	gap: 0.85rem;
+	align-items: end;
+	padding-top: 2.75rem;
+}
+
+.finding-filters label {
+	display: grid;
+	gap: 0.4rem;
+}
+
+.finding-filters label span {
+	color: var(--muted);
+	font-size: 0.75rem;
+	font-weight: 620;
+}
+
+.finding-filters input,
+.finding-filters select {
+	width: 100%;
+	min-height: 2.75rem;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid var(--line-strong);
+	border-radius: 0.2rem;
+	background: var(--paper);
+	color: var(--ink);
+	font-size: 0.9375rem;
+}
+
+.finding-filters input:focus,
+.finding-filters select:focus {
+	border-color: var(--accent);
+	outline: 3px solid rgb(180 35 67 / 0.14);
+}
+
+.text-button {
+	min-height: 2.75rem;
+	padding: 0.6rem 0.8rem;
+	border: 0;
+	background: transparent;
+	color: var(--accent);
+	font-size: 0.875rem;
+	font-weight: 650;
+}
+
+.text-button:hover {
+	color: var(--accent-dark);
+	text-decoration: underline;
+	text-underline-offset: 0.2rem;
+}
+
+.filter-result {
+	min-height: 1.5rem;
+	margin: 0.75rem 0 0;
+	color: var(--muted);
+	font-size: 0.8125rem;
+}
+
+.table-scroll {
+	width: 100%;
+	overflow-x: auto;
+	white-space: nowrap;
+}
+
+.table-scroll__inner {
+	display: inline-block;
+	min-width: 100%;
+	vertical-align: middle;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	text-align: left;
+}
+
+th {
+	padding: 0.75rem 0.8rem;
+	border-bottom: 2px solid var(--ink);
+	color: var(--ink-soft);
+	font-size: 0.75rem;
+	font-weight: 680;
+	white-space: nowrap;
+}
+
+td {
+	padding: 0.85rem 0.8rem;
+	border-bottom: 1px solid var(--line);
+	font-size: 0.875rem;
+	vertical-align: top;
+	white-space: normal;
+}
+
+.findings-table {
+	min-width: 54rem;
+}
+
+.findings-table th:first-child,
+.findings-table td:first-child {
+	width: 5rem;
+	padding-left: 0;
+}
+
+.findings-table th:nth-child(2),
+.findings-table td:nth-child(2) {
+	width: 43%;
+}
+
+.findings-table th:nth-child(4),
+.findings-table td:nth-child(4),
+.findings-table th:nth-child(5),
+.findings-table td:nth-child(5) {
+	width: 8rem;
+}
+
+.findings-table tbody tr[data-hidden="true"] {
+	display: none;
+}
+
+.finding-id-cell {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	font-weight: 650;
+}
+
+.finding-title-link {
+	color: var(--accent);
+	font-weight: 620;
+	line-height: 1.5;
+	text-decoration: none;
+}
+
+.finding-title-link:hover {
+	color: var(--accent-dark);
+	text-decoration: underline;
+	text-underline-offset: 0.2rem;
+}
+
+.finding-category-cell {
+	color: var(--ink-soft);
+	line-height: 1.5;
+}
+
+.rating-cell {
+	position: relative;
+	background: var(--tone-soft);
+	font-weight: 650;
+}
+
+.rating-cell::before {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 0.25rem;
+	background: var(--tone);
+	content: "";
+}
+
+.report-section--details {
+	background: var(--canvas);
+}
+
+.finding-list {
+	display: grid;
+	gap: 6rem;
+	padding-top: 4rem;
+}
+
+.finding {
+	--finding-tone: var(--undetermined);
+	--finding-tone-soft: var(--undetermined-soft);
+	padding-top: 1.75rem;
+	border-top: 0.35rem solid var(--finding-tone);
+	scroll-margin-top: 2rem;
+}
+
+.finding__header {
+	display: grid;
+	gap: 1rem;
+	max-width: 58rem;
+}
+
+.finding__index {
+	margin: 0;
+	color: var(--finding-tone);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+}
+
+.finding__title {
+	max-width: 26ch;
+	margin: 0;
+	font-size: clamp(1.75rem, 4vw, 2.7rem);
+	font-weight: 620;
+	letter-spacing: -0.035em;
+	line-height: 1.1;
+	text-wrap: balance;
+}
+
+.finding__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.55rem;
+	margin: 0;
+}
+
+.finding__meta div {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	padding: 0.4rem 0.65rem;
+	border: 1px solid var(--line);
+	background: var(--paper);
+}
+
+.finding__meta div[data-rating] {
+	border-color: transparent;
+	background: var(--tone-soft);
+	box-shadow: inset 0.2rem 0 var(--tone);
+}
+
+.finding__meta dt,
+.finding__meta dd {
+	margin: 0;
+	font-size: 0.8rem;
+}
+
+.finding__meta dt {
+	color: var(--muted);
+}
+
+.finding__meta dd {
+	font-weight: 650;
+}
+
+.finding__location {
+	max-width: 58rem;
+	padding: 0.85rem 0;
+	margin: 0.5rem 0 0;
+	border-top: 1px solid var(--line);
+	border-bottom: 1px solid var(--line);
+	color: var(--ink-soft);
+	font-size: 0.875rem;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
+.finding__location strong {
+	color: var(--ink);
+	font-weight: 650;
+}
+
+.finding__location code {
+	font-size: 0.9em;
+}
+
+.finding__body {
+	display: grid;
+	gap: 2.25rem;
+	max-width: 74ch;
+	padding-top: 2rem;
+}
+
+.finding-block {
+	display: grid;
+	gap: 0.7rem;
+}
+
+.finding-block h4 {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 680;
+}
+
+.finding-block p,
+.finding-block li {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 1rem;
+	line-height: 1.75;
+	text-wrap: pretty;
+}
+
+.finding-block p + p {
+	margin-top: 0.65rem;
+}
+
+.finding-block ul,
+.finding-block ol {
+	display: grid;
+	gap: 0.7rem;
+	padding-left: 1.25rem;
+	margin: 0;
+}
+
+.finding-block li::marker {
+	color: var(--finding-tone);
+	font-weight: 700;
+}
+
+.finding-impact {
+	padding: 1.1rem 1.2rem;
+	border-left: 0.3rem solid var(--finding-tone);
+	background: var(--finding-tone-soft);
+}
+
+.finding-impact h4 {
+	margin: 0 0 0.4rem;
+	font-size: 0.875rem;
+	font-weight: 700;
+}
+
+.finding-impact p {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 1rem;
+	line-height: 1.7;
+	text-wrap: pretty;
+}
+
+.code-frame {
+	width: min(100%, 56rem);
+	overflow: hidden;
+	border: 1px solid var(--line);
+	background: #f7f7f8;
+}
+
+.code-frame__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.65rem 0.8rem;
+	border-bottom: 1px solid var(--line);
+	background: #eceef1;
+	color: #52525b;
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+}
+
+.code-frame pre {
+	margin: 0;
+	padding: 0.7rem 0;
+	overflow-x: auto;
+	font-size: 0.78rem;
+	line-height: 1.65;
+}
+
+.code-line {
+	display: grid;
+	grid-template-columns: 3.25rem minmax(max-content, 1fr);
+	min-height: 1.3rem;
+	padding-right: 0.8rem;
+}
+
+.code-line__number {
+	padding-right: 0.85rem;
+	color: #9a9aa2;
+	text-align: right;
+	user-select: none;
+}
+
+.code-line__text {
+	white-space: pre;
+}
+
+.code-line.is-highlighted {
+	background: var(--finding-tone-soft);
+	box-shadow: inset 0.22rem 0 var(--finding-tone);
+}
+
+.code-line.is-highlighted .code-line__number {
+	color: var(--finding-tone);
+	font-weight: 700;
+}
+
+.reference-section {
+	padding-top: 3rem;
+}
+
+.taxonomy-table {
+	min-width: 48rem;
+}
+
+.taxonomy-table th:first-child,
+.taxonomy-table td:first-child {
+	width: 13rem;
+	padding-left: 0;
+}
+
+.taxonomy-table td:first-child {
+	font-weight: 650;
+}
+
+.taxonomy-table td {
+	line-height: 1.55;
+}
+
+.rating-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 5rem;
+	padding-top: 4rem;
+}
+
+.rating-list {
+	display: grid;
+}
+
+.rating-definition {
+	position: relative;
+	display: grid;
+	grid-template-columns: 7.5rem 1fr;
+	gap: 1rem;
+	padding: 1rem 0 1rem 1rem;
+	border-bottom: 1px solid var(--line);
+}
+
+.rating-definition::before {
+	position: absolute;
+	inset: 1rem auto 1rem 0;
+	width: 0.25rem;
+	background: var(--tone);
+	content: "";
+}
+
+.rating-definition strong {
+	font-size: 0.9rem;
+}
+
+.rating-definition p {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.site-footer {
+	border-top: 1px solid var(--line);
+	background: var(--paper);
+}
+
+.site-footer .page-container {
+	display: flex;
+	min-height: 5rem;
+	align-items: center;
+	justify-content: space-between;
+	gap: 2rem;
+	color: var(--muted);
+	font-size: 0.8125rem;
+}
+
+.noscript-message {
+	position: fixed;
+	z-index: 90;
+	right: 1rem;
+	bottom: 1rem;
+	left: 1rem;
+	padding: 1rem;
+	background: var(--high);
+	color: white;
+	text-align: center;
+}
+
+.tone--high {
+	--tone: var(--high);
+	--tone-soft: var(--high-soft);
+}
+
+.tone--medium {
+	--tone: var(--medium);
+	--tone-soft: var(--medium-soft);
+}
+
+.tone--low {
+	--tone: var(--low);
+	--tone-soft: var(--low-soft);
+}
+
+.tone--informational {
+	--tone: var(--informational);
+	--tone-soft: var(--informational-soft);
+}
+
+.tone--undetermined {
+	--tone: var(--undetermined);
+	--tone-soft: var(--undetermined-soft);
+}
+
+.difficulty-tone--low {
+	--tone: var(--difficulty-low);
+	--tone-soft: var(--difficulty-low-soft);
+}
+
+.difficulty-tone--medium {
+	--tone: var(--difficulty-medium);
+	--tone-soft: var(--difficulty-medium-soft);
+}
+
+.difficulty-tone--high {
+	--tone: var(--difficulty-high);
+	--tone-soft: var(--difficulty-high-soft);
+}
+
+.difficulty-tone--undetermined {
+	--tone: var(--difficulty-undetermined);
+	--tone-soft: var(--difficulty-undetermined-soft);
+}
+
+@media (max-width: 860px) {
+	.page-container {
+		width: min(calc(100% - 2rem), var(--container));
+	}
+
+	.report-hero {
+		padding: 2.25rem 0 2.5rem;
+	}
+
+	.report-hero h1 {
+		font-size: clamp(2.25rem, 8vw, 3rem);
+	}
+
+	.scan-identity {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.scan-identity div {
+		padding: 0.75rem 1rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.scan-identity div:nth-child(-n + 2) {
+		border-top: 0;
+	}
+
+	.scan-identity div:nth-child(odd) {
+		padding-left: 0;
+		border-left: 0;
+	}
+
+	.report-section {
+		padding: 4.25rem 0 4.75rem;
+	}
+
+	.overview-grid,
+	.coverage-grid,
+	.rating-grid {
+		grid-template-columns: 1fr;
+		gap: 3.5rem;
+	}
+
+	.scan-facts {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.scan-facts div {
+		padding: 0.8rem 1rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.scan-facts div:nth-child(-n + 2) {
+		border-top: 0;
+	}
+
+	.scan-facts div:nth-child(odd) {
+		padding-left: 0;
+		border-left: 0;
+	}
+
+	.finding-filters {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.finding-filters__search {
+		grid-column: 1 / -1;
+	}
+
+	.finding-filters .text-button {
+		justify-self: start;
+	}
+}
+
+@media (max-width: 560px) {
+	.report-hero h1 {
+		font-size: 2.25rem;
+	}
+
+	.report-hero__summary,
+	.section-heading > p:last-child {
+		font-size: 1rem;
+	}
+
+	.scan-facts {
+		grid-template-columns: 1fr;
+	}
+
+	.scan-facts div:nth-child(n) {
+		padding: 0.75rem 0;
+		border-top: 1px solid var(--line);
+		border-left: 0;
+	}
+
+	.scan-facts div:first-child {
+		border-top: 0;
+	}
+
+	.finding-filters {
+		grid-template-columns: 1fr;
+	}
+
+	.finding-filters__search {
+		grid-column: 1;
+	}
+
+	.finding-filters input,
+	.finding-filters select,
+	.text-button {
+		min-height: 3rem;
+		font-size: 1rem;
+	}
+
+	.table-scroll {
+		width: calc(100% + 2rem);
+		margin-inline: -1rem;
+	}
+
+	.table-scroll__inner {
+		padding-inline: 1rem;
+	}
+
+	.finding-list {
+		gap: 5rem;
+	}
+
+	.finding__title {
+		font-size: 2rem;
+	}
+
+	.finding__meta {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.finding__meta div {
+		display: grid;
+		gap: 0.15rem;
+	}
+
+	.code-frame {
+		width: calc(100% + 2rem);
+		margin-inline: -1rem;
+		border-inline: 0;
+	}
+
+	.code-frame pre {
+		font-size: 0.75rem;
+	}
+
+	.rating-definition {
+		grid-template-columns: 1fr;
+		gap: 0.35rem;
+	}
+
+	.site-footer .page-container {
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: center;
+		gap: 0.25rem;
+	}
+}
+
+@media print {
+	@page {
+		size: Letter;
+		margin: 0.6in;
+	}
+
+	body {
+		background: white;
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+	}
+
+	.page-container {
+		width: 100%;
+	}
+
+	.site-footer,
+	.finding-filters,
+	.filter-result {
+		display: none;
+	}
+
+	.report-hero,
+	.report-section,
+	.report-section--muted,
+	.report-section--details {
+		padding: 0.35in 0;
+		border-top: 1px solid var(--line);
+		background: white;
+	}
+
+	.report-hero {
+		padding-top: 0;
+		border-top: 0;
+	}
+
+	.report-hero h1 {
+		font-size: 34pt;
+	}
+
+	.overview-grid,
+	.coverage-grid,
+	.rating-grid {
+		gap: 0.35in;
+	}
+
+	.finding {
+		break-before: page;
+		page-break-before: always;
+	}
+
+	.finding__body {
+		max-width: 72ch;
+	}
+
+	.findings-table tbody tr[data-hidden="true"] {
+		display: table-row;
+	}
+
+	.table-scroll,
+	.table-scroll__inner {
+		display: block;
+		width: 100%;
+		padding: 0;
+		margin: 0;
+		overflow: visible;
+		white-space: normal;
+	}
+
+	.findings-table,
+	.taxonomy-table {
+		min-width: 0;
+	}
+
+	a {
+		color: inherit;
+		text-decoration: none;
+	}
+}
+
+		</style>
+	</head>
+	<body>
+		<a class="skip-link" href="#report-content">Skip to report</a>
+
+		<main class="report" id="report-content">
+			<section class="report-hero">
+				<div class="page-container">
+					<div class="report-hero__topline">
+						<p class="eyebrow">Security assessment</p>
+						<p>Sample data · Confidential</p>
+					</div>
+					<h1>Acme Portal security assessment</h1>
+					<p class="report-hero__summary">
+						Source review of the application, worker runtime, command-line
+						client, and release automation.
+					</p>
+
+					<dl class="scan-identity" aria-label="Report identity">
+						<div>
+							<dt>Report date</dt>
+							<dd id="report-date">30 July 2026</dd>
+						</div>
+						<div>
+							<dt>Revision</dt>
+							<dd><code id="scan-revision">a6894bca75ce</code></dd>
+						</div>
+						<div>
+							<dt>Scan mode</dt>
+							<dd id="scan-mode">Whole repository</dd>
+						</div>
+						<div>
+							<dt>Effort</dt>
+							<dd id="scan-effort">Medium</dd>
+						</div>
+					</dl>
+				</div>
+			</section>
+
+			<section class="report-section" id="risk-overview">
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Findings overview</p>
+						<h2>Risk at a glance</h2>
+						<p>
+							The scan identified <span data-total-findings>12</span> findings.
+							Severity describes potential impact. Categories describe the security
+							control involved.
+						</p>
+					</header>
+
+					<div class="overview-grid">
+						<section class="overview-column" aria-labelledby="severity-heading">
+							<div class="subsection-heading">
+								<h3 id="severity-heading">Severity</h3>
+								<span class="count-label" data-total-findings>12</span>
+							</div>
+							<div class="distribution-list" id="severity-distribution"></div>
+						</section>
+
+						<section class="overview-column" aria-labelledby="category-heading">
+							<div class="subsection-heading">
+								<h3 id="category-heading">Categories</h3>
+								<span class="count-label">Finding count</span>
+							</div>
+							<div class="category-list" id="category-distribution"></div>
+						</section>
+					</div>
+				</div>
+			</section>
+
+			<section class="report-section report-section--muted" id="targets-and-coverage">
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Scan boundary</p>
+						<h2>Target and coverage</h2>
+						<p>
+							This section uses only target, inventory, and coverage fields produced
+							by the scan.
+						</p>
+					</header>
+
+					<dl class="scan-facts" id="scan-facts"></dl>
+
+					<div class="coverage-grid">
+						<section aria-labelledby="examined-heading">
+							<div class="subsection-heading">
+								<h3 id="examined-heading">Examined components</h3>
+								<span class="count-label" id="component-count"></span>
+							</div>
+							<div class="coverage-list" id="coverage-components"></div>
+						</section>
+
+						<section aria-labelledby="skipped-heading">
+							<div class="subsection-heading">
+								<h3 id="skipped-heading">Skipped components</h3>
+								<span class="count-label" id="skipped-count"></span>
+							</div>
+							<div class="coverage-list" id="coverage-skips"></div>
+						</section>
+					</div>
+
+					<p class="coverage-note" id="coverage-note"></p>
+				</div>
+			</section>
+
+			<section class="report-section" id="findings-summary">
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Prioritized index</p>
+						<h2>Findings</h2>
+						<p>
+							Select a finding to read its evidence and recommendations.
+						</p>
+					</header>
+
+					<form class="finding-filters" id="finding-filters">
+						<label class="finding-filters__search">
+							<span>Search</span>
+							<input
+								id="finding-search"
+								name="search"
+								type="search"
+								placeholder="Title, ID, category, or path"
+							/>
+						</label>
+						<label>
+							<span>Severity</span>
+							<select id="severity-filter" name="severity">
+								<option value="">All severities</option>
+							</select>
+						</label>
+						<label>
+							<span>Difficulty</span>
+							<select id="difficulty-filter" name="difficulty">
+								<option value="">All difficulties</option>
+							</select>
+						</label>
+						<button class="text-button" id="clear-filters" type="button">Reset</button>
+					</form>
+
+					<p class="filter-result" id="filter-result" aria-live="polite"></p>
+
+					<div class="table-scroll">
+						<div class="table-scroll__inner">
+							<table class="findings-table">
+								<thead>
+									<tr>
+										<th scope="col">ID</th>
+										<th scope="col">Finding</th>
+										<th scope="col">Category</th>
+										<th scope="col">Difficulty</th>
+										<th scope="col">Severity</th>
+									</tr>
+								</thead>
+								<tbody id="findings-table-body"></tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="report-section report-section--details" id="detailed-findings">
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Technical detail</p>
+						<h2>Detailed findings</h2>
+						<p>
+							Each finding records the observed code path, a concrete exploit
+							scenario, and the recommended change.
+						</p>
+					</header>
+
+					<div class="finding-list" id="finding-pages"></div>
+				</div>
+			</section>
+
+			<section class="report-section report-section--muted" id="rating-guide">
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Reference</p>
+						<h2>Categories and ratings</h2>
+						<p>
+							Severity measures impact. Difficulty estimates the access,
+							knowledge, and effort required for exploitation.
+						</p>
+					</header>
+
+					<section class="reference-section" aria-labelledby="category-reference-heading">
+						<div class="subsection-heading">
+							<h3 id="category-reference-heading">Vulnerability categories</h3>
+						</div>
+						<div class="table-scroll">
+							<div class="table-scroll__inner">
+								<table class="taxonomy-table">
+									<thead>
+										<tr>
+											<th scope="col">Category</th>
+											<th scope="col">Description</th>
+										</tr>
+									</thead>
+									<tbody id="category-definitions"></tbody>
+								</table>
+							</div>
+						</div>
+					</section>
+
+					<div class="rating-grid">
+						<section aria-labelledby="severity-reference-heading">
+							<div class="subsection-heading">
+								<h3 id="severity-reference-heading">Severity levels</h3>
+							</div>
+							<div class="rating-list" id="severity-definitions"></div>
+						</section>
+
+						<section aria-labelledby="difficulty-reference-heading">
+							<div class="subsection-heading">
+								<h3 id="difficulty-reference-heading">Difficulty levels</h3>
+							</div>
+							<div class="rating-list" id="difficulty-definitions"></div>
+						</section>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer class="site-footer">
+			<div class="page-container">
+				<span>Acme Portal security assessment</span>
+				<span>Sample report · 30 July 2026</span>
+			</div>
+		</footer>
+
+		<noscript>
+			<div class="noscript-message">
+				This sample report uses JavaScript to render its findings and coverage.
+			</div>
+		</noscript>
+
+		<script>
+window.securityReportData = Object.freeze({
+	report: {
+		project: "Acme Portal",
+		title: "Security Assessment",
+		version: "2026.07",
+		date: "30 July 2026",
+		classification: "Confidential",
+	},
+	scan: {
+		root: "/workspace/acme-portal",
+		revision: "a6894bca75ce",
+		mode: "whole-tree",
+		scope: [],
+		effort: "medium",
+		model: null,
+		generatedAt: "2026-07-30T17:42:18Z",
+	},
+	coverage: {
+		completeness: "checked",
+		researchersDispatched: 12,
+		researchersReturned: 12,
+		components: [
+			{
+				name: "Web application",
+				paths: ["app/routes", "app/services", "app/graphql"],
+			},
+			{
+				name: "Job execution",
+				paths: ["runner/src", "src/events", "src/storage"],
+			},
+			{
+				name: "Command-line client",
+				paths: ["cli/src"],
+			},
+			{
+				name: "Release automation",
+				paths: [".github/workflows", "deployment"],
+			},
+		],
+		skippedComponents: [
+			{
+				name: "Generated assets",
+				paths: ["public/build", "app/generated"],
+				reason:
+					"Generated output; reviewed through its source templates and build configuration.",
+			},
+			{
+				name: "Vendored fixtures",
+				paths: ["tests/fixtures/vendor"],
+				reason: "Third-party test data with no production execution path.",
+			},
+		],
+		unaccountedTopLevelDirs: [],
+	},
+	severityOrder: ["High", "Medium", "Low", "Informational", "Undetermined"],
+	difficultyOrder: ["Low", "Medium", "High", "Undetermined"],
+	severityDefinitions: [
+		{
+			name: "High",
+			description:
+				"Can cause broad compromise, bypass a core security control, or create serious harm across users or tenants.",
+		},
+		{
+			name: "Medium",
+			description:
+				"Can cause material harm, but practical limits reduce the affected scope, access, or attacker options.",
+		},
+		{
+			name: "Low",
+			description:
+				"Has limited direct impact or weakens defense in depth without creating a complete attack path by itself.",
+		},
+		{
+			name: "Informational",
+			description:
+				"Records a relevant security practice or design concern with no demonstrated, immediate exploit impact.",
+		},
+		{
+			name: "Undetermined",
+			description:
+				"Available evidence does not support a reliable impact rating. Additional testing or context is required.",
+		},
+	],
+	difficultyDefinitions: [
+		{
+			name: "Low",
+			description:
+				"Uses a common technique, public tooling, or a short script. It requires little specialized access or knowledge.",
+		},
+		{
+			name: "Medium",
+			description:
+				"Requires a custom exploit, product knowledge, favorable timing, or access that is not available to every user.",
+		},
+		{
+			name: "High",
+			description:
+				"Requires privileged access, detailed internal knowledge, a complex exploit chain, or narrow operating conditions.",
+		},
+		{
+			name: "Undetermined",
+			description:
+				"Available evidence does not support a reliable exploitability rating. Additional testing is required.",
+		},
+	],
+	categories: [
+		{
+			name: "Access Controls",
+			description:
+				"Authorization, ownership, and privilege boundaries that limit what an identity can read, change, or execute.",
+		},
+		{
+			name: "Auditing and Logging",
+			description:
+				"Security event records, traceability, log integrity, monitoring signals, and support for incident response.",
+		},
+		{
+			name: "Authentication",
+			description:
+				"Identity verification, credentials, account recovery, multi-factor controls, and login protections.",
+		},
+		{
+			name: "Configuration",
+			description:
+				"Security-sensitive defaults, deployment settings, dependency controls, and operational hardening.",
+		},
+		{
+			name: "Cryptography",
+			description:
+				"Encryption, hashing, random values, key handling, certificate validation, and protected transport.",
+		},
+		{
+			name: "Data Exposure",
+			description:
+				"Unintended disclosure through storage, logs, interfaces, metadata, temporary files, or error responses.",
+		},
+		{
+			name: "Data Validation",
+			description:
+				"Checks and transformations applied before untrusted data reaches commands, queries, files, URLs, or templates.",
+		},
+		{
+			name: "Denial of Service",
+			description:
+				"Conditions that can exhaust resources, block useful work, or reduce service availability.",
+		},
+		{
+			name: "Error Reporting",
+			description:
+				"Failure handling and messages that can expose internal details or prevent safe diagnosis.",
+		},
+		{
+			name: "Patching",
+			description:
+				"Processes that identify, prioritize, test, and deploy security updates for code and dependencies.",
+		},
+		{
+			name: "Session Management",
+			description:
+				"Session creation, storage, rotation, expiration, revocation, and binding to an authenticated identity.",
+		},
+		{
+			name: "Testing",
+			description:
+				"Automated and manual checks that prevent security regressions and verify important controls.",
+		},
+		{
+			name: "Timing",
+			description:
+				"Race conditions, time-of-check/time-of-use gaps, and observable timing differences.",
+		},
+		{
+			name: "Undefined Behavior",
+			description:
+				"Memory, language, or runtime behavior that can produce unsafe results outside intended program rules.",
+		},
+	],
+	findings: [
+		{
+			id: "F-001",
+			title: "Shell command injection in report export",
+			severity: "High",
+			difficulty: "Low",
+			type: "Data Validation",
+			target: "Report worker · cloud",
+			file: "src/reports/export.ts",
+			line: 118,
+			symbol: "renderReport",
+			summary:
+				"The report worker inserts a user-controlled filename into a shell command. Shell metacharacters can start a second command with the worker's privileges.",
+			description: [
+				"The export request accepts a display name from an authenticated workspace member. The worker escapes spaces but does not preserve the value as one command argument.",
+				"Because the worker starts a shell, characters such as semicolons and command substitutions retain their control meaning. The container limits the blast radius, but the process can read report inputs and its short-lived storage.",
+			],
+			impact:
+				"An attacker can execute commands in the report worker, read another queued export that shares the worker, and alter generated artifacts.",
+			exploitScenarios: [
+				"An editor names a report `quarterly; cp /work/input.json /work/public/leak.json` and starts an export.",
+				"The worker runs the injected copy command and publishes the copied input with the normal export artifacts.",
+			],
+			preconditions: [
+				"An authenticated member can create or rename a report.",
+				"The report reaches the asynchronous export worker.",
+			],
+			recommendations: [
+				"Call the renderer directly with a fixed executable and an argument array.",
+				"Generate server-side filenames and keep the display name outside filesystem paths.",
+				"Add a regression test with shell metacharacters and command substitutions.",
+			],
+			verification: "3/3 independent review lenses confirmed the data flow.",
+			cwe: "CWE-78 · OS Command Injection",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "src/reports/export.ts:114–121",
+				lines: [
+					{
+						number: 114,
+						text: 'const outputName = request.reportName.replaceAll(" ", "_");',
+					},
+					{
+						number: 115,
+						text: "const outputPath = `/work/output/$" + "{outputName}.pdf`;",
+					},
+					{ number: 116, text: "" },
+					{
+						number: 117,
+						text:
+							"const command = `render-report $" +
+							"{inputPath} -o $" +
+							"{outputPath}`;",
+					},
+					{
+						number: 118,
+						text: "await exec(command, { cwd: jobDirectory });",
+						highlight: true,
+					},
+					{ number: 119, text: "" },
+					{ number: 120, text: "return publishArtifact(outputPath);" },
+				],
+			},
+		},
+		{
+			id: "F-002",
+			title: "Cross-tenant artifact overwrite through event replay",
+			severity: "High",
+			difficulty: "High",
+			type: "Access Controls",
+			target: "Artifact processor · runner",
+			file: "src/events/artifact_created.rs",
+			line: 87,
+			symbol: "handle_artifact_created",
+			summary:
+				"The artifact processor trusts tenant and storage identifiers from a signed but replayable internal event. It does not bind the destination to the originating build.",
+			description: [
+				"Internal events are authenticated at the queue boundary. The handler then treats every field as authorized and builds the destination key from the event tenant identifier.",
+				"A caller with access to one worker signing key can replay a valid event while changing fields that are outside the signature scope. The storage write can then replace an artifact owned by another tenant.",
+			],
+			impact:
+				"A compromised worker can replace downloadable build output across a tenant boundary and create a software supply-chain path.",
+			exploitScenarios: [
+				"An attacker extracts a worker event key, captures a valid artifact event, and changes the tenant and object key fields.",
+				"The processor accepts the replay and writes attacker-controlled bytes over a release artifact in another workspace.",
+			],
+			preconditions: [
+				"Access to an internal worker event key or a compromised worker.",
+				"Knowledge of a target tenant and artifact object key.",
+			],
+			recommendations: [
+				"Sign the complete event envelope and reject duplicate event identifiers.",
+				"Resolve tenant ownership from the build record instead of the event payload.",
+				"Use conditional storage writes and immutable release artifact versions.",
+			],
+			verification:
+				"3/3 review lenses confirmed the ownership gap; replay was reproduced locally.",
+			cwe: "CWE-862 · Missing Authorization",
+			confidence: "High",
+			code: {
+				language: "Rust",
+				label: "src/events/artifact_created.rs:82–91",
+				lines: [
+					{
+						number: 82,
+						text: "verify_event_signature(&event.signature, &event.payload)?;",
+					},
+					{ number: 83, text: "" },
+					{ number: 84, text: "let destination = format!(" },
+					{
+						number: 85,
+						text: '    "tenants/{}/artifacts/{}", event.tenant_id, event.object_key',
+					},
+					{ number: 86, text: ");" },
+					{
+						number: 87,
+						text: "store.put(&destination, event.bytes).await?;",
+						highlight: true,
+					},
+					{ number: 88, text: "mark_complete(event.build_id).await?;" },
+				],
+			},
+		},
+		{
+			id: "F-003",
+			title: "Document download omits tenant authorization",
+			severity: "Medium",
+			difficulty: "Medium",
+			type: "Access Controls",
+			target: "Document API · cloud",
+			file: "app/routes/api.documents.$id.ts",
+			line: 43,
+			symbol: "loader",
+			summary:
+				"The document download route queries by document ID alone. Other document routes include the active tenant in the query.",
+			description: [
+				"Document identifiers are random and are not normally disclosed across workspaces. However, IDs can appear in copied links, browser history, and support records.",
+				"If a user obtains an ID from another tenant, the route returns the stored document because the query has no tenant predicate.",
+			],
+			impact:
+				"An authenticated user who learns a document ID can download a private document from another tenant.",
+			exploitScenarios: [
+				"A former contractor retains a copied document link after moving to a different workspace.",
+				"The route authenticates the contractor but does not verify that the current workspace owns the document.",
+			],
+			preconditions: [
+				"A valid account.",
+				"Knowledge of a document identifier from another tenant.",
+			],
+			recommendations: [
+				"Query by both document ID and active tenant ID.",
+				"Move tenant-owned record lookup into one shared authorization helper.",
+				"Add negative tests that use a valid ID from a different tenant.",
+			],
+			verification:
+				"2/3 review lenses confirmed; route-level test reproduced the response.",
+			cwe: "CWE-639 · Authorization Bypass Through User-Controlled Key",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "app/routes/api.documents.$id.ts:39–47",
+				lines: [
+					{ number: 39, text: "const user = await requireUser(request);" },
+					{ number: 40, text: "const documentId = params.id;" },
+					{ number: 41, text: "" },
+					{
+						number: 42,
+						text: "const document = await db.document.findUnique({",
+					},
+					{ number: 43, text: "  where: { id: documentId },", highlight: true },
+					{ number: 44, text: "});" },
+					{ number: 45, text: "" },
+					{ number: 46, text: "return streamStoredDocument(document);" },
+				],
+			},
+		},
+		{
+			id: "F-004",
+			title: "Custom object-storage endpoint permits plaintext transport",
+			severity: "Medium",
+			difficulty: "High",
+			type: "Cryptography",
+			target: "Artifact storage · runner",
+			file: "src/storage/client.rs",
+			line: 61,
+			symbol: "build_client",
+			summary:
+				"A deployment can configure an HTTP object-storage endpoint. The client sends storage credentials and artifact data without enforcing TLS.",
+			description: [
+				"The default managed endpoint uses HTTPS. Self-hosted deployments can set a custom endpoint, and the client accepts an `http://` scheme without a warning or explicit unsafe flag.",
+				"Network access is normally restricted, so exploitation requires a position on the service network or control of routing or DNS.",
+			],
+			impact:
+				"A network-positioned attacker can observe storage credentials and artifact contents, then read or replace stored artifacts.",
+			exploitScenarios: [
+				"An operator copies an internal HTTP endpoint from a development environment into production.",
+				"A compromised host on the service network captures the signed storage requests and artifact data.",
+			],
+			preconditions: [
+				"A custom HTTP endpoint is configured.",
+				"Access to the storage network path.",
+			],
+			recommendations: [
+				"Reject non-HTTPS endpoints by default.",
+				"Require a clearly named development-only override for plaintext transport.",
+				"Emit a startup failure that names the unsafe setting and affected endpoint.",
+			],
+			verification:
+				"2/3 review lenses confirmed; configuration path was traced end to end.",
+			cwe: "CWE-319 · Cleartext Transmission of Sensitive Information",
+			confidence: "High",
+			code: {
+				language: "Rust",
+				label: "src/storage/client.rs:57–65",
+				lines: [
+					{
+						number: 57,
+						text: "let mut builder = S3Client::builder().region(config.region);",
+					},
+					{ number: 58, text: "" },
+					{ number: 59, text: "if let Some(endpoint) = &config.endpoint {" },
+					{ number: 60, text: "    builder = builder.endpoint_url(endpoint);" },
+					{ number: 61, text: "}", highlight: true },
+					{ number: 62, text: "" },
+					{
+						number: 63,
+						text: "builder.credentials_provider(config.credentials).build()",
+					},
+				],
+			},
+		},
+		{
+			id: "F-005",
+			title: "Recovery tokens use a predictable random source",
+			severity: "Medium",
+			difficulty: "Medium",
+			type: "Cryptography",
+			target: "Account recovery · cloud",
+			file: "app/services/recovery.server.ts",
+			line: 72,
+			symbol: "createRecoveryToken",
+			summary:
+				"Account recovery tokens are generated with a seeded pseudo-random generator intended for simulations, not secrets.",
+			description: [
+				"The service seeds its generator at process start. A party that can infer the seed and observe one token can narrow the next token values.",
+				"Tokens expire after 20 minutes and require an account email address, which limits the useful attack window but does not restore cryptographic unpredictability.",
+			],
+			impact:
+				"An attacker can predict a recovery token in favorable conditions and take control of a target account.",
+			exploitScenarios: [
+				"An attacker requests recovery for their own account after a known deployment time and observes the token.",
+				"They reconstruct the generator state, predict a nearby token, and submit it for a known administrator email.",
+			],
+			preconditions: [
+				"Knowledge of a target email address.",
+				"Enough timing information or observed output to narrow generator state.",
+			],
+			recommendations: [
+				"Generate tokens with the operating system cryptographic random source.",
+				"Store only a keyed hash of each token and rotate it after one use.",
+				"Rate-limit recovery creation and verification per account and source.",
+			],
+			verification: "3/3 review lenses confirmed the non-cryptographic source.",
+			cwe: "CWE-338 · Use of Cryptographically Weak PRNG",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "app/services/recovery.server.ts:68–76",
+				lines: [
+					{
+						number: 68,
+						text: 'const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";',
+					},
+					{ number: 69, text: "" },
+					{ number: 70, text: "export function createRecoveryToken() {" },
+					{ number: 71, text: "  return Array.from({ length: 10 }, () =>" },
+					{
+						number: 72,
+						text: "    alphabet[Math.floor(seedRandom() * alphabet.length)]",
+						highlight: true,
+					},
+					{ number: 73, text: '  ).join("");' },
+					{ number: 74, text: "}" },
+				],
+			},
+		},
+		{
+			id: "F-006",
+			title: "Authentication errors reveal workspace membership",
+			severity: "Low",
+			difficulty: "Low",
+			type: "Data Exposure",
+			target: "Sign-in API · cloud",
+			file: "app/services/authentication.server.ts",
+			line: 136,
+			symbol: "authenticate",
+			summary:
+				"Sign-in responses distinguish unknown emails, disabled accounts, and valid accounts with incorrect passwords.",
+			description: [
+				"The message and response timing allow an unauthenticated party to confirm whether an email belongs to a workspace and whether the account is disabled.",
+				"Rate limits reduce high-volume enumeration, but targeted checks remain practical from distributed sources.",
+			],
+			impact:
+				"An attacker can identify customer users and account status, which improves phishing and credential-stuffing campaigns.",
+			exploitScenarios: [
+				"An attacker submits a small list of executives to the sign-in endpoint.",
+				"Different errors identify active Acme Portal users, who then receive tailored password-reset phishing.",
+			],
+			preconditions: [
+				"Public access to the sign-in form.",
+				"A candidate list of email addresses.",
+			],
+			recommendations: [
+				"Return one generic response for all failed sign-in states.",
+				"Keep detailed reasons in protected security logs.",
+				"Apply account- and network-aware abuse controls.",
+			],
+			verification:
+				"2/3 review lenses confirmed; response messages differ in unit tests.",
+			cwe: "CWE-204 · Observable Response Discrepancy",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "app/services/authentication.server.ts:131–139",
+				lines: [
+					{ number: 131, text: "const account = await findAccount(email);" },
+					{
+						number: 132,
+						text: 'if (!account) return fail("No account uses this email");',
+					},
+					{ number: 133, text: "" },
+					{ number: 134, text: "if (account.disabledAt) {" },
+					{
+						number: 135,
+						text: '  return fail("This account has been disabled");',
+						highlight: true,
+					},
+					{ number: 136, text: "}" },
+					{
+						number: 137,
+						text: 'if (!verify(password, account.hash)) return fail("Wrong password");',
+					},
+				],
+			},
+		},
+		{
+			id: "F-007",
+			title: "Role changes are not recorded in the audit trail",
+			severity: "Low",
+			difficulty: "Medium",
+			type: "Auditing and Logging",
+			target: "Workspace administration · cloud",
+			file: "app/services/memberships.server.ts",
+			line: 204,
+			symbol: "changeMemberRole",
+			summary:
+				"Workspace role changes update membership state but do not create a durable audit event.",
+			description: [
+				"The application records invitations and removals but omits promotion and demotion events. Routine request logs expire after seven days and do not include the old role.",
+				"This gap does not grant access by itself. It makes unauthorized privilege changes harder to detect, investigate, and prove.",
+			],
+			impact:
+				"A malicious or compromised administrator can change privileges with limited durable evidence, delaying response to later abuse.",
+			exploitScenarios: [
+				"A compromised workspace administrator promotes an accomplice, accesses restricted reports, and restores the prior role.",
+				"The membership table shows only the final role, and no audit event records the temporary elevation.",
+			],
+			preconditions: [
+				"Workspace administrator access.",
+				"Ability to change another member's role.",
+			],
+			recommendations: [
+				"Write an immutable audit event in the same transaction as each role change.",
+				"Record actor, subject, old role, new role, workspace, request ID, and timestamp.",
+				"Alert on owner changes and rapid privilege elevation followed by demotion.",
+			],
+			verification: "2/3 review lenses confirmed the missing event path.",
+			cwe: "CWE-778 · Insufficient Logging",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "app/services/memberships.server.ts:200–207",
+				lines: [
+					{
+						number: 200,
+						text: "await requireWorkspaceAdmin(actor, workspaceId);",
+					},
+					{ number: 201, text: "" },
+					{ number: 202, text: "return db.membership.update({" },
+					{
+						number: 203,
+						text: "  where: { workspaceId_userId: { workspaceId, userId } },",
+					},
+					{ number: 204, text: "  data: { role: nextRole },", highlight: true },
+					{ number: 205, text: "});" },
+				],
+			},
+		},
+		{
+			id: "F-008",
+			title: "Encoded hostnames bypass the redirect allowlist",
+			severity: "Low",
+			difficulty: "Medium",
+			type: "Data Validation",
+			target: "OAuth callback · cloud",
+			file: "app/services/redirects.server.ts",
+			line: 51,
+			symbol: "safeRedirect",
+			summary:
+				"The post-login redirect check compares an encoded hostname string before the URL parser applies canonical form.",
+			description: [
+				"Most external URLs are rejected. Selected percent-encoded and trailing-dot host representations can pass the string suffix test and later resolve outside the trusted domain.",
+				"The redirect occurs only after a successful sign-in and does not expose the session token directly. It can still support convincing phishing from a trusted flow.",
+			],
+			impact:
+				"An attacker can send a signed-in user from the login flow to an attacker-controlled page that appears to originate from the product.",
+			exploitScenarios: [
+				"An attacker sends a login link with a crafted `returnTo` value.",
+				"After authentication, the user lands on a look-alike page that requests a second credential or recovery code.",
+			],
+			preconditions: [
+				"A victim follows an attacker-provided sign-in link.",
+				"The victim completes sign-in.",
+			],
+			recommendations: [
+				"Parse once, normalize the hostname, and compare exact host values.",
+				"Prefer relative application paths over absolute redirect URLs.",
+				"Add tests for encoded separators, trailing dots, Unicode, and mixed case.",
+			],
+			verification:
+				"2/3 review lenses confirmed; canonicalization variants passed the check.",
+			cwe: "CWE-601 · URL Redirection to Untrusted Site",
+			confidence: "Medium",
+			code: {
+				language: "TypeScript",
+				label: "app/services/redirects.server.ts:47–55",
+				lines: [
+					{
+						number: 47,
+						text: "export function safeRedirect(returnTo: string) {",
+					},
+					{
+						number: 48,
+						text: '  if (returnTo.startsWith("/")) return returnTo;',
+					},
+					{ number: 49, text: "" },
+					{
+						number: 50,
+						text: '  if (returnTo.includes(".acme.example")) {',
+						highlight: true,
+					},
+					{ number: 51, text: "    return new URL(returnTo).toString();" },
+					{ number: 52, text: "  }" },
+					{ number: 53, text: '  return "/dashboard";' },
+					{ number: 54, text: "}" },
+				],
+			},
+		},
+		{
+			id: "F-009",
+			title: "Telemetry files use shared temporary storage",
+			severity: "Informational",
+			difficulty: "Low",
+			type: "Data Exposure",
+			target: "CLI telemetry · cli",
+			file: "src/telemetry/spool.rs",
+			line: 39,
+			symbol: "spool_path",
+			summary:
+				"The CLI writes diagnostic events to a predictable directory in the system temporary location instead of a user-private application directory.",
+			description: [
+				"Telemetry records contain command names, project paths, and error categories. They do not contain source contents or credentials by design.",
+				"On a multi-user host, local users can infer activity or interfere with queued telemetry if operating-system temporary-directory protections are weak.",
+			],
+			impact:
+				"Local users may observe limited developer activity metadata or disrupt diagnostic uploads on shared hosts.",
+			exploitScenarios: [
+				"A developer runs the CLI on a shared build host.",
+				"Another local user monitors predictable spool filenames and learns repository path and command metadata.",
+			],
+			preconditions: [
+				"Multiple untrusted users share a host.",
+				"Local temporary storage permits observation.",
+			],
+			recommendations: [
+				"Store telemetry under the user's private application data directory.",
+				"Create files with owner-only permissions and unpredictable names.",
+				"Document the fields retained in local telemetry records.",
+			],
+			verification:
+				"1/3 review lenses reported the pattern; platform behavior was confirmed.",
+			cwe: "CWE-377 · Insecure Temporary File",
+			confidence: "Medium",
+			code: {
+				language: "Rust",
+				label: "src/telemetry/spool.rs:35–43",
+				lines: [
+					{ number: 35, text: "fn spool_path(event_id: &str) -> PathBuf {" },
+					{ number: 36, text: "    std::env::temp_dir()" },
+					{
+						number: 37,
+						text: '        .join("acme-telemetry")',
+						highlight: true,
+					},
+					{ number: 38, text: '        .join(format!("{event_id}.json"))' },
+					{ number: 39, text: "}" },
+				],
+			},
+		},
+		{
+			id: "F-010",
+			title: "Release workflow uses an unpinned third-party action",
+			severity: "Informational",
+			difficulty: "High",
+			type: "Configuration",
+			target: "Release automation · deployment",
+			file: ".github/workflows/release.yml",
+			line: 34,
+			symbol: "release job",
+			summary:
+				"The release workflow references a third-party action by a mutable version tag while granting access to release credentials.",
+			description: [
+				"The tag is convenient for updates but can move without a repository change. A compromise of the action publisher or tag could therefore introduce code into the release job.",
+				"Branch protection and environment approval reduce exposure. They do not make the referenced action content immutable.",
+			],
+			impact:
+				"A compromised action version could access release tokens, alter packages, or change build provenance.",
+			exploitScenarios: [
+				"An attacker compromises the action publisher and moves the version tag to malicious code.",
+				"The next approved release runs that code with package publication permissions.",
+			],
+			preconditions: [
+				"Compromise of the third-party action or its release process.",
+				"An approved release after the tag changes.",
+			],
+			recommendations: [
+				"Pin the action to a reviewed full commit digest.",
+				"Use automated updates that show the digest change in a pull request.",
+				"Keep release credentials behind environment approval and least privilege.",
+			],
+			verification: "3/3 review lenses confirmed the mutable reference.",
+			cwe: "CWE-829 · Inclusion of Functionality from Untrusted Control Sphere",
+			confidence: "High",
+			code: {
+				language: "YAML",
+				label: ".github/workflows/release.yml:30–38",
+				lines: [
+					{ number: 30, text: "jobs:" },
+					{ number: 31, text: "  release:" },
+					{ number: 32, text: "    environment: production" },
+					{ number: 33, text: "    steps:" },
+					{
+						number: 34,
+						text: "      - uses: vendor/publish-artifact@v3",
+						highlight: true,
+					},
+					{ number: 35, text: "        with:" },
+					{
+						number: 36,
+						text: "          token: $" + "{{ secrets.RELEASE_TOKEN }}",
+					},
+				],
+			},
+		},
+		{
+			id: "F-011",
+			title: "Indirect prompt injection may influence generated workflows",
+			severity: "Undetermined",
+			difficulty: "Undetermined",
+			type: "Data Validation",
+			target: "Workflow assistant · cloud",
+			file: "app/services/workflow-generator.server.ts",
+			line: 96,
+			symbol: "generateWorkflow",
+			summary:
+				"The workflow assistant includes repository text in a model prompt and can propose executable workflow steps. Current evidence does not establish whether approval controls contain a successful injection.",
+			description: [
+				"README and issue text is inserted between instruction markers, but the model is not guaranteed to treat those markers as a security boundary.",
+				"Generated workflows remain drafts and require user approval. The assessment did not have access to production model settings or telemetry needed to measure bypass reliability.",
+			],
+			impact:
+				"Potential impact ranges from a misleading draft to execution of an attacker-selected workflow step. The practical severity is not resolved.",
+			exploitScenarios: [
+				"Repository text tells the model to ignore the user request and add a step that uploads environment data.",
+				"A reviewer overlooks the added step and approves the generated workflow.",
+			],
+			preconditions: [
+				"Attacker-controlled text enters a repository document included in context.",
+				"A user generates and approves a workflow without detecting the added step.",
+			],
+			recommendations: [
+				"Treat repository content as untrusted data and label its origin in the prompt.",
+				"Restrict generated steps to an allowlist and show a security-focused diff before approval.",
+				"Run adversarial tests against production model settings, tools, and approval flows.",
+			],
+			verification:
+				"1/3 review lenses raised the path; exploit reliability remains unresolved.",
+			cwe: "Emerging class · Indirect prompt injection",
+			confidence: "Low",
+			code: {
+				language: "TypeScript",
+				label: "app/services/workflow-generator.server.ts:91–100",
+				lines: [
+					{
+						number: 91,
+						text: "const context = await collectRepositoryContext(repository);",
+					},
+					{ number: 92, text: "" },
+					{
+						number: 93,
+						text: "const prompt = `$" + "{SYSTEM_INSTRUCTIONS}",
+					},
+					{ number: 94, text: "<repository-context>" },
+					{ number: 95, text: "$" + "{context}", highlight: true },
+					{ number: 96, text: "</repository-context>" },
+					{ number: 97, text: "Request: $" + "{userRequest}`;" },
+					{ number: 98, text: "" },
+					{
+						number: 99,
+						text: "return model.generateObject({ prompt, schema: workflowSchema });",
+					},
+				],
+			},
+		},
+		{
+			id: "F-012",
+			title: "Database details appear in client error responses",
+			severity: "Informational",
+			difficulty: "Low",
+			type: "Error Reporting",
+			target: "GraphQL API · cloud",
+			file: "app/graphql/error-format.ts",
+			line: 28,
+			symbol: "formatError",
+			summary:
+				"The GraphQL error formatter returns the original database message for selected query failures.",
+			description: [
+				"Constraint names and table fields can reach authenticated clients when a mutation violates a database rule. Stack traces are removed, and the values observed did not include credentials or row data.",
+				"These details help an attacker map internal schema and make other attacks more efficient.",
+			],
+			impact:
+				"Authenticated users can learn internal table and constraint names that are not part of the public API.",
+			exploitScenarios: [
+				"A user submits conflicting object values to mutations and records the returned database constraints.",
+				"The schema details guide later testing for authorization and injection weaknesses.",
+			],
+			preconditions: [
+				"An authenticated account.",
+				"Ability to submit a mutation that violates a constraint.",
+			],
+			recommendations: [
+				"Map database failures to stable public error codes and generic messages.",
+				"Keep original errors in access-controlled server logs with a request ID.",
+				"Add response tests that reject table, column, and constraint names.",
+			],
+			verification:
+				"2/3 review lenses confirmed; a unit test exposes a constraint name.",
+			cwe: "CWE-209 · Generation of Error Message Containing Sensitive Information",
+			confidence: "High",
+			code: {
+				language: "TypeScript",
+				label: "app/graphql/error-format.ts:24–32",
+				lines: [
+					{
+						number: 24,
+						text: "export function formatError(error: GraphQLError) {",
+					},
+					{ number: 25, text: "  const cause = error.originalError;" },
+					{ number: 26, text: "" },
+					{ number: 27, text: "  if (cause instanceof DatabaseError) {" },
+					{
+						number: 28,
+						text: '    return { message: cause.message, code: "INVALID_INPUT" };',
+						highlight: true,
+					},
+					{ number: 29, text: "  }" },
+					{
+						number: 30,
+						text: '  return { message: "Request failed", code: "INTERNAL" };',
+					},
+					{ number: 31, text: "}" },
+				],
+			},
+		},
+	],
+});
+
+		</script>
+		<script>
+(() => {
+	const data = window.securityReportData;
+
+	if (!data) {
+		throw new Error("Report data was not loaded.");
+	}
+
+	const byId = (id) => document.getElementById(id);
+	const slugify = (value) =>
+		String(value)
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/(^-|-$)/g, "");
+	const labelize = (value) =>
+		String(value)
+			.replaceAll("-", " ")
+			.replace(/\b\w/g, (letter) => letter.toUpperCase());
+	const toneClass = (value) => `tone--${slugify(value)}`;
+	const difficultyToneClass = (value) => `difficulty-tone--${slugify(value)}`;
+
+	function element(tagName, options = {}) {
+		const node = document.createElement(tagName);
+
+		if (options.className) {
+			node.className = options.className;
+		}
+		if (options.text !== undefined) {
+			node.textContent = options.text;
+		}
+		if (options.attributes) {
+			for (const [name, value] of Object.entries(options.attributes)) {
+				node.setAttribute(name, String(value));
+			}
+		}
+
+		return node;
+	}
+
+	function countBy(items, keyForItem) {
+		return items.reduce((counts, item) => {
+			const key = keyForItem(item);
+			counts.set(key, (counts.get(key) || 0) + 1);
+			return counts;
+		}, new Map());
+	}
+
+	function findingCategory(finding) {
+		return finding.category || finding.type || "Undetermined";
+	}
+
+	function findingDifficulty(finding) {
+		return finding.difficulty || "Undetermined";
+	}
+
+	function asParagraphs(value) {
+		if (Array.isArray(value)) {
+			return value.filter(Boolean).map(String);
+		}
+		return value ? [String(value)] : [];
+	}
+
+	function asItems(value) {
+		if (Array.isArray(value)) {
+			return value.filter(Boolean).map(String);
+		}
+		return value ? [String(value)] : [];
+	}
+
+	function normalizedFinding(finding) {
+		return {
+			...finding,
+			category: findingCategory(finding),
+			difficulty: findingDifficulty(finding),
+			description: [
+				...(finding.summary ? [String(finding.summary)] : []),
+				...asParagraphs(finding.description),
+			],
+			exploitScenarios: asItems(
+				finding.exploitScenarios || finding.exploit_scenario,
+			),
+			preconditions: asItems(finding.preconditions),
+			recommendations: asItems(
+				finding.recommendations || finding.recommendation,
+			),
+		};
+	}
+
+	const findings = data.findings.map(normalizedFinding);
+
+	function appendList(container, items, ordered = false) {
+		const list = element(ordered ? "ol" : "ul");
+		for (const item of items) {
+			list.append(element("li", { text: item }));
+		}
+		container.append(list);
+	}
+
+	function renderIdentity() {
+		document.title = `${data.report.project} — ${data.report.title}`;
+		byId("report-date").textContent = data.report.date;
+		byId("scan-revision").textContent = data.scan.revision;
+		byId("scan-mode").textContent =
+			data.scan.mode === "whole-tree"
+				? "Whole repository"
+				: labelize(data.scan.mode);
+		byId("scan-effort").textContent = labelize(data.scan.effort);
+
+		for (const node of document.querySelectorAll("[data-total-findings]")) {
+			node.textContent = String(findings.length);
+		}
+	}
+
+	function renderSeverityDistribution() {
+		const container = byId("severity-distribution");
+		const counts = countBy(findings, (finding) => finding.severity);
+		const maximum = Math.max(
+			...data.severityOrder.map((name) => counts.get(name) || 0),
+			1,
+		);
+
+		for (const severity of data.severityOrder) {
+			const count = counts.get(severity) || 0;
+			const row = element("div", {
+				className: `distribution-row ${toneClass(severity)}`,
+			});
+			const label = element("span", { className: "distribution-row__label" });
+			label.append(
+				element("span", {
+					className: "distribution-row__swatch",
+					attributes: { "aria-hidden": "true" },
+				}),
+				document.createTextNode(severity),
+			);
+
+			const track = element("span", {
+				className: "distribution-row__track",
+				attributes: { "aria-hidden": "true" },
+			});
+			const fill = element("span", { className: "distribution-row__fill" });
+			fill.style.setProperty("--bar-width", `${(count / maximum) * 100}%`);
+			track.append(fill);
+
+			row.append(
+				label,
+				element("span", {
+					className: "distribution-row__count",
+					text: String(count),
+				}),
+				track,
+			);
+			container.append(row);
+		}
+	}
+
+	function renderCategoryDistribution() {
+		const container = byId("category-distribution");
+		const counts = countBy(findings, findingCategory);
+		const populated = [...counts.entries()].sort(
+			([leftName, leftCount], [rightName, rightCount]) =>
+				rightCount - leftCount || leftName.localeCompare(rightName),
+		);
+		const maximum = Math.max(...populated.map(([, count]) => count), 1);
+
+		for (const [name, count] of populated) {
+			const row = element("div", { className: "category-row" });
+			const track = element("span", {
+				className: "category-row__track",
+				attributes: { "aria-hidden": "true" },
+			});
+			const fill = element("span", { className: "category-row__fill" });
+			fill.style.setProperty("--bar-width", `${(count / maximum) * 100}%`);
+			track.append(fill);
+
+			row.append(
+				element("span", { className: "category-row__label", text: name }),
+				element("span", {
+					className: "category-row__count",
+					text: String(count),
+				}),
+				track,
+			);
+			container.append(row);
+		}
+	}
+
+	function addFact(container, label, value, code = false) {
+		const item = element("div");
+		const term = element("dt", { text: label });
+		const description = element("dd");
+		description.append(
+			code ? element("code", { text: value }) : document.createTextNode(value),
+		);
+		item.append(term, description);
+		container.append(item);
+	}
+
+	function renderCoverage() {
+		const coverage = data.coverage;
+		const facts = byId("scan-facts");
+		const scope =
+			data.scan.scope.length > 0
+				? data.scan.scope.join(", ")
+				: "Whole repository";
+
+		addFact(facts, "Target", data.scan.root, true);
+		addFact(facts, "Scope", scope);
+		addFact(facts, "Components", String(coverage.components.length));
+		addFact(
+			facts,
+			"Review agents",
+			`${coverage.researchersReturned} of ${coverage.researchersDispatched} returned`,
+		);
+
+		byId("component-count").textContent =
+			`${coverage.components.length} ${coverage.components.length === 1 ? "component" : "components"}`;
+		byId("skipped-count").textContent =
+			`${coverage.skippedComponents.length} ${coverage.skippedComponents.length === 1 ? "component" : "components"}`;
+
+		const components = byId("coverage-components");
+		for (const component of coverage.components) {
+			const item = element("article", { className: "coverage-item" });
+			item.append(
+				element("h4", { text: component.name }),
+				element("p", {
+					className: "coverage-item__paths",
+					text: component.paths.join(" · "),
+				}),
+			);
+			components.append(item);
+		}
+
+		const skips = byId("coverage-skips");
+		if (coverage.skippedComponents.length === 0) {
+			const item = element("article", { className: "coverage-item" });
+			item.append(
+				element("h4", { text: "None" }),
+				element("p", {
+					className: "coverage-item__reason",
+					text: "The scan did not record any deliberately skipped components.",
+				}),
+			);
+			skips.append(item);
+		} else {
+			for (const skipped of coverage.skippedComponents) {
+				const item = element("article", { className: "coverage-item" });
+				item.append(
+					element("h4", { text: skipped.name }),
+					element("p", {
+						className: "coverage-item__paths",
+						text: skipped.paths.join(" · "),
+					}),
+					element("p", {
+						className: "coverage-item__reason",
+						text: skipped.reason,
+					}),
+				);
+				skips.append(item);
+			}
+		}
+
+		const note = byId("coverage-note");
+		const unaccounted = coverage.unaccountedTopLevelDirs || [];
+		if (coverage.completeness === "checked") {
+			note.textContent =
+				"Coverage completeness was checked. Every top-level directory appears in an examined or skipped component.";
+		} else if (coverage.completeness === "partial" && unaccounted.length > 0) {
+			note.textContent = `Coverage is partial. These top-level directories were neither examined nor skipped: ${unaccounted.join(", ")}.`;
+		} else {
+			note.textContent =
+				"Coverage completeness could not be checked from the available scan inventory.";
+		}
+	}
+
+	function renderFilterOptions() {
+		for (const severity of data.severityOrder) {
+			byId("severity-filter").append(
+				element("option", {
+					text: severity,
+					attributes: { value: severity },
+				}),
+			);
+		}
+		for (const difficulty of data.difficultyOrder) {
+			byId("difficulty-filter").append(
+				element("option", {
+					text: difficulty,
+					attributes: { value: difficulty },
+				}),
+			);
+		}
+	}
+
+	function renderFindingsTable() {
+		const body = byId("findings-table-body");
+
+		for (const finding of findings) {
+			const row = element("tr");
+			row.dataset.search = [
+				finding.id,
+				finding.title,
+				finding.category,
+				finding.target,
+				finding.file,
+			]
+				.join(" ")
+				.toLowerCase();
+			row.dataset.severity = finding.severity;
+			row.dataset.difficulty = finding.difficulty;
+
+			const titleCell = element("td");
+			titleCell.append(
+				element("a", {
+					className: "finding-title-link",
+					text: finding.title,
+					attributes: { href: `#finding-${slugify(finding.id)}` },
+				}),
+			);
+
+			row.append(
+				element("td", {
+					className: "finding-id-cell",
+					text: finding.id,
+				}),
+				titleCell,
+				element("td", {
+					className: "finding-category-cell",
+					text: finding.category,
+				}),
+				element("td", {
+					className: `rating-cell ${difficultyToneClass(finding.difficulty)}`,
+					text: finding.difficulty,
+				}),
+				element("td", {
+					className: `rating-cell ${toneClass(finding.severity)}`,
+					text: finding.severity,
+				}),
+			);
+			body.append(row);
+		}
+	}
+
+	function createFindingBlock(title, options = {}) {
+		const section = element("section", { className: "finding-block" });
+		section.append(element("h4", { text: title }));
+
+		for (const paragraph of options.paragraphs || []) {
+			section.append(element("p", { text: paragraph }));
+		}
+		if (options.items?.length) {
+			appendList(section, options.items, options.ordered);
+		}
+
+		return section;
+	}
+
+	function createCodeFrame(finding) {
+		if (!finding.code?.lines?.length && !finding.snippet) {
+			return null;
+		}
+
+		const frame = element("div", { className: "code-frame" });
+		const header = element("div", { className: "code-frame__header" });
+		header.append(
+			element("span", {
+				text: finding.code?.label || `${finding.file}:${finding.line}`,
+			}),
+			element("span", { text: finding.code?.language || "Source" }),
+		);
+
+		const pre = element("pre", { attributes: { tabindex: "0" } });
+		const code = element("code");
+		const lines =
+			finding.code?.lines ||
+			String(finding.snippet)
+				.split("\n")
+				.map((text, index) => ({
+					number: finding.line + index,
+					text,
+					highlight: index === 0,
+				}));
+
+		for (const line of lines) {
+			const lineNode = element("span", {
+				className: `code-line${line.highlight ? " is-highlighted" : ""}`,
+			});
+			lineNode.append(
+				element("span", {
+					className: "code-line__number",
+					text: String(line.number),
+					attributes: { "aria-hidden": "true" },
+				}),
+				element("span", {
+					className: "code-line__text",
+					text: line.text || " ",
+				}),
+			);
+			code.append(lineNode);
+		}
+
+		pre.append(code);
+		frame.append(header, pre);
+		return frame;
+	}
+
+	function addMetadata(metadata, label, value, className = "") {
+		const item = element("div", { className });
+		item.append(element("dt", { text: label }), element("dd", { text: value }));
+		metadata.append(item);
+	}
+
+	function renderFindingPages() {
+		const container = byId("finding-pages");
+
+		findings.forEach((finding, index) => {
+			const article = element("article", {
+				className: "finding",
+				attributes: { id: `finding-${slugify(finding.id)}` },
+			});
+			article.style.setProperty(
+				"--finding-tone",
+				`var(--${slugify(finding.severity)})`,
+			);
+			article.style.setProperty(
+				"--finding-tone-soft",
+				`var(--${slugify(finding.severity)}-soft)`,
+			);
+
+			const header = element("header", { className: "finding__header" });
+			header.append(
+				element("p", {
+					className: "finding__index",
+					text: `Finding ${String(index + 1).padStart(2, "0")} · ${finding.id}`,
+				}),
+				element("h3", {
+					className: "finding__title",
+					text: finding.title,
+				}),
+			);
+
+			const metadata = element("dl", { className: "finding__meta" });
+			addMetadata(
+				metadata,
+				"Severity",
+				finding.severity,
+				toneClass(finding.severity),
+			);
+			metadata.lastElementChild.dataset.rating = "severity";
+			addMetadata(
+				metadata,
+				"Difficulty",
+				finding.difficulty,
+				difficultyToneClass(finding.difficulty),
+			);
+			metadata.lastElementChild.dataset.rating = "difficulty";
+			addMetadata(metadata, "Category", finding.category);
+			header.append(metadata);
+
+			const location = element("p", { className: "finding__location" });
+			location.append(
+				element("strong", { text: "Location: " }),
+				element("code", {
+					text: `${finding.file}:${finding.line}`,
+				}),
+				document.createTextNode(finding.target ? ` · ${finding.target}` : ""),
+			);
+			header.append(location);
+
+			const body = element("div", { className: "finding__body" });
+			const impact = element("section", { className: "finding-impact" });
+			impact.append(
+				element("h4", { text: "Security impact" }),
+				element("p", { text: finding.impact }),
+			);
+			body.append(
+				impact,
+				createFindingBlock("Description", {
+					paragraphs: finding.description,
+				}),
+			);
+
+			const codeFrame = createCodeFrame(finding);
+			if (codeFrame) {
+				const evidence = createFindingBlock("Source evidence");
+				evidence.append(codeFrame);
+				body.append(evidence);
+			}
+
+			body.append(
+				createFindingBlock(
+					finding.exploitScenarios.length === 1
+						? "Exploit scenario"
+						: "Exploit scenarios",
+					{
+						items: finding.exploitScenarios,
+						ordered: finding.exploitScenarios.length > 1,
+					},
+				),
+				createFindingBlock("Required conditions", {
+					items:
+						finding.preconditions.length > 0
+							? finding.preconditions
+							: ["None recorded."],
+				}),
+				createFindingBlock(
+					finding.recommendations.length === 1
+						? "Recommendation"
+						: "Recommendations",
+					{
+						items: finding.recommendations,
+						ordered: finding.recommendations.length > 1,
+					},
+				),
+			);
+
+			article.append(header, body);
+			container.append(article);
+		});
+	}
+
+	function renderTaxonomy() {
+		const body = byId("category-definitions");
+		for (const category of data.categories) {
+			const row = element("tr");
+			row.append(
+				element("td", { text: category.name }),
+				element("td", { text: category.description }),
+			);
+			body.append(row);
+		}
+	}
+
+	function renderRatingDefinitions(containerId, definitions, classForValue) {
+		const container = byId(containerId);
+		for (const definition of definitions) {
+			const item = element("div", {
+				className: `rating-definition ${classForValue(definition.name)}`,
+			});
+			item.append(
+				element("strong", { text: definition.name }),
+				element("p", { text: definition.description }),
+			);
+			container.append(item);
+		}
+	}
+
+	function setupFilters() {
+		const search = byId("finding-search");
+		const severity = byId("severity-filter");
+		const difficulty = byId("difficulty-filter");
+		const reset = byId("clear-filters");
+		const result = byId("filter-result");
+		const rows = [...byId("findings-table-body").rows];
+
+		const apply = () => {
+			const query = search.value.trim().toLowerCase();
+			let visible = 0;
+
+			for (const row of rows) {
+				const matches =
+					(!query || row.dataset.search.includes(query)) &&
+					(!severity.value || row.dataset.severity === severity.value) &&
+					(!difficulty.value || row.dataset.difficulty === difficulty.value);
+				row.dataset.hidden = matches ? "false" : "true";
+				visible += matches ? 1 : 0;
+			}
+
+			result.textContent =
+				visible === findings.length
+					? `Showing all ${visible} findings.`
+					: `Showing ${visible} of ${findings.length} findings.`;
+		};
+
+		search.addEventListener("input", apply);
+		severity.addEventListener("change", apply);
+		difficulty.addEventListener("change", apply);
+		reset.addEventListener("click", () => {
+			search.value = "";
+			severity.value = "";
+			difficulty.value = "";
+			apply();
+			search.focus();
+		});
+		apply();
+	}
+
+	renderIdentity();
+	renderSeverityDistribution();
+	renderCategoryDistribution();
+	renderCoverage();
+	renderFilterOptions();
+	renderFindingsTable();
+	renderFindingPages();
+	renderTaxonomy();
+	renderRatingDefinitions(
+		"severity-definitions",
+		data.severityDefinitions,
+		toneClass,
+	);
+	renderRatingDefinitions(
+		"difficulty-definitions",
+		data.difficultyDefinitions,
+		difficultyToneClass,
+	);
+	setupFilters();
+})();
+
+		</script>
+	</body>
+</html>
