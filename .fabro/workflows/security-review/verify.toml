@@ -18,33 +18,12 @@ focus = ""
 [run.run_branch]
 enabled = false
 
-[run.model]
-name = "sonnet"
-provider = "openrouter"
-
-[run.model.controls]
-reasoning_effort = "low"
-
 [run.environment]
 id = "security-review"
-
-[run.environment.network]
-mode = "allow_all"
 
 [run.environment.env]
 GITHUB_TOKEN = ""
 GH_TOKEN = ""
-
-[run.agent]
-permissions = "full"
-
-[run.checkpoint]
-exclude_globs = [
-  "SECURITY-REVIEW-*/**",
-  ".fabro/blobs/**",
-  ".fabro/workflows/security-review/runtime",
-  ".fabro/workflows/security-review/runtime/**",
-]
 
 [run.artifacts]
 include = [
@@ -66,8 +45,7 @@ provider = "daytona"
 
 # The scan's agents search the tree constantly. buildpack-deps:noble, the
 # Daytona default base, ships grep but not ripgrep, which respects .gitignore
-# and is far faster on a large repository. Installed at image build time
-# because the run itself has no network.
+# and is far faster on a large repository.
 [environments.security-review.image]
 dockerfile = """
 FROM buildpack-deps:noble

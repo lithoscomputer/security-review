@@ -1224,16 +1224,25 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("report_author", graph)
 
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
-        for config_name in ("workflow.toml", "verify.toml"):
-            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
-            self.assertIn(
-                '".fabro/workflows/security-review/runtime",',
-                config,
-            )
-            self.assertIn(
-                '".fabro/workflows/security-review/runtime/**",',
-                config,
-            )
+        workflow_config = (WORKFLOW_ROOT / "workflow.toml").read_text(
+            encoding="utf-8"
+        )
+        checkpoint_section = workflow_config.split(
+            "[run.checkpoint]\n",
+            1,
+        )[1].split("\n[", 1)[0]
+        self.assertIn(
+            '".fabro/workflows/security-review/runtime",',
+            checkpoint_section,
+        )
+        self.assertNotIn(
+            '".fabro/workflows/security-review/runtime/**",',
+            checkpoint_section,
+        )
+        verify_config = (WORKFLOW_ROOT / "verify.toml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("[run.checkpoint]", verify_config)
         workflow_ignore = (WORKFLOW_ROOT / ".gitignore").read_text(
             encoding="utf-8"
         )
