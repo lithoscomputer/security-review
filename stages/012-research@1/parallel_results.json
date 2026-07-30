@@ -1,0 +1,16 @@
+[
+  {
+    "id": "researcher",
+    "index": 0,
+    "item_label": "repository:all",
+    "status": "succeeded",
+    "context_updates": {
+      "last_response": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one",
+      "last_stage": "researcher",
+      "output.researcher": {
+        "findings": []
+      },
+      "response.researcher": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one commit (`82a6abd` \"Document bounded receipt pass\") with a single parent — confirmed via `log --parents`. `diff --raw -M -C` shows one entry, `:100644 100644 M README.md`: no mode change, no symlink or submodule conversion, no rename. `diff -U0` shows the entire change is three prose lines at `README.md:133-135`, replacing one sentence-ending line, appending: \"This pass stays bounded to assigned files; the existing research pipeline performs the broad attack-path review.\"\n\n**Why no finding survives here.** I looked for the only mechanisms by which a documentation-only change could carry security weight:\n\n- *Runtime ingestion.* README text would need to reach executing code or an agent's instruction context. The graph binds every agent to `@prompts/*.md` only (`security-review.fabro`), and the engine never reads a repo-root markdown file — its sole `.md` references are the report it writes (`security_review.py:3213`, `render_report.py:579`). `rg` across `.fabro/` found no reference to `README.md`. There is no source-to-sink path.\n- *Prompt injection.* The added sentence is descriptive prose about division of labor, not text addressing an agent, and it does not instruct anyone to skip a file or trust a security claim. It is also accurate: it matches the actual prompt change in the parent commit `63b3043`, which bounds `prompts/file-review.md` to assigned files while the research matrix does the broad audit. Since it is neither loaded as instructions nor steering, calling it injection would be speculative.\n- *Secrets.* No credential-like content in the changed lines or the file (`token|secret|password|api_key|ghp_|AKIA|BEGIN` all negative).\n\nOne thing worth naming for your judgment, deliberately **not** reported as a finding: the substantive behavioral change — narrowing the changed-file review pass in `prompts/file-review.md` — lives in the parent commit `63b3043`, outside this two-sided range. This commit only documents it. That narrowing reduces review depth per file rather than creating an attacker capability, so it is a coverage-policy tradeoff, not a vulnerability.\n\nNot checked: nothing was built, executed, or fetched, per the read-only rule; all history came through the `git_readonly.py` wrapper.\n\n```json\n{\n  \"findings\": []\n}\n```"
+    }
+  }
+]
