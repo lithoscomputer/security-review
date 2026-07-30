@@ -84,7 +84,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         *,
         mode: str = "scan",
         effort: str = "max",
-        ensemble: object = True,
         scope: str = "",
         base: str = "",
         commit: str = "",
@@ -96,7 +95,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             Namespace(
                 mode=mode,
                 effort=effort,
-                ensemble=ensemble,
                 scope=scope,
                 base=base,
                 commit=commit,
@@ -136,39 +134,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.save(state)
         self.assertEqual(updates[f"{phase}_results_merged"], len(jobs))
-        return DRIVER.load_state()
-
-    def merge_ensemble_success(
-        self,
-        batch: str,
-        values: list[object],
-    ) -> dict:
-        phase, jobs_key, output_key = DRIVER.ENSEMBLE_BATCHES[batch]
-        state = DRIVER.load_state()
-        jobs = state[jobs_key]
-        before = len(state["phase_results"][phase])
-        results = [
-            {
-                "id": output_key.split(".", 1)[1],
-                "index": index,
-                "item_label": job["name"],
-                "status": "succeeded",
-                "context_updates": {output_key: value},
-            }
-            for index, (job, value) in enumerate(zip(jobs, values))
-        ]
-        updates = DRIVER.merge_phase(
-            state,
-            phase,
-            results,
-            jobs=jobs,
-            output_key=output_key,
-        )
-        self.save(state)
-        self.assertEqual(
-            updates[f"{phase}_results_merged"],
-            before + len(jobs),
-        )
         return DRIVER.load_state()
 
     @staticmethod
@@ -231,34 +196,13 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         research_jobs = state["phase_jobs"]["research"]
         sweep_jobs = state["phase_jobs"]["sweep"]
         self.assertEqual(len(research_jobs), 6)
-        self.assertEqual(len(state["research_jobs_a"]), 3)
-        self.assertEqual(len(state["research_jobs_b"]), 3)
-        self.assertTrue(
-            all(
-                job["job_id"].endswith(":1")
-                for job in state["research_jobs_a"]
-            )
-        )
-        self.assertTrue(
-            all(
-                job["job_id"].endswith(":2")
-                for job in state["research_jobs_b"]
-            )
-        )
         self.assertEqual(len(sweep_jobs), 2)
         finding = self.finding()
-        self.merge_ensemble_success(
-            "research-a",
+        self.merge_success(
+            "research",
             [
-                {"findings": [finding]} if index == 0 else {"findings": []}
-                for index in range(len(state["research_jobs_a"]))
-            ],
-        )
-        self.merge_ensemble_success(
-            "research-b",
-            [
-                {"findings": [finding]} if index == 0 else {"findings": []}
-                for index in range(len(state["research_jobs_b"]))
+                {"findings": [finding]} if index < 2 else {"findings": []}
+                for index in range(len(research_jobs))
             ],
         )
         self.merge_success(
@@ -272,54 +216,36 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(len(state["deduplicated_candidates"]), 1)
         panel_jobs = state["phase_jobs"]["panel"]
         self.assertEqual(len(panel_jobs), 3)
-        for slot, lens in (
-            ("a", "REACHABILITY"),
-            ("b", "IMPACT"),
-            ("c", "DEFENSES"),
-        ):
-            self.assertEqual(
-                {job["lens"] for job in state[f"verification_jobs_{slot}"]},
-                {lens},
-            )
-        for batch, verdict in (
-            ("panel-a", "TRUE_POSITIVE"),
-            ("panel-b", "TRUE_POSITIVE"),
-            ("panel-c", "FALSE_POSITIVE"),
-        ):
-            self.merge_ensemble_success(
-                batch,
-                [
-                    {
-                        "verdict": verdict,
-                        "reasoning": "src/app.py:4-5 confirms the path.",
-                    }
-                ],
-            )
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": verdict,
+                    "reasoning": "src/app.py:4-5 confirms the path.",
+                }
+                for verdict in (
+                    "TRUE_POSITIVE",
+                    "TRUE_POSITIVE",
+                    "FALSE_POSITIVE",
+                )
+            ],
+        )
         self.call(DRIVER.tally)
 
         state = DRIVER.load_state()
         self.assertTrue(state["max_effort"])
         self.assertEqual(len(state["repanel_jobs"]), 3)
         self.assertNotIn("confidence", state["repanel_jobs"][0]["finding"])
-        for slot, lens in (
-            ("a", "REACHABILITY"),
-            ("b", "IMPACT"),
-            ("c", "DEFENSES"),
-        ):
-            self.assertEqual(
-                {job["lens"] for job in state[f"repanel_jobs_{slot}"]},
-                {lens},
-            )
-        for batch in ("repanel-a", "repanel-b", "repanel-c"):
-            self.merge_ensemble_success(
-                batch,
-                [
-                    {
-                        "verdict": "TRUE_POSITIVE",
-                        "reasoning": "src/app.py:4-5 confirms the path.",
-                    }
-                ],
-            )
+        self.merge_success(
+            "repanel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "src/app.py:4-5 confirms the path.",
+                }
+                for _ in state["repanel_jobs"]
+            ],
+        )
         self.call(DRIVER.adversarial_plan)
 
         state = DRIVER.load_state()
@@ -355,23 +281,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         stamp = json.loads(Path(state["stamp_path"]).read_text(encoding="utf-8"))
         self.assertEqual(stamp["verification"]["status"], "verified")
         self.assertEqual(stamp["findings"]["total"], 1)
-
-    def test_ensemble_input_controls_routing_independently_of_effort(
-        self,
-    ) -> None:
-        for effort in DRIVER.EFFORT_TIERS:
-            with self.subTest(effort=effort):
-                state = self.prepare(effort=effort, ensemble="true")
-                self.assertTrue(state["ensemble_enabled"])
-                state = self.prepare(effort=effort, ensemble="false")
-                self.assertFalse(state["ensemble_enabled"])
-
-    def test_invalid_ensemble_input_is_rejected(self) -> None:
-        with self.assertRaisesRegex(
-            DRIVER.WorkflowDataError,
-            "ensemble must be true or false",
-        ):
-            self.prepare(ensemble="sometimes")
 
     def test_merge_leaves_exhausted_native_retry_results_missing(self) -> None:
         self.prepare(effort="low")
@@ -464,7 +373,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                 Namespace(
                     mode="scan",
                     effort="turbo",
-                    ensemble="true",
                     scope="",
                     base="",
                     commit="",
@@ -515,17 +423,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertIn("broad shared-parent paths", feedback)
 
     def test_verifiers_see_only_the_reported_claim(self) -> None:
-        self.prepare(effort="low", ensemble=False)
+        self.prepare(effort="low")
         self.call(DRIVER.plan_matrix)
         state = DRIVER.load_state()
-        self.assertTrue(state["run_standard_research"])
-        self.assertFalse(state["run_ensemble_research"])
+        self.assertTrue(state["run_research"])
         self.merge_success("research", [{"findings": [self.finding()]}])
         self.call(DRIVER.dedup_rank)
 
         state = DRIVER.load_state()
-        self.assertTrue(state["run_standard_panel"])
-        self.assertFalse(state["run_ensemble_panel"])
+        self.assertTrue(state["run_panel"])
         job = state["phase_jobs"]["panel"][0]
         self.assertEqual(job["candidate_id"], "F1")
         self.assertEqual(
@@ -673,7 +579,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = self.prepare(
             mode="changes",
             effort="low",
-            ensemble=False,
             base="HEAD^",
         )
         rows = {
@@ -718,8 +623,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             ["generated.min.js", "renamed.py", "src/app.py"],
         )
         self.assertEqual(len(assigned), len(set(assigned)))
-        self.assertTrue(state["run_standard_file_review"])
-        self.assertFalse(state["run_ensemble_file_review"])
+        self.assertTrue(state["run_file_review"])
 
     def test_change_manifest_preserves_exact_literal_git_paths(self) -> None:
         paths = [" leading.py", ":(glob)*.py"]
@@ -731,7 +635,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = self.prepare(
             mode="changes",
             effort="low",
-            ensemble=False,
             base="HEAD^",
         )
         self.assertEqual(
@@ -758,7 +661,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = self.prepare(
             mode="changes",
             effort="low",
-            ensemble=False,
             base="HEAD^",
         )
         self.assertEqual(len(state["phase_jobs"]["file_review"]), 1)
@@ -821,7 +723,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.prepare(
             mode="changes",
             effort="low",
-            ensemble=False,
             base="HEAD^",
         )
         self.merge_success(
@@ -860,7 +761,6 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             mode="commit",
             commit=target,
             effort="low",
-            ensemble=False,
         )
         self.assertEqual(
             state["file_manifest"]["files"][0]["readWith"],
@@ -909,40 +809,15 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ".research { model: opus; reasoning_effort: xhigh; }",
             ".verification { model: opus; reasoning_effort: xhigh; }",
             ".report-author { model: opus; reasoning_effort: xhigh; }",
-            (
-                ".ensemble-a { model: gpt-5.6-sol; provider: openrouter; "
-                "reasoning_effort: xhigh; }"
-            ),
-            (
-                ".ensemble-b { model: claude-opus-4-8; "
-                "provider: openrouter; reasoning_effort: xhigh; }"
-            ),
-            (
-                ".ensemble-c { model: kimi-k3; provider: openrouter; "
-                "reasoning_effort: high; }"
-            ),
-            (
-                ".ensemble-d { model: glm-5.2; provider: openrouter; "
-                "reasoning_effort: high; }"
-            ),
         ):
             self.assertIn(rule, graph)
         for node, cap in (
             ("file_review_jobs", 8),
-            ("file_review_jobs_a", 8),
             ("threat_jobs", 4),
             ("research_jobs", 8),
-            ("research_jobs_a", 8),
-            ("research_jobs_b", 8),
             ("sweep_jobs", 3),
             ("verification_jobs", 12),
-            ("verification_jobs_a", 12),
-            ("verification_jobs_b", 12),
-            ("verification_jobs_c", 12),
             ("repanel_jobs", 12),
-            ("repanel_jobs_a", 12),
-            ("repanel_jobs_b", 12),
-            ("repanel_jobs_c", 12),
             ("redteam_jobs", 4),
         ):
             self.assertIn(f'for_each="context.{node}"', graph)
@@ -1034,7 +909,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertEqual(
             graph.count('stdin_source="context.parallel.results"'),
-            16,
+            7,
         )
         self.assertEqual(
             graph.count('stdin_source="context.output.inventory"'),
@@ -1055,25 +930,13 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 graph,
             )
             self.assertIn(f"merge_{phase} [", graph)
-        for batch in DRIVER.ENSEMBLE_BATCHES:
-            node = batch.replace("-", "_")
-            self.assertIn(
-                f"security_review.py merge-ensemble {batch}",
-                graph,
-            )
-            self.assertIn(f"merge_{node} [", graph)
         self.assertIn(
             'target_gate -> inventory [condition="context.use_inventory=true"]',
             graph,
         )
         self.assertIn(
-            "target_gate -> file_review_a "
-            '[condition="context.run_ensemble_file_review=true"]',
-            graph,
-        )
-        self.assertIn(
             "target_gate -> file_review "
-            '[condition="context.run_standard_file_review=true"]',
+            '[condition="context.run_file_review=true"]',
             graph,
         )
         self.assertIn(
@@ -1108,54 +971,24 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertIn(f"    {gate} -> {default_target}\n", graph)
 
-    def test_ensemble_routes_through_neutral_model_slots(self) -> None:
+    def test_graph_has_one_execution_path_per_role(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for edge in (
-            (
-                'target_gate -> file_review_a '
-                '[condition="context.run_ensemble_file_review=true"]'
-            ),
-            (
-                'research_gate -> research_a '
-                '[condition="context.run_ensemble_research=true"]'
-            ),
-            (
-                'panel_gate -> panel_a '
-                '[condition="context.run_ensemble_panel=true"]'
-            ),
-            (
-                'repanel_gate -> repanel_a '
-                '[condition="context.run_ensemble_repanel=true"]'
-            ),
-            (
-                'final_tally -> report_author_d '
-                '[condition="context.run_ensemble_report=true"]'
-            ),
+            'target_gate -> file_review [condition="context.run_file_review=true"]',
+            'research_gate -> research [condition="context.run_research=true"]',
+            'panel_gate -> panel [condition="context.run_panel=true"]',
+            'repanel_gate -> repanel [condition="context.run_repanel=true"]',
+            'final_tally -> report_author [condition="outcome=succeeded"]',
         ):
             self.assertIn(edge, graph)
-        for node, slot in (
-            ("file_reviewer_a", "a"),
-            ("researcher_a", "a"),
-            ("researcher_b", "b"),
-            ("panel_verifier_a", "a"),
-            ("panel_verifier_b", "b"),
-            ("panel_verifier_c", "c"),
-            ("repanel_verifier_a", "a"),
-            ("repanel_verifier_b", "b"),
-            ("repanel_verifier_c", "c"),
-            ("report_author_d", "d"),
+        for node in (
+            "file_reviewer",
+            "researcher",
+            "panel_verifier",
+            "repanel_verifier",
+            "report_author",
         ):
-            self.assertRegex(
-                graph,
-                rf'(?s){node} \[.*?class="ensemble-{slot}".*?\]',
-            )
-
-    def test_ensemble_input_defaults_to_true(self) -> None:
-        graph = GRAPH_PATH.read_text(encoding="utf-8")
-        self.assertIn("--ensemble {{ inputs.ensemble }}", graph)
-        for config_name in ("workflow.toml", "verify.toml"):
-            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
-            self.assertRegex(config, r"(?m)^ensemble = true$")
+            self.assertEqual(graph.count(f"    {node} ["), 1)
 
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
         for config_name in ("workflow.toml", "verify.toml"):
@@ -1201,23 +1034,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             '[condition="outcome=succeeded"]',
             graph,
         )
-        for merge_node, next_node in (
-            ("merge_file_review_a", "post_file_review_gate"),
-            ("merge_research_a", "research_b"),
-            ("merge_research_b", "sweep_gate"),
-            ("merge_panel_a", "panel_b"),
-            ("merge_panel_b", "panel_c"),
-            ("merge_panel_c", "tally"),
-            ("merge_repanel_a", "repanel_b"),
-            ("merge_repanel_b", "repanel_c"),
-            ("merge_repanel_c", "adversarial_plan"),
-        ):
-            self.assertIn(
-                f'{merge_node} -> {next_node} '
-                '[condition="outcome=succeeded"]',
-                graph,
-            )
-        self.assertEqual(graph.count("max_retries=2"), 19)
+        self.assertEqual(graph.count("max_retries=2"), 9)
 
     def test_agent_failures_degrade_before_aborting(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")

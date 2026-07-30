@@ -9,8 +9,6 @@ goal = "Verify the security-review workflow against its deliberate command-injec
 [run.inputs]
 mode = "scan"
 effort = "low"
-# The smoke run checks the default ensemble path.
-ensemble = true
 scope = ".fabro/workflows/security-review/fixtures/command_injection.py"
 base = ""
 commit = ""

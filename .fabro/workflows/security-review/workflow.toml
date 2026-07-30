@@ -9,9 +9,6 @@ goal = "Perform an adversarial, read-only security review of this repository and
 [run.inputs]
 mode = "scan"
 effort = "medium"
-# Use neutral model slots A/B/C/D. Set this to false to use the standard
-# Sonnet/Opus path. This setting is independent of effort.
-ensemble = true
 scope = ""
 base = ""
 commit = ""

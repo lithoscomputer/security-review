@@ -115,58 +115,6 @@ PHASE_JOB_KEYS = {
     "repanel": "repanel_jobs",
     "redteam": "redteam_jobs",
 }
-ENSEMBLE_BATCHES = {
-    "file-review-a": (
-        "file_review",
-        "file_review_jobs_a",
-        "output.file_reviewer_a",
-    ),
-    "research-a": (
-        "research",
-        "research_jobs_a",
-        "output.researcher_a",
-    ),
-    "research-b": (
-        "research",
-        "research_jobs_b",
-        "output.researcher_b",
-    ),
-    "panel-a": (
-        "panel",
-        "verification_jobs_a",
-        "output.panel_verifier_a",
-    ),
-    "panel-b": (
-        "panel",
-        "verification_jobs_b",
-        "output.panel_verifier_b",
-    ),
-    "panel-c": (
-        "panel",
-        "verification_jobs_c",
-        "output.panel_verifier_c",
-    ),
-    "repanel-a": (
-        "repanel",
-        "repanel_jobs_a",
-        "output.repanel_verifier_a",
-    ),
-    "repanel-b": (
-        "repanel",
-        "repanel_jobs_b",
-        "output.repanel_verifier_b",
-    ),
-    "repanel-c": (
-        "repanel",
-        "repanel_jobs_c",
-        "output.repanel_verifier_c",
-    ),
-}
-VERIFICATION_SLOT_BY_LENS = {
-    "REACHABILITY": "a",
-    "IMPACT": "b",
-    "DEFENSES": "c",
-}
 
 
 class WorkflowDataError(RuntimeError):
@@ -197,18 +145,6 @@ def one_line(value: Any, cap: int = 500) -> str:
         .replace("\n", " ")
         .replace("\t", " ")
     )
-
-
-def boolean_input(value: Any, name: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized == "true":
-            return True
-        if normalized == "false":
-            return False
-    raise WorkflowDataError(f"{name} must be true or false, got {value!r}")
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -1003,7 +939,6 @@ def prepare(args: argparse.Namespace) -> None:
         raise WorkflowDataError(
             f"mode must be one of {', '.join(SCAN_MODES)}, got {args.mode!r}"
         )
-    ensemble_enabled = boolean_input(args.ensemble, "ensemble")
     effort = args.effort if args.effort in EFFORT_TIERS else "medium"
     if args.effort and args.effort not in EFFORT_TIERS:
         print(
@@ -1191,7 +1126,6 @@ def prepare(args: argparse.Namespace) -> None:
         "run_dir": None,
         "mode": mode,
         "effort": effort,
-        "ensemble_enabled": ensemble_enabled,
         "focus": focus,
         "scope": scope,
         "range": revision_range,
@@ -1245,16 +1179,7 @@ def prepare(args: argparse.Namespace) -> None:
     }
     file_review_jobs = build_file_review_jobs(state)
     state["file_review_jobs"] = file_review_jobs
-    state["file_review_jobs_a"] = (
-        list(file_review_jobs) if ensemble_enabled else []
-    )
     state["run_file_review"] = bool(file_review_jobs)
-    state["run_ensemble_file_review"] = bool(
-        ensemble_enabled and file_review_jobs
-    )
-    state["run_standard_file_review"] = bool(
-        not ensemble_enabled and file_review_jobs
-    )
     set_phase_jobs(state, "file_review", file_review_jobs)
 
     if empty_target:
@@ -1270,7 +1195,6 @@ def prepare(args: argparse.Namespace) -> None:
             empty_reason=reason,
             mode=mode,
             effort=effort,
-            ensemble_enabled=ensemble_enabled,
         )
         return
 
@@ -1299,13 +1223,10 @@ def prepare(args: argparse.Namespace) -> None:
         "mode": mode,
         "scope": scope,
         "effort": effort,
-        "model_strategy": "ensemble" if ensemble_enabled else "standard",
         "model": {
             "provider": "openrouter",
             "inventory": "sonnet",
-            "scan": (
-                "ensemble-a/b/c/d" if ensemble_enabled else "opus"
-            ),
+            "scan": "opus",
         },
         "revision": revision,
         "revision_source": "self-reported",
@@ -1345,34 +1266,19 @@ def prepare(args: argparse.Namespace) -> None:
         print("low effort: one whole-repository component")
     shape = "single-researcher" if use_single else "component-matrix"
     print(f"Prepared {effort} {mode} security review using the {shape} shape")
-    if ensemble_enabled:
-        print(
-            "ensemble input: enabling neutral model slots A/B/C/D across "
-            "research, verification, and report synthesis"
-        )
     routing_updates: Dict[str, Any] = {
         "empty_target": False,
         "use_inventory": use_inventory,
         "effort": effort,
-        "ensemble_enabled": ensemble_enabled,
         "mode": mode,
         "inventory_assignment": inventory_assignment,
         "products_dir": products_rel,
         "run_file_review": bool(file_review_jobs),
-        "run_ensemble_file_review": bool(
-            state["run_ensemble_file_review"]
-        ),
-        "run_standard_file_review": bool(
-            state["run_standard_file_review"]
-        ),
     }
     if file_review_jobs:
-        if ensemble_enabled:
-            routing_updates["file_review_jobs_a"] = list(file_review_jobs)
-        else:
-            routing_updates.update(
-                phase_jobs_context(state, "file_review", file_review_jobs)
-            )
+        routing_updates.update(
+            phase_jobs_context(state, "file_review", file_review_jobs)
+        )
         print(
             f"file manifest: {len(file_manifest['files'])} changed path(s), "
             f"{len(file_review_jobs)} full-file review batch(es)"
@@ -1874,10 +1780,6 @@ def build_cells(state: Dict[str, Any]) -> None:
         else {}
     )
     research_jobs: List[Dict[str, Any]] = []
-    research_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
-        "a": [],
-        "b": [],
-    }
     pruned: List[str] = []
     passes = int(state["researchers_per_cell"])
     target = common_target(state)
@@ -1939,9 +1841,6 @@ def build_cells(state: Dict[str, Any]) -> None:
                 "target": target,
             }
             research_jobs.append(job)
-            if state.get("ensemble_enabled"):
-                slot = "a" if pass_number % 2 else "b"
-                research_jobs_by_slot[slot].append(job)
 
     covered_paths = ", ".join(
         path
@@ -1987,17 +1886,9 @@ def build_cells(state: Dict[str, Any]) -> None:
             }
         )
     state["research_jobs"] = research_jobs
-    state["research_jobs_a"] = research_jobs_by_slot["a"]
-    state["research_jobs_b"] = research_jobs_by_slot["b"]
     state["sweep_jobs"] = sweep_jobs
     state["pruned_buckets"] = pruned
     state["run_research"] = bool(research_jobs)
-    state["run_ensemble_research"] = bool(
-        state.get("ensemble_enabled") and research_jobs
-    )
-    state["run_standard_research"] = bool(
-        not state.get("ensemble_enabled") and research_jobs
-    )
     state["run_sweeps"] = bool(sweep_jobs)
     set_phase_jobs(state, "research", research_jobs)
     set_phase_jobs(state, "sweep", sweep_jobs)
@@ -2010,24 +1901,10 @@ def research_sweep_updates(state: Mapping[str, Any]) -> Dict[str, Any]:
     sweep_jobs = list(state.get("sweep_jobs") or [])
     updates: Dict[str, Any] = {
         "run_research": bool(research_jobs),
-        "run_ensemble_research": bool(
-            state.get("run_ensemble_research")
-        ),
-        "run_standard_research": bool(
-            state.get("run_standard_research")
-        ),
         "run_sweeps": bool(sweep_jobs),
     }
     if research_jobs:
-        if state.get("ensemble_enabled"):
-            updates["research_jobs_a"] = list(
-                state.get("research_jobs_a") or []
-            )
-            updates["research_jobs_b"] = list(
-                state.get("research_jobs_b") or []
-            )
-        else:
-            updates.update(phase_jobs_context(state, "research", research_jobs))
+        updates.update(phase_jobs_context(state, "research", research_jobs))
     if sweep_jobs:
         updates.update(phase_jobs_context(state, "sweep", sweep_jobs))
     return updates
@@ -2201,27 +2078,21 @@ def merge_phase(
     state: Dict[str, Any],
     phase: str,
     raw_results: Any,
-    *,
-    jobs: Optional[Sequence[Mapping[str, Any]]] = None,
-    output_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     if phase not in PHASE_OUTPUT_KEYS:
         raise WorkflowDataError(f"unknown parallel merge phase: {phase}")
     if not isinstance(raw_results, list):
         raise WorkflowDataError("parallel merge input must be a JSON array")
-    if jobs is None:
-        jobs = (
-            state.get("phase_jobs", {}).get(phase)
-            if isinstance(state.get("phase_jobs"), dict)
-            else None
-        )
+    jobs = (
+        state.get("phase_jobs", {}).get(phase)
+        if isinstance(state.get("phase_jobs"), dict)
+        else None
+    )
     if not isinstance(jobs, list):
         raise WorkflowDataError(f"{phase} merge jobs are missing from state")
     result_map = state.setdefault("phase_results", {}).setdefault(phase, {})
     if not isinstance(result_map, dict):
         raise WorkflowDataError(f"{phase} result accumulator is invalid")
-    selected_output_key = output_key or PHASE_OUTPUT_KEYS[phase]
-
     for position, branch in enumerate(raw_results):
         if position >= len(jobs) or not isinstance(branch, dict):
             continue
@@ -2238,7 +2109,7 @@ def merge_phase(
         updates = branch.get("context_updates")
         if not isinstance(updates, dict):
             continue
-        value = updates.get(selected_output_key)
+        value = updates.get(PHASE_OUTPUT_KEYS[phase])
         normalized = normalize_phase_result(phase, value)
         if normalized is None:
             continue
@@ -2272,30 +2143,6 @@ def merge(phase: str) -> None:
             f"{updates[f'{phase}_results_merged']} result(s) recorded"
         )
     save_state(state)
-    emit(**updates)
-
-
-def merge_ensemble(batch: str) -> None:
-    phase, jobs_key, output_key = ENSEMBLE_BATCHES[batch]
-    state = load_state()
-    jobs = state.get(jobs_key)
-    if not isinstance(jobs, list):
-        raise WorkflowDataError(
-            f"{batch} merge jobs are missing from state"
-        )
-    updates = merge_phase(
-        state,
-        phase,
-        read_merge_input(),
-        jobs=jobs,
-        output_key=output_key,
-    )
-    save_state(state)
-    print(
-        f"Merged ensemble batch {batch}: "
-        f"{updates[f'{phase}_results_merged']} total {phase} result(s) "
-        "recorded"
-    )
     emit(**updates)
 
 
@@ -2446,11 +2293,6 @@ def dedup_rank() -> None:
 
     candidates_for_verification = deduplicated[:VERIFICATION_CAP]
     verification_jobs: List[Dict[str, Any]] = []
-    verification_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
-        "a": [],
-        "b": [],
-        "c": [],
-    }
     for candidate in candidates_for_verification:
         for lens in VERIFICATION_LENSES:
             lower_lens = lens.lower()
@@ -2463,10 +2305,6 @@ def dedup_rank() -> None:
                 "target": common_target(state),
             }
             verification_jobs.append(job)
-            if state.get("ensemble_enabled"):
-                verification_jobs_by_slot[
-                    VERIFICATION_SLOT_BY_LENS[lens]
-                ].append(job)
 
     state["raw_candidate_count"] = len(raw_candidates)
     state["candidates_dropped_by_cap"] = candidates_dropped
@@ -2478,16 +2316,7 @@ def dedup_rank() -> None:
         len(deduplicated) - len(candidates_for_verification),
     )
     state["verification_jobs"] = verification_jobs
-    state["verification_jobs_a"] = verification_jobs_by_slot["a"]
-    state["verification_jobs_b"] = verification_jobs_by_slot["b"]
-    state["verification_jobs_c"] = verification_jobs_by_slot["c"]
     state["run_panel"] = bool(verification_jobs)
-    state["run_ensemble_panel"] = bool(
-        state.get("ensemble_enabled") and verification_jobs
-    )
-    state["run_standard_panel"] = bool(
-        not state.get("ensemble_enabled") and verification_jobs
-    )
     state["researchers_dispatched"] = len(jobs)
     state["researchers_returned"] = returned
     state["invalid_research_results"] = invalid_results
@@ -2495,19 +2324,11 @@ def dedup_rank() -> None:
     save_state(state)
     updates: Dict[str, Any] = {
         "run_panel": bool(verification_jobs),
-        "run_ensemble_panel": bool(state.get("run_ensemble_panel")),
-        "run_standard_panel": bool(state.get("run_standard_panel")),
     }
     if verification_jobs:
-        if state.get("ensemble_enabled"):
-            for slot in ("a", "b", "c"):
-                updates[f"verification_jobs_{slot}"] = list(
-                    state.get(f"verification_jobs_{slot}") or []
-                )
-        else:
-            updates.update(
-                phase_jobs_context(state, "panel", verification_jobs)
-            )
+        updates.update(
+            phase_jobs_context(state, "panel", verification_jobs)
+        )
     if invalid_results:
         print(
             f"research: {len(invalid_results)} of {len(jobs)} research "
@@ -2567,11 +2388,6 @@ def tally() -> None:
     reviewed: List[Dict[str, Any]] = []
     panel_vote_count = 0
     repanel_jobs: List[Dict[str, Any]] = []
-    repanel_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
-        "a": [],
-        "b": [],
-        "c": [],
-    }
 
     for candidate in candidates:
         candidate_jobs = [
@@ -2604,43 +2420,22 @@ def tally() -> None:
                     "target": common_target(state),
                 }
                 repanel_jobs.append(job)
-                if state.get("ensemble_enabled"):
-                    repanel_jobs_by_slot[
-                        VERIFICATION_SLOT_BY_LENS[lens]
-                    ].append(job)
 
     state["reviewed"] = reviewed
     state["panel_vote_count"] = panel_vote_count
     state["repanel_jobs"] = repanel_jobs
-    state["repanel_jobs_a"] = repanel_jobs_by_slot["a"]
-    state["repanel_jobs_b"] = repanel_jobs_by_slot["b"]
-    state["repanel_jobs_c"] = repanel_jobs_by_slot["c"]
     state["max_effort"] = state["effort"] == "max"
     state["run_repanel"] = bool(repanel_jobs)
-    state["run_ensemble_repanel"] = bool(
-        state.get("ensemble_enabled") and repanel_jobs
-    )
-    state["run_standard_repanel"] = bool(
-        not state.get("ensemble_enabled") and repanel_jobs
-    )
     set_phase_jobs(state, "repanel", repanel_jobs)
     save_state(state)
     updates: Dict[str, Any] = {
         "max_effort": state["max_effort"],
         "run_repanel": bool(repanel_jobs),
-        "run_ensemble_repanel": bool(state.get("run_ensemble_repanel")),
-        "run_standard_repanel": bool(state.get("run_standard_repanel")),
     }
     if repanel_jobs:
-        if state.get("ensemble_enabled"):
-            for slot in ("a", "b", "c"):
-                updates[f"repanel_jobs_{slot}"] = list(
-                    state.get(f"repanel_jobs_{slot}") or []
-                )
-        else:
-            updates.update(
-                phase_jobs_context(state, "repanel", repanel_jobs)
-            )
+        updates.update(
+            phase_jobs_context(state, "repanel", repanel_jobs)
+        )
     print(
         f"Panel returned {panel_vote_count} vote(s) for "
         f"{len(reviewed)} candidate(s)"
@@ -3163,8 +2958,6 @@ def final_tally() -> None:
         provisional_verification_status=result["verification"]["status"],
         report_run_dir=state["run_dir"],
         products_dir=state["products_rel"],
-        run_ensemble_report=bool(state.get("ensemble_enabled")),
-        run_standard_report=not bool(state.get("ensemble_enabled")),
     )
 
 
@@ -3224,7 +3017,6 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser = subparsers.add_parser("prepare")
     prepare_parser.add_argument("--mode", default="scan")
     prepare_parser.add_argument("--effort", default="medium")
-    prepare_parser.add_argument("--ensemble", default="true")
     prepare_parser.add_argument("--scope", default="")
     prepare_parser.add_argument("--base", default="")
     prepare_parser.add_argument("--commit", default="")
@@ -3235,11 +3027,6 @@ def build_parser() -> argparse.ArgumentParser:
     merge_parser.add_argument(
         "phase",
         choices=("inventory", *PHASE_OUTPUT_KEYS.keys()),
-    )
-    merge_ensemble_parser = subparsers.add_parser("merge-ensemble")
-    merge_ensemble_parser.add_argument(
-        "batch",
-        choices=tuple(ENSEMBLE_BATCHES),
     )
 
     for name in (
@@ -3261,7 +3048,6 @@ def main(argv: Sequence[str]) -> int:
     commands = {
         "prepare": lambda: prepare(args),
         "merge": lambda: merge(args.phase),
-        "merge-ensemble": lambda: merge_ensemble(args.batch),
         "inventory-failed": inventory_failed,
         "plan-matrix": plan_matrix,
         "zip-cells": zip_cells,

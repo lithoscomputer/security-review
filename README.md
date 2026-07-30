@@ -20,7 +20,6 @@ Inputs (`-I name=value`, all optional):
 | --- | --- | --- | --- |
 | `mode` | `scan`, `changes`, `commit` | `scan` | Review the tree, a branch's diff, or one commit. |
 | `effort` | `low`, `medium`, `high`, `max` | `medium` | How much work the run does. See below. |
-| `ensemble` | `true`, `false` | `true` | Use neutral A/B/C/D slots backed by different models. Set this to `false` to use the standard Sonnet/Opus routing. |
 | `scope` | comma-separated paths | Empty (whole target) | Limit the review to these directories or files. |
 | `base` | a Git revision | Empty (auto-detect) | `changes` mode: what to diff against. Auto-detection tries the upstream, then `origin/HEAD`, `origin/main`, `origin/master`, `main`, and `master`. |
 | `range` | `base..HEAD` | Empty (use `base`) | `changes` mode: an explicit two-sided range instead of `base`. |
@@ -29,8 +28,8 @@ Inputs (`-I name=value`, all optional):
 
 Effort sets how much work happens, not how carefully any one agent thinks. The
 verification panel is three voters at every tier — that is what the report's
-confidence figures are calibrated against. The `ensemble` setting selects the
-models independently of the effort tier.
+confidence figures are calibrated against. Agent roles use fixed Sonnet/Opus
+routing; the effort tier changes the amount of work.
 
 | Tier | Shape |
 | --- | --- |

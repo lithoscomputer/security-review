@@ -11,10 +11,6 @@ digraph SecurityReview {
             .research { model: opus; reasoning_effort: xhigh; }
             .verification { model: opus; reasoning_effort: xhigh; }
             .report-author { model: opus; reasoning_effort: xhigh; }
-            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }
-            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }
-            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }
-            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }
         "
     ]
     rankdir=LR
@@ -33,7 +29,7 @@ digraph SecurityReview {
         label="Resolve and size scan target",
         timeout="180s",
         output_schema="routing",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode {{ inputs.mode }} --effort {{ inputs.effort }} --ensemble {{ inputs.ensemble }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 2580e0ac88a8bbadd7ff6907050c14dc548928bf3834f7624cc309fb45c83868 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
     target_gate [shape=diamond, label="Target has work?"]
 
@@ -61,36 +57,6 @@ digraph SecurityReview {
         label="Merge file receipts and candidates",
         stdin_source="context.parallel.results",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    file_review_a [
-        shape=component,
-        label="Changed-file review slot A",
-        for_each="context.file_review_jobs_a",
-        max_parallel=8,
-        auto_status=true
-    ]
-    file_reviewer_a [
-        label="Read assigned changed files in full with slot A",
-        class="ensemble-a",
-        prompt="@prompts/file-review.md",
-        output_schema="@schemas/file-review.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1800s",
-        project_memory=false
-    ]
-    file_review_join_a [
-        shape=tripleoctagon,
-        label="Gather slot A file receipts"
-    ]
-    merge_file_review_a [
-        shape=parallelogram,
-        label="Merge slot A file receipts and candidates",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble file-review-a",
         output_schema="routing",
         timeout="180s"
     ]
@@ -206,61 +172,6 @@ digraph SecurityReview {
         output_schema="routing",
         timeout="180s"
     ]
-    research_a [
-        shape=component,
-        label="Research slot A",
-        for_each="context.research_jobs_a",
-        max_parallel=8,
-        auto_status=true
-    ]
-    researcher_a [
-        label="Research component and category with slot A",
-        class="ensemble-a",
-        prompt="@prompts/research.md",
-        output_schema="@schemas/findings.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1800s",
-        project_memory=false
-    ]
-    research_join_a [shape=tripleoctagon, label="Gather slot A research outputs"]
-    merge_research_a [
-        shape=parallelogram,
-        label="Merge slot A research outputs",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble research-a",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    research_b [
-        shape=component,
-        label="Research slot B",
-        for_each="context.research_jobs_b",
-        max_parallel=8,
-        auto_status=true
-    ]
-    researcher_b [
-        label="Research component and category with slot B",
-        class="ensemble-b",
-        prompt="@prompts/research.md",
-        output_schema="@schemas/findings.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1800s",
-        project_memory=false
-    ]
-    research_join_b [shape=tripleoctagon, label="Gather slot B research outputs"]
-    merge_research_b [
-        shape=parallelogram,
-        label="Merge slot B research outputs",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble research-b",
-        output_schema="routing",
-        timeout="180s"
-    ]
-
     sweep_gate [shape=diamond, label="Sweeps needed?"]
     sweep [
         shape=component,
@@ -325,87 +236,6 @@ digraph SecurityReview {
         output_schema="routing",
         timeout="180s"
     ]
-    panel_a [
-        shape=component,
-        label="Panel slot A",
-        for_each="context.verification_jobs_a",
-        max_parallel=12,
-        auto_status=true
-    ]
-    panel_verifier_a [
-        label="Verify candidate with slot A",
-        class="ensemble-a",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    panel_join_a [shape=tripleoctagon, label="Gather slot A panel votes"]
-    merge_panel_a [
-        shape=parallelogram,
-        label="Merge slot A panel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble panel-a",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    panel_b [
-        shape=component,
-        label="Panel slot B",
-        for_each="context.verification_jobs_b",
-        max_parallel=12,
-        auto_status=true
-    ]
-    panel_verifier_b [
-        label="Verify candidate with slot B",
-        class="ensemble-b",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    panel_join_b [shape=tripleoctagon, label="Gather slot B panel votes"]
-    merge_panel_b [
-        shape=parallelogram,
-        label="Merge slot B panel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble panel-b",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    panel_c [
-        shape=component,
-        label="Panel slot C",
-        for_each="context.verification_jobs_c",
-        max_parallel=12,
-        auto_status=true
-    ]
-    panel_verifier_c [
-        label="Verify candidate with slot C",
-        class="ensemble-c",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    panel_join_c [shape=tripleoctagon, label="Gather slot C panel votes"]
-    merge_panel_c [
-        shape=parallelogram,
-        label="Merge slot C panel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble panel-c",
-        output_schema="routing",
-        timeout="180s"
-    ]
     tally [
         shape=parallelogram,
         label="Tally initial panels",
@@ -440,87 +270,6 @@ digraph SecurityReview {
         label="Merge repanel votes",
         stdin_source="context.parallel.results",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py merge repanel",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    repanel_a [
-        shape=component,
-        label="Repanel slot A",
-        for_each="context.repanel_jobs_a",
-        max_parallel=12,
-        auto_status=true
-    ]
-    repanel_verifier_a [
-        label="Recheck marginal candidate with slot A",
-        class="ensemble-a",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    repanel_join_a [shape=tripleoctagon, label="Gather slot A repanel votes"]
-    merge_repanel_a [
-        shape=parallelogram,
-        label="Merge slot A repanel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble repanel-a",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    repanel_b [
-        shape=component,
-        label="Repanel slot B",
-        for_each="context.repanel_jobs_b",
-        max_parallel=12,
-        auto_status=true
-    ]
-    repanel_verifier_b [
-        label="Recheck marginal candidate with slot B",
-        class="ensemble-b",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    repanel_join_b [shape=tripleoctagon, label="Gather slot B repanel votes"]
-    merge_repanel_b [
-        shape=parallelogram,
-        label="Merge slot B repanel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble repanel-b",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    repanel_c [
-        shape=component,
-        label="Repanel slot C",
-        for_each="context.repanel_jobs_c",
-        max_parallel=12,
-        auto_status=true
-    ]
-    repanel_verifier_c [
-        label="Recheck marginal candidate with slot C",
-        class="ensemble-c",
-        prompt="@prompts/verify.md",
-        output_schema="@schemas/verdict.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1200s",
-        project_memory=false
-    ]
-    repanel_join_c [shape=tripleoctagon, label="Gather slot C repanel votes"]
-    merge_repanel_c [
-        shape=parallelogram,
-        label="Merge slot C repanel votes",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge-ensemble repanel-c",
         output_schema="routing",
         timeout="180s"
     ]
@@ -579,17 +328,6 @@ digraph SecurityReview {
         fidelity="truncate",
         project_memory=false
     ]
-    report_author_d [
-        label="Security Lead slot D writes human report",
-        class="ensemble-d",
-        prompt="@prompts/report.md",
-        output_schema="routing",
-        output_retries=2,
-        max_retries=2,
-        timeout="1200s",
-        fidelity="truncate",
-        project_memory=false
-    ]
     render_report [
         shape=parallelogram,
         label="Original deterministic renderer writes JSONL and stamp",
@@ -602,8 +340,7 @@ digraph SecurityReview {
     prepare -> target_gate [condition="outcome=succeeded"]
     prepare -> abort
     target_gate -> exit [condition="context.empty_target=true"]
-    target_gate -> file_review_a [condition="context.run_ensemble_file_review=true"]
-    target_gate -> file_review [condition="context.run_standard_file_review=true"]
+    target_gate -> file_review [condition="context.run_file_review=true"]
     target_gate -> inventory [condition="context.use_inventory=true"]
     target_gate -> plan_matrix
 
@@ -611,10 +348,6 @@ digraph SecurityReview {
     file_reviewer -> file_review_join -> merge_file_review
     merge_file_review -> post_file_review_gate [condition="outcome=succeeded"]
     merge_file_review -> abort
-    file_review_a -> file_reviewer_a [fidelity="truncate"]
-    file_reviewer_a -> file_review_join_a -> merge_file_review_a
-    merge_file_review_a -> post_file_review_gate [condition="outcome=succeeded"]
-    merge_file_review_a -> abort
     post_file_review_gate -> inventory [condition="context.use_inventory=true"]
     post_file_review_gate -> plan_matrix
 
@@ -638,21 +371,12 @@ digraph SecurityReview {
     zip_cells -> research_gate [condition="outcome=succeeded"]
     zip_cells -> abort
 
-    research_gate -> research_a [condition="context.run_ensemble_research=true"]
-    research_gate -> research [condition="context.run_standard_research=true"]
+    research_gate -> research [condition="context.run_research=true"]
     research_gate -> sweep_gate
     research -> researcher [fidelity="truncate"]
     researcher -> research_join -> merge_research
     merge_research -> sweep_gate [condition="outcome=succeeded"]
     merge_research -> abort
-    research_a -> researcher_a [fidelity="truncate"]
-    researcher_a -> research_join_a -> merge_research_a
-    merge_research_a -> research_b [condition="outcome=succeeded"]
-    merge_research_a -> abort
-    research_b -> researcher_b [fidelity="truncate"]
-    researcher_b -> research_join_b -> merge_research_b
-    merge_research_b -> sweep_gate [condition="outcome=succeeded"]
-    merge_research_b -> abort
 
     sweep_gate -> sweep [condition="context.run_sweeps=true"]
     sweep_gate -> dedup_rank
@@ -663,49 +387,23 @@ digraph SecurityReview {
 
     dedup_rank -> panel_gate [condition="outcome=succeeded"]
     dedup_rank -> abort
-    panel_gate -> panel_a [condition="context.run_ensemble_panel=true"]
-    panel_gate -> panel [condition="context.run_standard_panel=true"]
+    panel_gate -> panel [condition="context.run_panel=true"]
     panel_gate -> tally
     panel -> panel_verifier [fidelity="truncate"]
     panel_verifier -> panel_join -> merge_panel
     merge_panel -> tally [condition="outcome=succeeded"]
     merge_panel -> abort
-    panel_a -> panel_verifier_a [fidelity="truncate"]
-    panel_verifier_a -> panel_join_a -> merge_panel_a
-    merge_panel_a -> panel_b [condition="outcome=succeeded"]
-    merge_panel_a -> abort
-    panel_b -> panel_verifier_b [fidelity="truncate"]
-    panel_verifier_b -> panel_join_b -> merge_panel_b
-    merge_panel_b -> panel_c [condition="outcome=succeeded"]
-    merge_panel_b -> abort
-    panel_c -> panel_verifier_c [fidelity="truncate"]
-    panel_verifier_c -> panel_join_c -> merge_panel_c
-    merge_panel_c -> tally [condition="outcome=succeeded"]
-    merge_panel_c -> abort
 
     tally -> effort_gate [condition="outcome=succeeded"]
     tally -> abort
     effort_gate -> repanel_gate [condition="context.max_effort=true"]
     effort_gate -> final_tally
-    repanel_gate -> repanel_a [condition="context.run_ensemble_repanel=true"]
-    repanel_gate -> repanel [condition="context.run_standard_repanel=true"]
+    repanel_gate -> repanel [condition="context.run_repanel=true"]
     repanel_gate -> adversarial_plan
     repanel -> repanel_verifier [fidelity="truncate"]
     repanel_verifier -> repanel_join -> merge_repanel
     merge_repanel -> adversarial_plan [condition="outcome=succeeded"]
     merge_repanel -> abort
-    repanel_a -> repanel_verifier_a [fidelity="truncate"]
-    repanel_verifier_a -> repanel_join_a -> merge_repanel_a
-    merge_repanel_a -> repanel_b [condition="outcome=succeeded"]
-    merge_repanel_a -> abort
-    repanel_b -> repanel_verifier_b [fidelity="truncate"]
-    repanel_verifier_b -> repanel_join_b -> merge_repanel_b
-    merge_repanel_b -> repanel_c [condition="outcome=succeeded"]
-    merge_repanel_b -> abort
-    repanel_c -> repanel_verifier_c [fidelity="truncate"]
-    repanel_verifier_c -> repanel_join_c -> merge_repanel_c
-    merge_repanel_c -> adversarial_plan [condition="outcome=succeeded"]
-    merge_repanel_c -> abort
 
     adversarial_plan -> redteam_gate [condition="outcome=succeeded"]
     adversarial_plan -> abort
@@ -716,13 +414,10 @@ digraph SecurityReview {
     merge_redteam -> final_tally [condition="outcome=succeeded"]
     merge_redteam -> abort
 
-    final_tally -> report_author_d [condition="context.run_ensemble_report=true"]
-    final_tally -> report_author [condition="context.run_standard_report=true"]
+    final_tally -> report_author [condition="outcome=succeeded"]
     final_tally -> abort
     report_author -> render_report [condition="outcome=succeeded"]
     report_author -> abort
-    report_author_d -> render_report [condition="outcome=succeeded"]
-    report_author_d -> abort
     render_report -> exit [condition="outcome=succeeded"]
     render_report -> abort
 }
