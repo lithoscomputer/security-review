@@ -6,7 +6,8 @@ vulnerabilities across a component × category matrix, sweep the gaps, and then
 try hard to disprove every candidate. Only findings that survive an adversarial
 panel are reported.
 
-The review is read-only. It produces a report, never a code change.
+The review is read-only. It produces a completed scan bundle and deterministic
+reports, never a code change.
 
 ## Running a review
 
@@ -38,11 +39,12 @@ routing; the effort tier changes the amount of work.
 | `high` | As `medium` with a wider inventory (24 components), two researchers per cell, and two sweeps. |
 | `max` | As `high`, plus an adversarial round: marginal 2-of-3 keeps are repanelled and every survivor faces a red-team refuter. |
 
-A run writes `CLAUDE-SECURITY-<timestamp>/` holding the human-readable
-`CLAUDE-SECURITY-RESULTS.md`, the machine-readable
-`CLAUDE-SECURITY-RESULTS.jsonl` for CI gates, and
-`CLAUDE-SECURITY-REVISION-<tag>.json` — the stamp recording what was reviewed,
-at what effort, and how it was verified. The directory carries its own
+A run writes `CLAUDE-SECURITY-<timestamp>/` with five canonical files:
+`scan-manifest.json`, `candidate-ledger.jsonl`, `findings.json`,
+`coverage.json`, and `panel-votes.jsonl`. Deterministic code derives
+`CLAUDE-SECURITY-RESULTS.md`, `CLAUDE-SECURITY-RESULTS.jsonl`, and
+`CLAUDE-SECURITY-REVISION-<tag>.json` from those files. No model authors the
+final report. SARIF is not generated. The directory carries its own
 `.gitignore`, so nothing in it reaches a commit unless you delete that file.
 
 Each finding has three IDs. `F1`, `F2`, and so on are short display labels for
@@ -67,11 +69,11 @@ Everything the workflow runs lives under
 | `workflow.toml` | Run configuration: inputs, environment, artifacts. |
 | `verify.toml` | A `low`-effort run against the fixture, for smoke-testing the workflow. |
 | `scripts/security_review.py` | The deterministic engine. Every state transition, cap, deduplication, and vote tally lives here, outside the agents. |
-| `scripts/render_report.py` | Writes the JSONL and the revision stamp, and derives `verification.status` from the vote record. |
+| `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown report, findings JSONL, and revision stamp. |
 | `scripts/git_readonly.py` | A read-only Git entry point with external diff and textconv drivers disabled. |
-| `prompts/` | One prompt per agent role: inventory, threat model, research, sweep, verify, redteam, report. |
-| `schemas/` | The structured output each role must return. |
-| `specs/report-spec.md` | The shape and standard of the human-readable report. |
+| `prompts/` | One prompt per agent role: inventory, threat model, research, sweep, verify, and redteam. |
+| `schemas/` | The model response schemas and the versioned canonical bundle contracts. |
+| `specs/report-spec.md` | The canonical bundle relationships and deterministic rendering rules. |
 | `fixtures/` | A deliberate command-injection fixture the smoke run expects to find. |
 
 `tests/test_fabro_workflow.py` holds the workflow's tests. The `workflows/`,

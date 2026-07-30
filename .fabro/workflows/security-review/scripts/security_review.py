@@ -104,6 +104,14 @@ SEVERITY_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
 CONFIDENCE_RANK = SEVERITY_RANK
 FINGERPRINT_PREFIX = "codex-security/v1:sha256:"
 TARGET_ID_PREFIX = "security-review-target/v1:sha256:"
+CANONICAL_SCHEMA_VERSION = 1
+CANONICAL_FILES = (
+    "scan-manifest.json",
+    "candidate-ledger.jsonl",
+    "findings.json",
+    "coverage.json",
+    "panel-votes.jsonl",
+)
 MERGEABLE_FINDING_FIELDS = (
     "evidence",
     "impact",
@@ -168,6 +176,24 @@ def write_json(path: Path, value: Any) -> None:
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    os.replace(temporary, path)
+
+
+def write_jsonl(path: Path, values: Iterable[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        for value in values:
+            handle.write(
+                json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
 
 
@@ -794,6 +820,9 @@ def common_target(state: Mapping[str, Any]) -> Dict[str, Any]:
 
 def prepare(args: argparse.Namespace) -> None:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    started_at = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    )
     scan_id = scan_id_from_args(args)
     target_id, target_id_source = stable_target_identity()
     mode = args.mode.strip().lower()
@@ -964,8 +993,9 @@ def prepare(args: argparse.Namespace) -> None:
     empty_target = empty_diff or empty_scope
 
     state: Dict[str, Any] = {
-        "version": 4,
+        "version": 5,
         "root": str(root()),
+        "started_at": started_at,
         "scan_id": scan_id,
         "target_id": target_id,
         "target_id_source": target_id_source,
@@ -1058,7 +1088,16 @@ def prepare(args: argparse.Namespace) -> None:
         parent,
         revision_range,
     )
+    model_record = {
+        "provider": "openrouter",
+        "inventory": "sonnet",
+        "scan": "opus",
+    }
+    state["revision"] = revision
+    state["model"] = model_record
     scan_meta = {
+        "schema_version": CANONICAL_SCHEMA_VERSION,
+        "started_at": started_at,
         "scan_id": scan_id,
         "target_id": target_id,
         "target_id_source": target_id_source,
@@ -1069,11 +1108,7 @@ def prepare(args: argparse.Namespace) -> None:
         "mode": mode,
         "scope": scope,
         "effort": effort,
-        "model": {
-            "provider": "openrouter",
-            "inventory": "sonnet",
-            "scan": "opus",
-        },
+        "model": model_record,
         "revision": revision,
         "revision_source": "self-reported",
         "top_level_dirs": top_level_dirs,
@@ -2051,11 +2086,8 @@ def dedup_rank() -> None:
                     )
             raw_candidates.append(copy)
 
-    ranked = sorted(raw_candidates, key=rank_key)
-    capped = ranked[:CANDIDATE_CAP]
-    candidates_dropped = max(0, len(raw_candidates) - len(capped))
     by_key: Dict[str, Dict[str, Any]] = {}
-    for report in capped:
+    for report in sorted(raw_candidates, key=rank_key):
         key = finding_key(report)
         existing = by_key.get(key)
         if existing is None:
@@ -2081,12 +2113,6 @@ def dedup_rank() -> None:
             if not existing.get(field) and report.get(field):
                 existing[field] = report[field]
 
-    capped_keys = {finding_key(report) for report in capped}
-    dropped_unique = {
-        finding_key(report)
-        for report in ranked[CANDIDATE_CAP:]
-        if finding_key(report) not in capped_keys
-    }
     deduplicated = list(by_key.values())
     deduplicated.sort(
         key=lambda finding: (
@@ -2097,9 +2123,15 @@ def dedup_rank() -> None:
         )
     )
     for index, candidate in enumerate(deduplicated, 1):
+        candidate["rank"] = index
         candidate["id"] = f"F{index}"
 
-    candidates_for_verification = deduplicated[:VERIFICATION_CAP]
+    candidates_within_budget = deduplicated[:CANDIDATE_CAP]
+    candidates_for_verification = candidates_within_budget[:VERIFICATION_CAP]
+    candidates_deferred_by_cap = max(
+        0,
+        len(deduplicated) - len(candidates_within_budget),
+    )
     verification_jobs: List[Dict[str, Any]] = []
     for candidate in candidates_for_verification:
         for lens in VERIFICATION_LENSES:
@@ -2108,6 +2140,8 @@ def dedup_rank() -> None:
                 "name": f"{candidate['id']}:{lower_lens}",
                 "job_id": f"panel:{candidate['id']}:{lower_lens}",
                 "candidate_id": candidate["id"],
+                "finding_id": candidate["findingId"],
+                "occurrence_id": candidate["occurrenceId"],
                 "finding": verification_claim(candidate),
                 "lens": lens,
                 "target": common_target(state),
@@ -2115,13 +2149,13 @@ def dedup_rank() -> None:
             verification_jobs.append(job)
 
     state["raw_candidate_count"] = len(raw_candidates)
-    state["candidates_dropped_by_cap"] = candidates_dropped
-    state["dropped_unique_candidate_count"] = len(dropped_unique)
+    state["candidates_dropped_by_cap"] = candidates_deferred_by_cap
+    state["dropped_unique_candidate_count"] = candidates_deferred_by_cap
     state["deduplicated_candidates"] = deduplicated
     state["verification_candidates"] = candidates_for_verification
     state["unverified_by_cap"] = max(
         0,
-        len(deduplicated) - len(candidates_for_verification),
+        len(candidates_within_budget) - len(candidates_for_verification),
     )
     state["verification_jobs"] = verification_jobs
     state["run_panel"] = bool(verification_jobs)
@@ -2142,17 +2176,17 @@ def dedup_rank() -> None:
             f"research: {len(invalid_results)} of {len(jobs)} research "
             "agent(s) did not return a usable result"
         )
-    if candidates_dropped:
+    if candidates_deferred_by_cap:
         print(
-            f"candidates: {len(raw_candidates)} exceed the cap of "
-            f"{CANDIDATE_CAP}; keeping the highest-severity {CANDIDATE_CAP} "
-            "-- the report will say so"
+            f"candidate budget: {candidates_deferred_by_cap} unique "
+            f"candidate(s) exceed the cap of {CANDIDATE_CAP}; their complete "
+            "claims will remain in the ledger as deferred"
         )
     if state["unverified_by_cap"]:
         print(
             f"verification cap: {state['unverified_by_cap']} lower-ranked "
-            "candidate(s) will not be verified or reported -- the stamp "
-            "records them as unreviewed_candidate_sites"
+            "candidate(s) will not be verified or reported -- the canonical "
+            "ledger records them as deferred"
         )
     print(
         f"Candidates: {len(raw_candidates)} raw -> "
@@ -2223,6 +2257,8 @@ def tally() -> None:
                     "name": f"repanel:{candidate['id']}:{lower_lens}",
                     "job_id": f"repanel:{candidate['id']}:{lower_lens}",
                     "candidate_id": candidate["id"],
+                    "finding_id": candidate["findingId"],
+                    "occurrence_id": candidate["occurrenceId"],
                     "finding": verification_claim(candidate),
                     "lens": lens,
                     "target": common_target(state),
@@ -2305,6 +2341,8 @@ def adversarial_plan() -> None:
                 "name": f"redteam:{candidate['id']}",
                 "job_id": f"redteam:{candidate['id']}",
                 "candidate_id": candidate["id"],
+                "finding_id": candidate["findingId"],
+                "occurrence_id": candidate["occurrenceId"],
                 "finding": verification_claim(candidate),
                 "target": common_target(state),
             }
@@ -2424,6 +2462,277 @@ def verification_status(
     return "verified", None
 
 
+def confidence_word(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in {"high", "medium", "low"} else "low"
+
+
+def canonical_candidate(
+    candidate: Mapping[str, Any],
+    confidence: Optional[str] = None,
+) -> Dict[str, Any]:
+    raw_cwe = str(candidate.get("cweId") or "").strip().upper().replace("_", "-")
+    if re.fullmatch(r"[0-9]{1,5}", raw_cwe):
+        raw_cwe = "CWE-" + raw_cwe
+    cwe_id = raw_cwe if re.fullmatch(r"CWE-[0-9]{1,5}", raw_cwe) else None
+    return {
+        "findingId": candidate["findingId"],
+        "occurrenceId": candidate["occurrenceId"],
+        "fingerprints": candidate["fingerprints"],
+        "ruleId": candidate["ruleId"],
+        "identity": candidate["identity"],
+        "title": candidate["title"],
+        "impact": candidate.get("impact") or "",
+        "file": candidate["file"],
+        "line": int(candidate["line"]),
+        "description": candidate["rationale"],
+        "evidence": candidate.get("evidence") or "",
+        "exploit_scenario": (
+            candidate.get("exploitScenario")
+            or candidate["rationale"]
+        ),
+        "preconditions": candidate.get("preconditions") or [],
+        "category": candidate["category"],
+        "severity": candidate["severity"],
+        "confidence": confidence or confidence_word(
+            candidate.get("confidence")
+        ),
+        "recommendation": candidate.get("recommendation") or "",
+        "cwe_id": cwe_id,
+        "snippet": candidate.get("snippet") or "",
+        "symbol": candidate.get("symbol") or "",
+    }
+
+
+def reportable_confidence(record: Mapping[str, Any]) -> str:
+    candidate = record.get("candidate") or {}
+    authored = confidence_word(candidate.get("confidence"))
+    panel = record.get("panel") or {}
+    ceiling = "high" if panel.get("true") == 3 else "medium"
+    order = {"low": 1, "medium": 2, "high": 3}
+    return authored if order[authored] <= order[ceiling] else ceiling
+
+
+def panel_vote_records(state: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    candidates = {
+        candidate.get("findingId"): candidate
+        for candidate in state.get("deduplicated_candidates") or []
+        if isinstance(candidate, dict)
+        and isinstance(candidate.get("findingId"), str)
+    }
+    records: List[Dict[str, Any]] = []
+    for phase in ("panel", "repanel", "redteam"):
+        jobs = (
+            state.get("phase_jobs", {}).get(phase, [])
+            if isinstance(state.get("phase_jobs"), dict)
+            else []
+        )
+        for job in jobs if isinstance(jobs, list) else []:
+            if not isinstance(job, dict):
+                continue
+            finding_id = job.get("finding_id")
+            candidate = candidates.get(finding_id)
+            if not isinstance(finding_id, str) or candidate is None:
+                raise WorkflowDataError(
+                    f"{phase} vote job has no stable candidate identity"
+                )
+            vote = phase_vote(state, phase, job)
+            lens = (
+                str(job.get("lens"))
+                if isinstance(job.get("lens"), str)
+                else "RED_TEAM"
+            )
+            records.append(
+                {
+                    "schemaVersion": CANONICAL_SCHEMA_VERSION,
+                    "voteId": (
+                        f"{phase}:{candidate['occurrenceId']}:"
+                        f"{lens.lower()}"
+                    ),
+                    "findingId": finding_id,
+                    "occurrenceId": candidate["occurrenceId"],
+                    "candidateRank": int(candidate["rank"]),
+                    "round": phase,
+                    "lens": lens,
+                    "claim": job.get("finding") or {},
+                    "status": "completed" if vote else "missing",
+                    "verdict": vote["verdict"] if vote else None,
+                    "reasoning": vote["reasoning"] if vote else "",
+                }
+            )
+    return records
+
+
+def candidate_disposition(
+    candidate: Mapping[str, Any],
+    reviewed_by_id: Mapping[str, Mapping[str, Any]],
+) -> Tuple[str, str]:
+    rank = int(candidate.get("rank") or 0)
+    if rank > CANDIDATE_CAP:
+        return "deferred", "candidate-budget"
+    if rank > VERIFICATION_CAP:
+        return "deferred", "verification-budget"
+    record = reviewed_by_id.get(str(candidate.get("findingId")))
+    if not isinstance(record, dict):
+        return "verification-incomplete", "panel-record-missing"
+    panel = record.get("panel") or {}
+    if panel.get("voters") != 3:
+        return "verification-incomplete", "panel-incomplete"
+    if record.get("kept"):
+        return "reportable", "verified-panel-quorum"
+    adversarial = record.get("adversarial") or {}
+    repanel = adversarial.get("repanel")
+    if (
+        isinstance(repanel, dict)
+        and repanel.get("voters") == 3
+        and int(repanel.get("true") or 0) < 2
+    ):
+        return "rejected", "repanel-rejected"
+    if adversarial.get("redteam") == "FALSE_POSITIVE":
+        return "rejected", "redteam-refuted"
+    return "rejected", "panel-rejected"
+
+
+def candidate_ledger(
+    state: Mapping[str, Any],
+    findings: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    reviewed_by_id = {
+        record.get("candidate", {}).get("findingId"): record
+        for record in state.get("reviewed") or []
+        if isinstance(record, dict)
+        and isinstance(record.get("candidate"), dict)
+    }
+    findings_by_id = {
+        finding.get("findingId"): finding
+        for finding in findings
+        if isinstance(finding.get("findingId"), str)
+    }
+    ledger: List[Dict[str, Any]] = []
+    for candidate in state.get("deduplicated_candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        disposition, reason = candidate_disposition(
+            candidate,
+            reviewed_by_id,
+        )
+        reportable = findings_by_id.get(candidate["findingId"])
+        canonical = canonical_candidate(candidate)
+        display_id: Optional[str] = None
+        if disposition == "reportable":
+            if not isinstance(reportable, dict):
+                raise WorkflowDataError(
+                    "reportable ledger candidate is absent from findings"
+                )
+            display_id = str(reportable["id"])
+            canonical = {
+                key: value
+                for key, value in reportable.items()
+                if key != "id"
+            }
+        ledger.append(
+            {
+                "schemaVersion": CANONICAL_SCHEMA_VERSION,
+                "rank": int(candidate["rank"]),
+                "disposition": disposition,
+                "dispositionReason": reason,
+                "displayId": display_id,
+                "selectedForPanel": int(candidate["rank"])
+                <= VERIFICATION_CAP,
+                "withinCandidateBudget": int(candidate["rank"])
+                <= CANDIDATE_CAP,
+                "reports": int(candidate.get("reports") or 1),
+                "reporters": candidate.get("reporters") or [],
+                "candidate": canonical,
+            }
+        )
+    return ledger
+
+
+def scan_manifest(
+    state: Mapping[str, Any],
+    result: Mapping[str, Any],
+    ledger: Sequence[Mapping[str, Any]],
+    votes: Sequence[Mapping[str, Any]],
+    completed_at: str,
+) -> Dict[str, Any]:
+    disposition_counts: Dict[str, int] = {}
+    for entry in ledger:
+        disposition = str(entry.get("disposition") or "")
+        disposition_counts[disposition] = (
+            disposition_counts.get(disposition, 0) + 1
+        )
+    reasons: List[str] = []
+    if disposition_counts.get("deferred"):
+        reasons.append(
+            f"{disposition_counts['deferred']} candidate(s) were deferred"
+        )
+    if disposition_counts.get("verification-incomplete"):
+        reasons.append(
+            f"{disposition_counts['verification-incomplete']} candidate(s) "
+            "had incomplete verification"
+        )
+    invalid_results = state.get("invalid_research_results") or []
+    if invalid_results:
+        reasons.append(
+            f"{len(invalid_results)} research result(s) were unusable"
+        )
+    completed_vote_records = sum(
+        vote.get("status") == "completed" for vote in votes
+    )
+    missing_vote_records = len(votes) - completed_vote_records
+    if missing_vote_records:
+        reasons.append(
+            f"{missing_vote_records} verification vote(s) did not complete"
+        )
+    verification = result.get("verification") or {}
+    if verification.get("status") != "verified" and verification.get("reason"):
+        reasons.append(str(verification["reason"]))
+    completion_status = "partial" if reasons else "complete"
+    return {
+        "schemaVersion": CANONICAL_SCHEMA_VERSION,
+        "kind": "security-review.completed-scan",
+        "scanId": state["scan_id"],
+        "target": {
+            "id": state["target_id"],
+            "idSource": state["target_id_source"],
+            "scanRoot": state["root"],
+        },
+        "startedAt": state["started_at"],
+        "completedAt": completed_at,
+        "workflow": {
+            "name": "security-review",
+            "stateVersion": int(state.get("version") or 0),
+        },
+        "request": {
+            "mode": state.get("mode"),
+            "scope": state.get("scope") or [],
+            "range": state.get("range"),
+            "base": state.get("base"),
+            "commit": state.get("commit"),
+            "effort": state.get("effort"),
+            "focus": state.get("focus"),
+        },
+        "revision": state.get("revision") or {"versioned": False},
+        "model": state.get("model") or {},
+        "completion": {
+            "status": completion_status,
+            "reasons": reasons,
+            "verificationStatus": verification.get("status"),
+            "rawCandidateReports": int(
+                state.get("raw_candidate_count", 0)
+            ),
+            "uniqueCandidates": len(ledger),
+            "dispositions": disposition_counts,
+            "findings": len(result.get("findings") or []),
+            "panelVoteRecords": len(votes),
+            "completedVoteRecords": completed_vote_records,
+            "missingVoteRecords": missing_vote_records,
+        },
+        "canonicalFiles": list(CANONICAL_FILES),
+    }
+
+
 def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
     reviewed = state.get("reviewed") or []
     casualties = list(state.get("adversarial_casualties") or [])
@@ -2490,30 +2799,10 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
     findings = [
         {
             "id": record["candidate"]["id"],
-            "findingId": record["candidate"]["findingId"],
-            "occurrenceId": record["candidate"]["occurrenceId"],
-            "fingerprints": record["candidate"]["fingerprints"],
-            "ruleId": record["candidate"]["ruleId"],
-            "identity": record["candidate"]["identity"],
-            "title": record["candidate"]["title"],
-            "impact": record["candidate"].get("impact") or "",
-            "file": record["candidate"]["file"],
-            "line": int(record["candidate"]["line"]),
-            "description": record["candidate"]["rationale"],
-            "exploit_scenario": (
-                record["candidate"].get("exploitScenario")
-                or record["candidate"]["rationale"]
+            **canonical_candidate(
+                record["candidate"],
+                reportable_confidence(record),
             ),
-            "preconditions": record["candidate"].get("preconditions") or [],
-            "category": record["candidate"]["category"],
-            "severity": record["candidate"]["severity"],
-            "confidence": record["candidate"]["confidence"],
-            "recommendation": (
-                record["candidate"].get("recommendation") or ""
-            ),
-            "cwe_id": record["candidate"].get("cweId") or None,
-            "snippet": record["candidate"].get("snippet") or "",
-            "symbol": record["candidate"].get("symbol") or "",
         }
         for record in kept
     ]
@@ -2544,40 +2833,66 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def write_final_files(
+def write_canonical_bundle(
     state: Mapping[str, Any],
     result: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    ledger: Sequence[Mapping[str, Any]],
+    panel_votes: Sequence[Mapping[str, Any]],
 ) -> None:
-    run_dir = Path(str(state["run_dir"]))
-    write_json(run_dir / "findings.json", result["findings"])
-    write_json(run_dir / "votes.json", result["votes"])
-    write_json(run_dir / "coverage.json", result["coverage"])
-    write_json(run_dir / "final.json", result)
+    products_dir = Path(str(state["products_dir"]))
+    write_json(products_dir / "scan-manifest.json", manifest)
+    write_jsonl(products_dir / "candidate-ledger.jsonl", ledger)
+    write_json(products_dir / "findings.json", result["findings"])
+    write_json(products_dir / "coverage.json", result["coverage"])
+    write_jsonl(products_dir / "panel-votes.jsonl", panel_votes)
 
 
 def final_tally() -> None:
     state = load_state()
     assert_workspace_unchanged(state)
     result = assemble_final(state)
+    panel_votes = panel_vote_records(state)
+    ledger = candidate_ledger(state, result["findings"])
+    completed_at = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    )
+    manifest = scan_manifest(
+        state,
+        result,
+        ledger,
+        panel_votes,
+        completed_at,
+    )
     state["adversarial_casualties"] = result["coverage"][
         "adversarialCasualties"
     ]
+    state["completed_at"] = completed_at
+    state["scan_manifest"] = manifest
     state["final"] = result
     save_state(state)
-    write_final_files(state, result)
+    write_canonical_bundle(
+        state,
+        result,
+        manifest,
+        ledger,
+        panel_votes,
+    )
     for casualty in result["coverage"]["adversarialCasualties"]:
         print(casualty)
     print(
         f"Verified result: {len(result['findings'])} finding(s) kept of "
         f"{len(state.get('reviewed') or [])} reviewed "
         f"({result['votes']['unreviewed_candidate_sites']} unreviewed); "
-        f"provisional status {result['verification']['status']}"
+        f"verification {result['verification']['status']}, completion "
+        f"{manifest['completion']['status']}"
     )
     emit(
         kept_count=len(result["findings"]),
         provisional_verification_status=result["verification"]["status"],
         report_run_dir=state["run_dir"],
         products_dir=state["products_rel"],
+        canonical_bundle_written=True,
     )
 
 
@@ -2601,11 +2916,10 @@ def load_renderer() -> Any:
 def render_report() -> None:
     state = load_state()
     assert_workspace_unchanged(state)
-    run_dir = str(state["run_dir"])
     products_rel = str(state["products_rel"])
     renderer = load_renderer()
     try:
-        findings, verification, tag = renderer.render(run_dir, products_rel)
+        findings, verification, tag = renderer.render(products_rel)
     except Exception as error:
         raise WorkflowDataError(
             f"the original report renderer refused the report: {error}"
@@ -2618,7 +2932,7 @@ def render_report() -> None:
     print(
         f"Wrote {products_rel}/CLAUDE-SECURITY-RESULTS.md, "
         f"CLAUDE-SECURITY-RESULTS.jsonl, and {stamp_name}; "
-        "scratch records retained in the cloud sandbox"
+        "canonical bundle and scratch records retained in the cloud sandbox"
     )
     emit(
         report_path=f"{products_rel}/CLAUDE-SECURITY-RESULTS.md",

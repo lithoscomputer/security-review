@@ -48,6 +48,14 @@ def run(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+
 class FabroWorkflowDriverTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -290,28 +298,110 @@ class FabroWorkflowDriverTest(unittest.TestCase):
 
         state = DRIVER.load_state()
         run_dir = Path(state["run_dir"])
-        (run_dir / "CLAUDE-SECURITY-RESULTS.md").write_text(
-            "# Claude Security results\n\nOne verified finding.\n",
-            encoding="utf-8",
+        products = Path(state["products_dir"])
+        manifest = json.loads(
+            (products / "scan-manifest.json").read_text(encoding="utf-8")
         )
+        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        canonical_findings = json.loads(
+            (products / "findings.json").read_text(encoding="utf-8")
+        )
+        coverage = json.loads(
+            (products / "coverage.json").read_text(encoding="utf-8")
+        )
+        panel_votes = read_jsonl(products / "panel-votes.jsonl")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(manifest["scanId"], "test-scan-01")
+        self.assertEqual(manifest["workflow"]["stateVersion"], 5)
+        self.assertEqual(manifest["completion"]["status"], "complete")
+        self.assertEqual(
+            manifest["completion"]["dispositions"],
+            {"reportable": 1},
+        )
+        self.assertEqual(manifest["completion"]["rawCandidateReports"], 2)
+        self.assertEqual(manifest["completion"]["uniqueCandidates"], 1)
+        self.assertEqual(manifest["completion"]["panelVoteRecords"], 7)
+        self.assertEqual(manifest["completion"]["completedVoteRecords"], 7)
+        self.assertEqual(manifest["completion"]["missingVoteRecords"], 0)
+        self.assertEqual(
+            manifest["canonicalFiles"],
+            list(DRIVER.CANONICAL_FILES),
+        )
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]["disposition"], "reportable")
+        self.assertEqual(ledger[0]["displayId"], "F1")
+        self.assertEqual(ledger[0]["reports"], 2)
+        self.assertEqual(canonical_findings, final["findings"])
+        self.assertEqual(coverage, final["coverage"])
+        self.assertEqual(len(panel_votes), 7)
+        self.assertEqual(
+            [vote["round"] for vote in panel_votes],
+            ["panel", "panel", "panel", "repanel", "repanel", "repanel", "redteam"],
+        )
+        self.assertEqual(
+            {vote["lens"] for vote in panel_votes[:3]},
+            {"REACHABILITY", "IMPACT", "DEFENSES"},
+        )
+        for vote in panel_votes:
+            self.assertEqual(vote["findingId"], stable["findingId"])
+            self.assertEqual(vote["occurrenceId"], stable["occurrenceId"])
+            self.assertTrue(
+                vote["voteId"].startswith(
+                    f"{vote['round']}:{stable['occurrenceId']}:"
+                )
+            )
+            self.assertEqual(
+                vote["claim"]["evidenceAsCited"],
+                finding["evidence"],
+            )
+            self.assertEqual(vote["status"], "completed")
+
         self.call(DRIVER.render_report)
         state = DRIVER.load_state()
-        products = Path(state["products_dir"])
         self.assertTrue((products / "CLAUDE-SECURITY-RESULTS.md").is_file())
         self.assertTrue((products / "CLAUDE-SECURITY-RESULTS.jsonl").is_file())
         self.assertTrue(run_dir.is_dir(), "cloud scratch must be retained")
+        markdown = (products / "CLAUDE-SECURITY-RESULTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(stable["findingId"], markdown)
+        self.assertIn(stable["occurrenceId"], markdown)
+        self.assertIn("7 dispatched verification votes", markdown)
         stamp = json.loads(Path(state["stamp_path"]).read_text(encoding="utf-8"))
         self.assertEqual(stamp["verification"]["status"], "verified")
+        self.assertEqual(stamp["verification"]["completion_status"], "complete")
         self.assertEqual(stamp["findings"]["total"], 1)
         self.assertEqual(stamp["scan_id"], "test-scan-01")
         self.assertEqual(stamp["target_id"], state["target_id"])
-        output_finding = json.loads(
-            (products / "CLAUDE-SECURITY-RESULTS.jsonl").read_text(
-                encoding="utf-8"
-            )
-        )
+        output_finding = read_jsonl(
+            products / "CLAUDE-SECURITY-RESULTS.jsonl"
+        )[0]
+        self.assertEqual([output_finding], canonical_findings)
         self.assertEqual(output_finding["findingId"], stable["findingId"])
         self.assertEqual(output_finding["occurrenceId"], stable["occurrenceId"])
+
+        derived_before = {
+            name: (products / name).read_bytes()
+            for name in (
+                "CLAUDE-SECURITY-RESULTS.md",
+                "CLAUDE-SECURITY-RESULTS.jsonl",
+                Path(state["stamp_path"]).name,
+            )
+        }
+        (run_dir / "findings.json").write_text(
+            json.dumps([{"id": "scratch-data-must-not-be-read"}]) + "\n",
+            encoding="utf-8",
+        )
+        state["final"] = {"findings": [{"id": "state-is-not-a-report-input"}]}
+        self.save(state)
+        self.call(DRIVER.render_report)
+        self.assertEqual(
+            derived_before,
+            {
+                name: (products / name).read_bytes()
+                for name in derived_before
+            },
+        )
 
     def test_merge_leaves_exhausted_native_retry_results_missing(self) -> None:
         self.prepare(effort="low")
@@ -659,24 +749,213 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.tally)
         self.call(DRIVER.final_tally)
         state = DRIVER.load_state()
-        run_dir = Path(state["run_dir"])
-        findings_path = run_dir / "findings.json"
+        findings_path = Path(state["products_dir"]) / "findings.json"
         findings = json.loads(findings_path.read_text(encoding="utf-8"))
         findings[0]["findingId"] = "csf_" + "0" * 24
         findings_path.write_text(
             json.dumps(findings) + "\n",
             encoding="utf-8",
         )
-        (run_dir / "CLAUDE-SECURITY-RESULTS.md").write_text(
-            "# Claude Security results\n",
-            encoding="utf-8",
-        )
-
         with self.assertRaisesRegex(
             DRIVER.WorkflowDataError,
             "invalid derived findingId",
         ):
             self.call(DRIVER.render_report)
+
+    def test_renderer_rejects_a_vote_claim_that_differs_from_the_ledger(
+        self,
+    ) -> None:
+        state = self.dedup_findings([self.finding()])
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "The source reaches the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        products = Path(DRIVER.load_state()["products_dir"])
+        votes_path = products / "panel-votes.jsonl"
+        votes = read_jsonl(votes_path)
+        votes[0]["claim"]["evidenceAsCited"] = "different evidence"
+        votes_path.write_text(
+            "".join(json.dumps(vote) + "\n" for vote in votes),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "claim differs from the candidate evidence",
+        ):
+            self.call(DRIVER.render_report)
+
+    def test_renderer_escapes_model_authored_markdown_and_html(self) -> None:
+        finding = self.finding()
+        finding["title"] = "Shell bug <script>alert(1)</script> [click](bad)"
+        finding["evidence"] = (
+            "src/app.py:5\n"
+            "# injected heading\n"
+            "- injected list\n"
+            "1. injected number\n"
+            "====\n"
+            "    injected code"
+        )
+        state = self.dedup_findings([finding])
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "The source reaches the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        self.call(DRIVER.render_report)
+        products = Path(DRIVER.load_state()["products_dir"])
+        markdown = (products / "CLAUDE-SECURITY-RESULTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("<script>", markdown)
+        self.assertIn("&lt;script&gt;", markdown)
+        self.assertIn(r"\# injected heading", markdown)
+        self.assertIn(r"\[click\](bad)", markdown)
+        self.assertIn("<br>\n\\- injected list", markdown)
+        self.assertIn("<br>\n1\\. injected number", markdown)
+        self.assertIn("<br>\n\\====", markdown)
+        self.assertIn("<br>\n&#32;&#32;&#32;&#32;injected code", markdown)
+
+    def test_candidate_ledger_preserves_unique_candidates_beyond_budgets(
+        self,
+    ) -> None:
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        findings = []
+        for index in range(DRIVER.CANDIDATE_CAP + 1):
+            finding = self.finding()
+            finding["identity"] = {
+                "anchor": "run-command-dispatch",
+                "instance": f"candidate-{index + 1}",
+            }
+            finding["title"] = f"Candidate {index + 1}"
+            findings.append(finding)
+        findings.append(dict(findings[0]))
+        self.merge_success("research", [{"findings": findings}])
+        self.call(DRIVER.dedup_rank)
+        state = DRIVER.load_state()
+        self.assertEqual(
+            state["raw_candidate_count"],
+            DRIVER.CANDIDATE_CAP + 2,
+        )
+        self.assertEqual(
+            len(state["deduplicated_candidates"]),
+            DRIVER.CANDIDATE_CAP + 1,
+        )
+        self.assertEqual(
+            len(state["phase_jobs"]["panel"]),
+            DRIVER.VERIFICATION_CAP * 3,
+        )
+
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        state = DRIVER.load_state()
+        products = Path(state["products_dir"])
+        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        votes = read_jsonl(products / "panel-votes.jsonl")
+        manifest = json.loads(
+            (products / "scan-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(ledger), DRIVER.CANDIDATE_CAP + 1)
+        self.assertEqual(
+            [entry["disposition"] for entry in ledger[: DRIVER.VERIFICATION_CAP]],
+            ["verification-incomplete"] * DRIVER.VERIFICATION_CAP,
+        )
+        self.assertTrue(
+            all(
+                entry["disposition"] == "deferred"
+                and entry["dispositionReason"] == "verification-budget"
+                for entry in ledger[
+                    DRIVER.VERIFICATION_CAP : DRIVER.CANDIDATE_CAP
+                ]
+            )
+        )
+        self.assertEqual(ledger[-1]["disposition"], "deferred")
+        self.assertEqual(
+            ledger[-1]["dispositionReason"],
+            "candidate-budget",
+        )
+        self.assertEqual(
+            sum(entry["reports"] for entry in ledger),
+            DRIVER.CANDIDATE_CAP + 2,
+        )
+        self.assertEqual(len(votes), DRIVER.VERIFICATION_CAP * 3)
+        self.assertTrue(all(vote["status"] == "missing" for vote in votes))
+        self.assertEqual(manifest["completion"]["status"], "partial")
+        self.assertEqual(manifest["completion"]["completedVoteRecords"], 0)
+        self.assertEqual(
+            manifest["completion"]["missingVoteRecords"],
+            DRIVER.VERIFICATION_CAP * 3,
+        )
+        self.assertTrue(
+            any(
+                "verification vote(s) did not complete" in reason
+                for reason in manifest["completion"]["reasons"]
+            )
+        )
+        self.assertEqual(
+            manifest["completion"]["uniqueCandidates"],
+            DRIVER.CANDIDATE_CAP + 1,
+        )
+        self.call(DRIVER.render_report)
+        self.assertEqual(
+            read_jsonl(products / "CLAUDE-SECURITY-RESULTS.jsonl"),
+            [],
+        )
+
+    def test_rejected_candidate_remains_in_the_canonical_ledger(self) -> None:
+        state = self.dedup_findings([self.finding()])
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "FALSE_POSITIVE",
+                    "reasoning": "The cited value cannot reach the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        state = DRIVER.load_state()
+        products = Path(state["products_dir"])
+        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        findings = json.loads(
+            (products / "findings.json").read_text(encoding="utf-8")
+        )
+        manifest = json.loads(
+            (products / "scan-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]["disposition"], "rejected")
+        self.assertEqual(ledger[0]["dispositionReason"], "panel-rejected")
+        self.assertIsNone(ledger[0]["displayId"])
+        self.assertEqual(findings, [])
+        self.assertEqual(manifest["completion"]["status"], "complete")
+        self.assertEqual(
+            manifest["completion"]["dispositions"],
+            {"rejected": 1},
+        )
+        self.call(DRIVER.render_report)
+        self.assertEqual(
+            read_jsonl(products / "CLAUDE-SECURITY-RESULTS.jsonl"),
+            [],
+        )
 
     def test_parallel_job_context_is_an_array_not_a_file_reference(self) -> None:
         jobs = [{"name": "one", "job_id": "research:one"}]
@@ -788,9 +1067,9 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ".threat-model { model: opus; reasoning_effort: medium; }",
             ".research { model: opus; reasoning_effort: xhigh; }",
             ".verification { model: opus; reasoning_effort: xhigh; }",
-            ".report-author { model: opus; reasoning_effort: xhigh; }",
         ):
             self.assertIn(rule, graph)
+        self.assertNotIn(".report-author", graph)
         for node, cap in (
             ("threat_jobs", 4),
             ("research_jobs", 8),
@@ -861,13 +1140,12 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             item["properties"]["identity"]["additionalProperties"]
         )
 
-        report_prompt = (
-            WORKFLOW_ROOT / "prompts/report.md"
-        ).read_text(encoding="utf-8")
         report_spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
+        renderer = RENDERER_PATH.read_text(encoding="utf-8")
         for field in ("findingId", "occurrenceId"):
-            self.assertIn(field, report_prompt)
             self.assertIn(field, report_spec)
+            self.assertIn(field, renderer)
+        self.assertFalse((WORKFLOW_ROOT / "prompts/report.md").exists())
 
     def test_merges_pipe_context_directly_to_deterministic_scripts(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -902,8 +1180,6 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             graph,
         )
         for prompt in (WORKFLOW_ROOT / "prompts").glob("*.md"):
-            if prompt.name == "report.md":
-                continue
             text = prompt.read_text(encoding="utf-8")
             self.assertNotIn("result_path", text)
             self.assertNotIn("write the exact JSON", text.lower())
@@ -935,16 +1211,17 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             'research_gate -> research [condition="context.run_research=true"]',
             'panel_gate -> panel [condition="context.run_panel=true"]',
             'repanel_gate -> repanel [condition="context.run_repanel=true"]',
-            'final_tally -> report_author [condition="outcome=succeeded"]',
+            'final_tally -> render_report [condition="outcome=succeeded"]',
         ):
             self.assertIn(edge, graph)
         for node in (
             "researcher",
             "panel_verifier",
             "repanel_verifier",
-            "report_author",
+            "render_report",
         ):
             self.assertEqual(graph.count(f"    {node} ["), 1)
+        self.assertNotIn("report_author", graph)
 
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
         for config_name in ("workflow.toml", "verify.toml"):
@@ -985,7 +1262,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertNotIn(f"wait_{phase}_", graph)
             self.assertNotIn(f"{phase}_retry_gate", graph)
-        self.assertEqual(graph.count("max_retries=2"), 8)
+        self.assertEqual(graph.count("max_retries=2"), 7)
 
     def test_agent_failures_degrade_before_aborting(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -997,7 +1274,11 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertIn("security_review.py inventory-failed", graph)
         self.assertNotIn("    inventory -> abort\n", graph)
         self.assertNotIn("\n        max_retries=0", graph)
-        self.assertRegex(graph, r"(?s)report_author \[[^\]]*max_retries=2")
+        self.assertIn(
+            'render_report -> abort',
+            graph,
+        )
+        self.assertNotIn("report_author", graph)
 
     def test_nothing_enforces_the_read_only_rule(self) -> None:
         for config_name in ("workflow.toml", "verify.toml"):
@@ -1012,13 +1293,14 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         # The read-only rule is instructed, not enforced, so the report may
         # not vouch for it. See test_nothing_enforces_the_read_only_rule.
         spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
-        report_prompt = (WORKFLOW_ROOT / "prompts/report.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("nothing enforces that instruction", spec)
+        renderer = RENDERER_PATH.read_text(encoding="utf-8")
+        self.assertIn("does not attest whether agents executed commands", spec)
         self.assertNotIn("no tests were run", spec)
-        self.assertIn("do not assert that nothing was run", report_prompt)
-        self.assertNotIn("read source and history only", report_prompt)
+        self.assertIn(
+            "workflow does not attest whether agents executed commands",
+            renderer,
+        )
+        self.assertFalse((WORKFLOW_ROOT / "prompts/report.md").exists())
 
     def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
         for name in (
@@ -1046,6 +1328,11 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         config = (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
         for artifact in (
             "CLAUDE-SECURITY-*/.gitignore",
+            "CLAUDE-SECURITY-*/scan-manifest.json",
+            "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
+            "CLAUDE-SECURITY-*/findings.json",
+            "CLAUDE-SECURITY-*/coverage.json",
+            "CLAUDE-SECURITY-*/panel-votes.jsonl",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
@@ -1053,6 +1340,34 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn(artifact, config)
         self.assertNotIn(".claude-security-run/**", config)
         self.assertNotIn("reports/**", config)
+        self.assertNotIn("SARIF", config.upper())
+
+    def test_canonical_bundle_schemas_are_versioned_contracts(self) -> None:
+        expected = {
+            "scan-manifest.schema.json",
+            "candidate-ledger.schema.json",
+            "canonical-findings.schema.json",
+            "coverage.schema.json",
+            "panel-vote.schema.json",
+        }
+        for name in expected:
+            schema = json.loads(
+                (WORKFLOW_ROOT / "schemas" / name).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                schema["$schema"],
+                "https://json-schema.org/draft/2020-12/schema",
+                name,
+            )
+        manifest = json.loads(
+            (
+                WORKFLOW_ROOT / "schemas/scan-manifest.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["properties"]["canonicalFiles"]["const"],
+            list(DRIVER.CANONICAL_FILES),
+        )
 
 
 if __name__ == "__main__":

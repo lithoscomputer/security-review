@@ -10,7 +10,6 @@ digraph SecurityReview {
             .threat-model { model: opus; reasoning_effort: medium; }
             .research { model: opus; reasoning_effort: xhigh; }
             .verification { model: opus; reasoning_effort: xhigh; }
-            .report-author { model: opus; reasoning_effort: xhigh; }
         "
     ]
     rankdir=LR
@@ -30,7 +29,7 @@ digraph SecurityReview {
         timeout="180s",
         output_schema="routing",
         stdin_source="context.internal.run_id",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 0d8d67923bc01599e10e864f196402621bbe64ebaebe77014ecdfe9a1d00a6ac .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py aa29c1f4707cfe7d7112d04e86836ec67d9e49110cdc95092ddd00620bfc9f77 .fabro/workflows/security-review/specs/report-spec.md 29d6eb0d53d86cccebe4761cd04fc1414bd47265fccc99d68d8888809aeb548c && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 4db557c7d0205e855c634b77d69664fc93b64e6eb183a5df1e92e2da3dcc300f .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 0acc8434297dc88866c55c2546e1651fc7fed5823e362cb13c1b1129140d0aaa .fabro/workflows/security-review/specs/report-spec.md 82eb5908e157618306d33d184f7ff507810dbb0effce434d2844599fec5d9ddf && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
     target_gate [shape=diamond, label="Target has work?"]
 
@@ -281,25 +280,14 @@ digraph SecurityReview {
 
     final_tally [
         shape=parallelogram,
-        label="Assemble stable findings, votes, and coverage",
+        label="Write completed canonical scan bundle",
         timeout="180s",
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py final-tally"
     ]
-    report_author [
-        label="Security Lead writes human report",
-        class="report-author",
-        prompt="@prompts/report.md",
-        output_schema="routing",
-        output_retries=2,
-        max_retries=2,
-        timeout="1200s",
-        fidelity="truncate",
-        project_memory=false
-    ]
     render_report [
         shape=parallelogram,
-        label="Original deterministic renderer writes JSONL and stamp",
+        label="Derive Markdown, JSONL, and revision stamp",
         timeout="180s",
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py render-report"
@@ -375,10 +363,8 @@ digraph SecurityReview {
     merge_redteam -> final_tally [condition="outcome=succeeded"]
     merge_redteam -> abort
 
-    final_tally -> report_author [condition="outcome=succeeded"]
+    final_tally -> render_report [condition="outcome=succeeded"]
     final_tally -> abort
-    report_author -> render_report [condition="outcome=succeeded"]
-    report_author -> abort
     render_report -> exit [condition="outcome=succeeded"]
     render_report -> abort
 }
