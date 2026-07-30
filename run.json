@@ -3983,7 +3983,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-07-30T11:54:26.349207652Z",
-  "last_event_at": "2026-07-30T11:55:27.096745638Z",
+  "last_event_at": "2026-07-30T12:04:04.635191747Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -6367,9 +6367,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 135,
       "checkpoint": {
-        "timestamp": "2026-07-30T11:55:27.166302169Z",
+        "timestamp": "2026-07-30T11:55:29.564342773Z",
         "current_node": "research_gate",
         "completed_nodes": [
           "start",
@@ -6385,10 +6385,21 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.retry_count.file_review": 0,
+          "run_threat_models": false,
+          "thread.merge_file_review.current_node": "post_file_review_gate",
+          "thread.prepare.current_node": "target_gate",
+          "empty_target": false,
+          "use_inventory": false,
           "thread.post_file_review_gate.current_node": "plan_matrix",
-          "internal.fidelity": "compact",
-          "internal.retry_count.plan_matrix": 0,
-          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "thread.threat_gate.current_node": "research_gate",
+          "thread.file_review_join.current_node": "merge_file_review",
+          "failure_class": "",
+          "failure_signature": "",
+          "thread.start.current_node": "prepare",
+          "internal.retry_count.target_gate": 0,
+          "mode": "commit",
+          "graph.default_max_retries": "0",
           "inventory_assignment": {
             "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
             "target": {
@@ -6407,17 +6418,6 @@
             "topLevelDirectories": null,
             "wholeTreeCompletenessRequired": false
           },
-          "ensemble_enabled": false,
-          "run_ensemble_research": false,
-          "thread.target_gate.current_node": "file_review",
-          "internal.retry_count.threat_gate": 0,
-          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
-          "thread.file_review_join.current_node": "merge_file_review",
-          "internal.retry_count.file_review_join": 0,
-          "graph.default_max_retries": "0",
-          "graph.stall_timeout": "3600000ms",
-          "run_ensemble_file_review": false,
-          "use_inventory": false,
           "file_review_jobs": [
             {
               "name": "changed-files:1",
@@ -6454,26 +6454,64 @@
               }
             }
           ],
-          "internal.retry_count.file_review": 0,
-          "command.output": "blob://sha256/d234d48cacea130366c60d14ed789f5f8c57fcc629e0c8714b7624991a1bff1a",
-          "internal.retry_count.merge_file_review": 0,
-          "thread.start.current_node": "prepare",
-          "internal.run_id": "01KYSE0BH0PSFCSHGDEXAFFN7V",
-          "run_threat_models": false,
-          "internal.retry_count.prepare": 0,
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "internal.retry_count.file_review_join": 0,
+          "internal.retry_count.plan_matrix": 0,
+          "graph.rankdir": "LR",
+          "graph.stall_timeout": "3600000ms",
+          "current_node": "research_gate",
+          "graph.default_fidelity": "compact",
+          "internal.fidelity": "compact",
+          "run_ensemble_file_review": false,
           "outcome": "succeeded",
-          "failure_signature": "",
-          "thread.threat_gate.current_node": "research_gate",
-          "effort": "low",
           "run_file_review": true,
-          "internal.node_visit_count": 1,
+          "command.output": "blob://sha256/d234d48cacea130366c60d14ed789f5f8c57fcc629e0c8714b7624991a1bff1a",
+          "run_research": true,
+          "run_standard_file_review": true,
+          "run_standard_research": true,
           "run_sweeps": false,
-          "thread.prepare.current_node": "target_gate",
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
+          "internal.thread_id": "threat_gate",
           "products_dir": "CLAUDE-SECURITY-20260730-115427",
-          "internal.retry_count.start": 0,
-          "internal.retry_count.target_gate": 0,
+          "internal.retry_count.merge_file_review": 0,
+          "effort": "low",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.threat_gate": 0,
+          "internal.run_id": "01KYSE0BH0PSFCSHGDEXAFFN7V",
           "parallel.branch_count": 1,
-          "thread.merge_file_review.current_node": "post_file_review_gate",
+          "thread.plan_matrix.current_node": "threat_gate",
+          "run_ensemble_research": false,
+          "internal.retry_count.post_file_review_gate": 0,
+          "thread.target_gate.current_node": "file_review",
+          "thread.file_review.current_node": "file_review_join",
+          "parallel.results": [
+            {
+              "id": "file_reviewer",
+              "index": 0,
+              "item_label": "changed-files:1",
+              "status": "succeeded",
+              "context_updates": {
+                "last_response": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"S",
+                "last_stage": "file_reviewer",
+                "output.file_reviewer": {
+                  "receipts": [
+                    {
+                      "path": "README.md",
+                      "status": "reviewed",
+                      "reason": "",
+                      "workNeeded": ""
+                    }
+                  ],
+                  "supportingFilesReviewed": [
+                    ".fabro/workflows/security-review/schemas/file-review.schema.json"
+                  ],
+                  "findings": []
+                },
+                "response.file_reviewer": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"Sub-agents inherit no instructions\" paragraph, plus the range diff for `9b0a8c2..8a824ba`.\n\n**Assessment:** The change is documentation-only. It adds `CLAUDE-SECURITY-FILE-COVERAGE.json` to the list of run artifacts and a new \"Change scans account for every changed path\" paragraph describing the manifest/receipt model. There is no executable content, no configuration, no credential, token, URL with embedded secret, or install/run instruction that lowers a security boundary. The prose describing sandboxing and pinning is a claim about the implementation, which is out of scope for a documentation review, and the file contains no text that addresses an agent as an instruction. No concrete attacker-controlled source-to-sink path is introduced or exposed by this range, so `findings` is empty.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\"\n  ],\n  \"findings\": []\n}\n```"
+              }
+            }
+          ],
+          "ensemble_enabled": false,
           "research_jobs": [
             {
               "name": "repository:all",
@@ -6503,54 +6541,16 @@
               }
             }
           ],
+          "internal.retry_count.prepare": 0,
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/home/daytona/workspace/security-review",
           "file_review_results_merged": 1,
-          "current_node": "research_gate",
-          "graph.default_fidelity": "compact",
-          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
-          "internal.retry_count.post_file_review_gate": 0,
-          "run_standard_file_review": true,
-          "run_research": true,
-          "thread.plan_matrix.current_node": "threat_gate",
-          "empty_target": false,
-          "failure_class": "",
-          "internal.retry_count.research_gate": 0,
-          "graph.rankdir": "LR",
-          "internal.thread_id": "threat_gate",
-          "thread.file_review.current_node": "file_review_join",
-          "run_standard_research": true,
-          "mode": "commit",
-          "parallel.results": [
-            {
-              "id": "file_reviewer",
-              "index": 0,
-              "item_label": "changed-files:1",
-              "status": "succeeded",
-              "context_updates": {
-                "last_response": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"S",
-                "last_stage": "file_reviewer",
-                "output.file_reviewer": {
-                  "receipts": [
-                    {
-                      "path": "README.md",
-                      "status": "reviewed",
-                      "reason": "",
-                      "workNeeded": ""
-                    }
-                  ],
-                  "supportingFilesReviewed": [
-                    ".fabro/workflows/security-review/schemas/file-review.schema.json"
-                  ],
-                  "findings": []
-                },
-                "response.file_reviewer": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"Sub-agents inherit no instructions\" paragraph, plus the range diff for `9b0a8c2..8a824ba`.\n\n**Assessment:** The change is documentation-only. It adds `CLAUDE-SECURITY-FILE-COVERAGE.json` to the list of run artifacts and a new \"Change scans account for every changed path\" paragraph describing the manifest/receipt model. There is no executable content, no configuration, no credential, token, URL with embedded secret, or install/run instruction that lowers a security boundary. The prose describing sandboxing and pinning is a claim about the implementation, which is out of scope for a documentation review, and the file contains no text that addresses an agent as an instruction. No concrete attacker-controlled source-to-sink path is introduced or exposed by this range, so `findings` is empty.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\"\n  ],\n  \"findings\": []\n}\n```"
-              }
-            }
-          ]
+          "internal.retry_count.research_gate": 0
         },
         "node_outcomes": {
-          "target_gate": {
+          "file_review_join": {
             "status": "succeeded",
-            "notes": "Conditional node evaluated: target_gate",
+            "notes": "Joined 1 parallel branch",
             "usage": null
           },
           "prepare": {
@@ -6630,6 +6630,57 @@
               "active_time_ms": 1278
             }
           },
+          "file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "parallel.branch_count": 1,
+              "parallel.results": [
+                {
+                  "id": "file_reviewer",
+                  "index": 0,
+                  "item_label": "changed-files:1",
+                  "status": "succeeded",
+                  "context_updates": {
+                    "last_response": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"S",
+                    "last_stage": "file_reviewer",
+                    "output.file_reviewer": {
+                      "receipts": [
+                        {
+                          "path": "README.md",
+                          "status": "reviewed",
+                          "reason": "",
+                          "workNeeded": ""
+                        }
+                      ],
+                      "supportingFilesReviewed": [
+                        ".fabro/workflows/security-review/schemas/file-review.schema.json"
+                      ],
+                      "findings": []
+                    },
+                    "response.file_reviewer": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"Sub-agents inherit no instructions\" paragraph, plus the range diff for `9b0a8c2..8a824ba`.\n\n**Assessment:** The change is documentation-only. It adds `CLAUDE-SECURITY-FILE-COVERAGE.json` to the list of run artifacts and a new \"Change scans account for every changed path\" paragraph describing the manifest/receipt model. There is no executable content, no configuration, no credential, token, URL with embedded secret, or install/run instruction that lowers a security boundary. The prose describing sandboxing and pinning is a claim about the implementation, which is out of scope for a documentation review, and the file contains no text that addresses an agent as an instruction. No concrete attacker-controlled source-to-sink path is introduced or exposed by this range, so `findings` is empty.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\"\n  ],\n  \"findings\": []\n}\n```"
+                  }
+                }
+              ]
+            },
+            "jump_to_node": "file_review_join",
+            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+            "usage": null
+          },
+          "post_file_review_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: post_file_review_gate",
+            "usage": null
+          },
+          "research_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: research_gate",
+            "usage": null
+          },
+          "threat_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: threat_gate",
+            "usage": null
+          },
           "plan_matrix": {
             "status": "succeeded",
             "context_updates": {
@@ -6678,45 +6729,13 @@
               "active_time_ms": 1221
             }
           },
-          "file_review": {
+          "start": {
             "status": "succeeded",
-            "context_updates": {
-              "parallel.branch_count": 1,
-              "parallel.results": [
-                {
-                  "id": "file_reviewer",
-                  "index": 0,
-                  "item_label": "changed-files:1",
-                  "status": "succeeded",
-                  "context_updates": {
-                    "last_response": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"S",
-                    "last_stage": "file_reviewer",
-                    "output.file_reviewer": {
-                      "receipts": [
-                        {
-                          "path": "README.md",
-                          "status": "reviewed",
-                          "reason": "",
-                          "workNeeded": ""
-                        }
-                      ],
-                      "supportingFilesReviewed": [
-                        ".fabro/workflows/security-review/schemas/file-review.schema.json"
-                      ],
-                      "findings": []
-                    },
-                    "response.file_reviewer": "I read the complete pinned target blob of `README.md` (blob `d28d2af`, matching the manifest's `blobId`, confirmed by the diff index line `c812f46..d28d2af`) from the first byte through the closing \"Sub-agents inherit no instructions\" paragraph, plus the range diff for `9b0a8c2..8a824ba`.\n\n**Assessment:** The change is documentation-only. It adds `CLAUDE-SECURITY-FILE-COVERAGE.json` to the list of run artifacts and a new \"Change scans account for every changed path\" paragraph describing the manifest/receipt model. There is no executable content, no configuration, no credential, token, URL with embedded secret, or install/run instruction that lowers a security boundary. The prose describing sandboxing and pinning is a claim about the implementation, which is out of scope for a documentation review, and the file contains no text that addresses an agent as an instruction. No concrete attacker-controlled source-to-sink path is introduced or exposed by this range, so `findings` is empty.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\"\n  ],\n  \"findings\": []\n}\n```"
-                  }
-                }
-              ]
-            },
-            "jump_to_node": "file_review_join",
-            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
             "usage": null
           },
-          "file_review_join": {
+          "target_gate": {
             "status": "succeeded",
-            "notes": "Joined 1 parallel branch",
+            "notes": "Conditional node evaluated: target_gate",
             "usage": null
           },
           "merge_file_review": {
@@ -6733,45 +6752,179 @@
               "tool_time_ms": 1221,
               "active_time_ms": 1221
             }
-          },
-          "research_gate": {
-            "status": "succeeded",
-            "notes": "Conditional node evaluated: research_gate",
-            "usage": null
-          },
-          "post_file_review_gate": {
-            "status": "succeeded",
-            "notes": "Conditional node evaluated: post_file_review_gate",
-            "usage": null
-          },
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
-          "threat_gate": {
-            "status": "succeeded",
-            "notes": "Conditional node evaluated: threat_gate",
-            "usage": null
           }
         },
         "next_node_id": "research",
+        "git_commit_sha": "beaf0b390e7dc9c6da9f72853b76e5454ef11af3",
         "node_visits": {
-          "target_gate": 1,
-          "start": 1,
-          "research_gate": 1,
-          "threat_gate": 1,
-          "file_review": 1,
-          "post_file_review_gate": 1,
-          "prepare": 1,
           "file_review_join": 1,
+          "start": 1,
+          "target_gate": 1,
+          "plan_matrix": 1,
+          "prepare": 1,
+          "threat_gate": 1,
+          "post_file_review_gate": 1,
           "merge_file_review": 1,
-          "plan_matrix": 1
+          "file_review": 1,
+          "research_gate": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-07-30T12:04:27.944821033Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 600397,
+      "inference_time_ms": 0,
+      "tool_time_ms": 3720,
+      "active_time_ms": 3720
+    },
+    "failure": {
+      "reason": "cancelled",
+      "detail": {
+        "message": "Pipeline cancelled",
+        "category": "canceled"
+      }
+    },
+    "final_git_commit_sha": "beaf0b390e7dc9c6da9f72853b76e5454ef11af3",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "prepare",
+        "stage_label": "prepare",
+        "timing": {
+          "wall_time_ms": 1284,
+          "inference_time_ms": 0,
+          "tool_time_ms": 1278,
+          "active_time_ms": 1278
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "target_gate",
+        "stage_label": "target_gate",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "file_review",
+        "stage_label": "file_review",
+        "timing": {
+          "wall_time_ms": 35566,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "file_review_join",
+        "stage_label": "file_review_join",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "merge_file_review",
+        "stage_label": "merge_file_review",
+        "timing": {
+          "wall_time_ms": 1259,
+          "inference_time_ms": 0,
+          "tool_time_ms": 1221,
+          "active_time_ms": 1221
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "post_file_review_gate",
+        "stage_label": "post_file_review_gate",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "plan_matrix",
+        "stage_label": "plan_matrix",
+        "timing": {
+          "wall_time_ms": 1223,
+          "inference_time_ms": 0,
+          "tool_time_ms": 1221,
+          "active_time_ms": 1221
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "threat_gate",
+        "stage_label": "threat_gate",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "research_gate",
+        "stage_label": "research_gate",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 55327,
+      "output_tokens": 23147,
+      "total_tokens": 941584,
+      "reasoning_tokens": 11576,
+      "cache_read_tokens": 779980,
+      "cache_write_tokens": 71554,
+      "total_usd_micros": 1981918
+    },
+    "total_retries": 0,
+    "diff": {
+      "summary": {
+        "files_changed": 0,
+        "additions": 0,
+        "deletions": 0
+      }
+    }
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -7164,6 +7317,287 @@
       "agent_control": "running",
       "state": "succeeded"
     },
+    "research@1": {
+      "first_event_seq": 138,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-07-30T11:55:29.584090554Z",
+      "handler": "parallel",
+      "graph_visit": 1,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "running"
+    },
+    "researcher@1": {
+      "first_event_seq": 140,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "agent",
+        "provider": "openrouter",
+        "model": "claude-opus-5",
+        "reasoning_effort": "xhigh"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "parallel_branch_id": "research@1:0",
+      "output": null,
+      "started_at": "2026-07-30T11:55:29.585237328Z",
+      "handler": "agent",
+      "graph_visit": 1,
+      "live_inference_ms": 498414,
+      "live_tool_ms": 16377,
+      "usage": {
+        "input_tokens": 51273,
+        "output_tokens": 21524,
+        "total_tokens": 893645,
+        "reasoning_tokens": 11222,
+        "cache_read_tokens": 750488,
+        "cache_write_tokens": 59138,
+        "total_usd_micros": 1819876
+      },
+      "model": {
+        "provider": "openrouter",
+        "model_id": "claude-opus-5"
+      },
+      "todos": {
+        "kind": "anthropic_tasks",
+        "list_id": "anthropic_tasks:e153ccfa-1fac-4a06-9fab-190a7e2b2f1c",
+        "items": [
+          {
+            "id": "1",
+            "status": "pending",
+            "order": 0,
+            "subject": "Audit commit 8a824ba changed-file review feature",
+            "description": "Read-only adversarial review of range 9b0a8c2..8a824ba: security_review.py file-manifest/receipt code, file-review.md prompt, schema, render_report.py, workflow graph. Hunt prompt-injection, command-injection, path-traversal, DoS, integrity bypass. Report only complete source-to-sink paths.",
+            "active_form": "Auditing commit 8a824ba changed-file review feature"
+          }
+        ]
+      },
+      "skills": {
+        "available": [
+          {
+            "name": "claude-security",
+            "description": "\"The Claude Security menu — pick a job: scan the codebase (the whole repository or a scoped part of it), scan changes (this branch's or a pull request's diff, or one commit), or suggest patches (findings turned into targeted patch files, each verified by a panel of agents, that you apply when you choose).\""
+          }
+        ],
+        "activated": []
+      },
+      "permission_level": "full",
+      "agent_tools": [
+        {
+          "name": "Agent",
+          "description": "Launch a child agent for an independent task. Agents run in the background by default and notify the parent when they finish. Set run_in_background to false to wait for the result synchronously.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "AskUserQuestion",
+          "description": "Ask the human up to four questions when a decision is genuinely theirs to make. The UI automatically provides an Other option for custom text.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "Bash",
+          "description": "Execute a Bash command in a fresh foreground non-login shell. Use this for searches, git inspection, builds, tests, package managers, and terminal operations. Prefer `rg` for content search and `rg --files` for file discovery. Working-directory and environment changes do not persist between calls. `timeout` is in milliseconds, defaults to 120000, and is capped at 600000.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "shell",
+          "invoked": true
+        },
+        {
+          "name": "Edit",
+          "description": "Edit a file by replacing an exact string. The old_string must be an exact match and unique unless replace_all is true; include surrounding context when needed. Read the file first and preserve existing indentation.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": false
+        },
+        {
+          "name": "Read",
+          "description": "Read files before editing them. Returns line-numbered text and supports offset/limit for large files. Use this instead of shell cat, head, tail, or sed when inspecting repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "SendMessage",
+          "description": "Send additional instructions to a running background agent by its task ID.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "Skill",
+          "description": "Load a skill's instructions by name. Call this when the user's request matches an available skill.",
+          "source": {
+            "kind": "skill"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "TaskCreate",
+          "description": "Create pending tasks in the current session. Use concise subjects, descriptions, optional activeForm text, and metadata. Check TaskList first to avoid duplicate tasks.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": true
+        },
+        {
+          "name": "TaskGet",
+          "description": "Get one task by taskId, including subject, status, description, owner, blockedBy, and blocks.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "TaskList",
+          "description": "List tasks for the current session, including status, owner, and blocking dependencies. Use TaskGet with a taskId for full description and dependency details.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "TaskOutput",
+          "description": "Get a background agent's current status or wait for its final output. Automatic completion notifications make ordinary polling unnecessary.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "TaskStop",
+          "description": "Stop a running background agent by task ID.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "TaskUpdate",
+          "description": "Update an existing task's status, text, owner, metadata, or dependencies. Valid statuses are pending, in_progress, completed, and deleted. After completing a task, call TaskList to find newly unblocked work.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "WebFetch",
+          "description": "Fetch an HTTP or HTTPS URL and answer the supplied prompt from its contents.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "WebSearch",
+          "description": "Search the web when current external information is needed. Returns result titles, URLs, and descriptions; use WebFetch to inspect a specific URL.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "Write",
+          "description": "Create new files, or overwrite an existing file only when replacement is explicitly intended. Prefer edit_file for targeted changes to existing files because write_file overwrites the full file content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": false
+        }
+      ],
+      "context_window": {
+        "provider": "openrouter",
+        "model": "claude-opus-5",
+        "context_window_tokens": 1000000,
+        "input_tokens": 59913,
+        "usage_percent": 5.9913,
+        "count_method": "response_usage_scaled_breakdown",
+        "staleness": "live",
+        "generated_at": "2026-07-30T12:04:04.583213476Z",
+        "event_seq": 284,
+        "breakdown": [
+          {
+            "category": "system_prompt",
+            "tokens": 1354,
+            "usage_percent": 0.1354
+          },
+          {
+            "category": "tools",
+            "tokens": 1528,
+            "usage_percent": 0.1528
+          },
+          {
+            "category": "skills",
+            "tokens": 159,
+            "usage_percent": 0.0159
+          },
+          {
+            "category": "conversation",
+            "tokens": 56865,
+            "usage_percent": 5.6865
+          },
+          {
+            "category": "other",
+            "tokens": 7,
+            "usage_percent": 0.0007
+          }
+        ],
+        "warnings": []
+      },
+      "inference": {
+        "session_id": "e153ccfa-1fac-4a06-9fab-190a7e2b2f1c",
+        "started_at": "2026-07-30T12:04:04.635191747Z",
+        "requested_model": {
+          "provider": "openrouter",
+          "model_id": "claude-opus-5"
+        },
+        "retries": 0
+      },
+      "agent_control": "running",
+      "state": "running"
+    },
     "prepare@1": {
       "first_event_seq": 22,
       "prompt": null,
@@ -7342,7 +7776,12 @@
       "first_event_seq": 130,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Conditional node evaluated: research_gate",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:55:27.165438696Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -7352,6 +7791,12 @@
       "started_at": "2026-07-30T11:55:27.096745638Z",
       "handler": "conditional",
       "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -7361,7 +7806,7 @@
         "cache_write_tokens": 0
       },
       "agent_control": "running",
-      "state": "running"
+      "state": "succeeded"
     },
     "post_file_review_gate@1": {
       "first_event_seq": 104,
