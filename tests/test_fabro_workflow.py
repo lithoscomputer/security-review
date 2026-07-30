@@ -1014,6 +1014,9 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "Return exactly one receipt",
             "never replaces a required changed-file receipt",
             "the exact `workNeeded`",
+            "bounded changed-file completion pass",
+            "Do not audit the implementation behind documentation claims",
+            "Do not continue into a general audit",
             "The receipts array is never optional",
         ):
             self.assertIn(statement, prompt)
