@@ -3983,7 +3983,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-07-30T11:57:38.779595815Z",
-  "last_event_at": "2026-07-30T12:02:51.327014576Z",
+  "last_event_at": "2026-07-30T12:02:55.931260186Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -7177,9 +7177,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 252,
       "checkpoint": {
-        "timestamp": "2026-07-30T12:02:51.428410906Z",
+        "timestamp": "2026-07-30T12:02:54.565511883Z",
         "current_node": "research_join",
         "completed_nodes": [
           "start",
@@ -7194,6 +7194,443 @@
           "research_gate",
           "research",
           "research_join"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "thread.target_gate.current_node": "file_review",
+          "internal.fidelity": "compact",
+          "run_ensemble_file_review": false,
+          "command.output": "blob://sha256/97d9138007e98f006d9af967d1883782fda1e1ed6a038ab809262b636350d6bd",
+          "internal.retry_count.merge_file_review": 0,
+          "internal.retry_count.research_gate": 0,
+          "thread.start.current_node": "prepare",
+          "internal.node_visit_count": 1,
+          "use_inventory": false,
+          "thread.post_file_review_gate.current_node": "plan_matrix",
+          "outcome": "succeeded",
+          "thread.file_review_join.current_node": "merge_file_review",
+          "internal.run_id": "01KYSE67719DAZ0ZE2446V6737",
+          "run_ensemble_research": false,
+          "ensemble_enabled": false,
+          "run_standard_research": true,
+          "internal.thread_id": "research",
+          "thread.file_review.current_node": "file_review_join",
+          "empty_target": false,
+          "run_file_review": true,
+          "run_standard_file_review": true,
+          "internal.retry_count.prepare": 0,
+          "graph.rankdir": "LR",
+          "effort": "low",
+          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "graph.stall_timeout": "3600000ms",
+          "thread.plan_matrix.current_node": "threat_gate",
+          "internal.retry_count.file_review": 0,
+          "products_dir": "CLAUDE-SECURITY-20260730-115740",
+          "parallel.branch_count": 1,
+          "failure_signature": "",
+          "current_node": "research_join",
+          "file_review_results_merged": 1,
+          "run_research": true,
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "thread.threat_gate.current_node": "research_gate",
+          "internal.retry_count.research": 0,
+          "graph.default_max_retries": "0",
+          "inventory_assignment": {
+            "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+            "target": {
+              "mode": "commit",
+              "scope": [
+                "README.md"
+              ],
+              "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+              "changedFileCount": 1,
+              "changedLineCount": 4,
+              "focus": "attack-surface",
+              "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+              "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+            },
+            "maxComponents": 12,
+            "topLevelDirectories": null,
+            "wholeTreeCompletenessRequired": false
+          },
+          "failure_class": "",
+          "graph.default_fidelity": "compact",
+          "thread.research.current_node": "research_join",
+          "internal.retry_count.research_join": 0,
+          "run_threat_models": false,
+          "internal.retry_count.file_review_join": 0,
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
+          "internal.retry_count.plan_matrix": 0,
+          "research_jobs": [
+            {
+              "name": "repository:all",
+              "job_id": "research:001-repository-e2885f2b:all",
+              "kind": "research",
+              "component": {
+                "name": "repository",
+                "paths": [
+                  "README.md"
+                ],
+                "language": "mixed",
+                "role": "whole scan target"
+              },
+              "lens": "every category at once — you are the only research pass, so map the attack surface briefly and hunt breadth-first for the highest-severity, most reachable issues across: injection and input handling: SQL/command/code injection, XSS, XXE, deserialization, template injection, ReDoS, path traversal from user input, and prompt injection; authentication and authorization: auth bypass, missing or wrong authorization checks, IDOR, privilege escalation, CSRF, SSRF, open redirect, and race conditions in access decisions; memory and unsafe operations: buffer overflows, out-of-bounds access, use-after-free, integer overflow, type confusion, unsafe FFI, and unchecked unsafe blocks; cryptography and secrets: weak or misused crypto, weak randomness, key/nonce reuse, timing side channels, hardcoded secrets, and credential handling and exposure",
+              "threatModel": null,
+              "target": {
+                "mode": "commit",
+                "scope": [
+                  "README.md"
+                ],
+                "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                "changedFileCount": 1,
+                "changedLineCount": 4,
+                "focus": "attack-surface",
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+              }
+            }
+          ],
+          "file_review_jobs": [
+            {
+              "name": "changed-files:1",
+              "job_id": "file-review:1",
+              "kind": "file-review",
+              "files": [
+                {
+                  "path": "README.md",
+                  "change": "modified",
+                  "changeCode": "M",
+                  "contentRevision": "82a6abd2f1e455b95f00617837c261d003d9f561",
+                  "reviewRequired": true,
+                  "gitMode": "100644",
+                  "gitObjectType": "blob",
+                  "blobId": "43aacd81fb23533df504eb6264c7db1f9f17b56a",
+                  "bytes": 8540,
+                  "disposition": "pending",
+                  "reason": null,
+                  "workNeeded": null,
+                  "readWith": "git-show"
+                }
+              ],
+              "target": {
+                "mode": "commit",
+                "scope": [
+                  "README.md"
+                ],
+                "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                "changedFileCount": 1,
+                "changedLineCount": 4,
+                "focus": "attack-surface",
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+              }
+            }
+          ],
+          "parallel.results": [
+            {
+              "id": "researcher",
+              "index": 0,
+              "item_label": "repository:all",
+              "status": "succeeded",
+              "context_updates": {
+                "last_response": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one",
+                "last_stage": "researcher",
+                "output.researcher": {
+                  "findings": []
+                },
+                "response.researcher": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one commit (`82a6abd` \"Document bounded receipt pass\") with a single parent — confirmed via `log --parents`. `diff --raw -M -C` shows one entry, `:100644 100644 M README.md`: no mode change, no symlink or submodule conversion, no rename. `diff -U0` shows the entire change is three prose lines at `README.md:133-135`, replacing one sentence-ending line, appending: \"This pass stays bounded to assigned files; the existing research pipeline performs the broad attack-path review.\"\n\n**Why no finding survives here.** I looked for the only mechanisms by which a documentation-only change could carry security weight:\n\n- *Runtime ingestion.* README text would need to reach executing code or an agent's instruction context. The graph binds every agent to `@prompts/*.md` only (`security-review.fabro`), and the engine never reads a repo-root markdown file — its sole `.md` references are the report it writes (`security_review.py:3213`, `render_report.py:579`). `rg` across `.fabro/` found no reference to `README.md`. There is no source-to-sink path.\n- *Prompt injection.* The added sentence is descriptive prose about division of labor, not text addressing an agent, and it does not instruct anyone to skip a file or trust a security claim. It is also accurate: it matches the actual prompt change in the parent commit `63b3043`, which bounds `prompts/file-review.md` to assigned files while the research matrix does the broad audit. Since it is neither loaded as instructions nor steering, calling it injection would be speculative.\n- *Secrets.* No credential-like content in the changed lines or the file (`token|secret|password|api_key|ghp_|AKIA|BEGIN` all negative).\n\nOne thing worth naming for your judgment, deliberately **not** reported as a finding: the substantive behavioral change — narrowing the changed-file review pass in `prompts/file-review.md` — lives in the parent commit `63b3043`, outside this two-sided range. This commit only documents it. That narrowing reduces review depth per file rather than creating an attacker capability, so it is a coverage-policy tradeoff, not a vulnerability.\n\nNot checked: nothing was built, executed, or fetched, per the read-only rule; all history came through the `git_readonly.py` wrapper.\n\n```json\n{\n  \"findings\": []\n}\n```"
+              }
+            }
+          ],
+          "internal.retry_count.start": 0,
+          "thread.research_gate.current_node": "research",
+          "internal.retry_count.target_gate": 0,
+          "mode": "commit",
+          "thread.prepare.current_node": "target_gate",
+          "internal.retry_count.post_file_review_gate": 0,
+          "internal.retry_count.threat_gate": 0,
+          "run_sweeps": false,
+          "thread.merge_file_review.current_node": "post_file_review_gate"
+        },
+        "node_outcomes": {
+          "plan_matrix": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/97d9138007e98f006d9af967d1883782fda1e1ed6a038ab809262b636350d6bd",
+              "run_research": true,
+              "run_threat_models": false,
+              "run_ensemble_research": false,
+              "run_standard_research": true,
+              "research_jobs": [
+                {
+                  "name": "repository:all",
+                  "job_id": "research:001-repository-e2885f2b:all",
+                  "kind": "research",
+                  "component": {
+                    "name": "repository",
+                    "paths": [
+                      "README.md"
+                    ],
+                    "language": "mixed",
+                    "role": "whole scan target"
+                  },
+                  "lens": "every category at once — you are the only research pass, so map the attack surface briefly and hunt breadth-first for the highest-severity, most reachable issues across: injection and input handling: SQL/command/code injection, XSS, XXE, deserialization, template injection, ReDoS, path traversal from user input, and prompt injection; authentication and authorization: auth bypass, missing or wrong authorization checks, IDOR, privilege escalation, CSRF, SSRF, open redirect, and race conditions in access decisions; memory and unsafe operations: buffer overflows, out-of-bounds access, use-after-free, integer overflow, type confusion, unsafe FFI, and unchecked unsafe blocks; cryptography and secrets: weak or misused crypto, weak randomness, key/nonce reuse, timing side channels, hardcoded secrets, and credential handling and exposure",
+                  "threatModel": null,
+                  "target": {
+                    "mode": "commit",
+                    "scope": [
+                      "README.md"
+                    ],
+                    "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                    "changedFileCount": 1,
+                    "changedLineCount": 4,
+                    "focus": "attack-surface",
+                    "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                    "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                  }
+                }
+              ],
+              "run_sweeps": false
+            },
+            "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py plan-matrix",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1295,
+              "active_time_ms": 1295
+            }
+          },
+          "research_join": {
+            "status": "succeeded",
+            "notes": "Joined 1 parallel branch",
+            "usage": null
+          },
+          "file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "parallel.results": [
+                {
+                  "id": "file_reviewer",
+                  "index": 0,
+                  "item_label": "changed-files:1",
+                  "status": "succeeded",
+                  "context_updates": {
+                    "last_response": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no i",
+                    "last_stage": "file_reviewer",
+                    "output.file_reviewer": {
+                      "receipts": [
+                        {
+                          "path": "README.md",
+                          "status": "reviewed",
+                          "reason": "",
+                          "workNeeded": ""
+                        }
+                      ],
+                      "supportingFilesReviewed": [],
+                      "findings": []
+                    },
+                    "response.file_reviewer": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no instructions.\" paragraph, exit code 0, no truncation.\n\nThe range diff is a 4-line prose change to the \"Change scans account for every changed path.\" paragraph, adding that the changed-file pass stays bounded to assigned files while the research pipeline performs the broad attack-path review. Per the pass rules I did not audit the implementation behind that documentation claim.\n\nScanning the complete file for concrete security content in the assigned file itself: no credentials, tokens, keys, URLs, or endpoints of any kind; the only commands documented are `fabro run` on in-repo workflow TOMLs and `python3 tests/test_fabro_workflow.py`, with no attacker-controlled interpolation. Nothing in the file addresses an agent as an instruction, so there is no prompt-injection candidate either. No concrete source-to-sink path exists in a Markdown document with no executable role, so no candidate needed cross-file proof and no explorer was dispatched.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [],\n  \"findings\": []\n}\n```\n\n**Verification performed:** `git_readonly.py show 82a6abd...:README.md` (complete file) and `git_readonly.py diff 63b3043..82a6abd -- README.md` (range diff). **Not checked:** the workflow engine, prompts, and scripts that implement the bounded-receipt behavior the changed prose describes — that belongs to the broad repository audit, not this bounded pass."
+                  }
+                }
+              ],
+              "parallel.branch_count": 1
+            },
+            "jump_to_node": "file_review_join",
+            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+            "usage": null
+          },
+          "prepare": {
+            "status": "succeeded",
+            "context_updates": {
+              "run_ensemble_file_review": false,
+              "run_standard_file_review": true,
+              "inventory_assignment": {
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "target": {
+                  "mode": "commit",
+                  "scope": [
+                    "README.md"
+                  ],
+                  "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                  "changedFileCount": 1,
+                  "changedLineCount": 4,
+                  "focus": "attack-surface",
+                  "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                  "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                },
+                "maxComponents": 12,
+                "topLevelDirectories": null,
+                "wholeTreeCompletenessRequired": false
+              },
+              "file_review_jobs": [
+                {
+                  "name": "changed-files:1",
+                  "job_id": "file-review:1",
+                  "kind": "file-review",
+                  "files": [
+                    {
+                      "path": "README.md",
+                      "change": "modified",
+                      "changeCode": "M",
+                      "contentRevision": "82a6abd2f1e455b95f00617837c261d003d9f561",
+                      "reviewRequired": true,
+                      "gitMode": "100644",
+                      "gitObjectType": "blob",
+                      "blobId": "43aacd81fb23533df504eb6264c7db1f9f17b56a",
+                      "bytes": 8540,
+                      "disposition": "pending",
+                      "reason": null,
+                      "workNeeded": null,
+                      "readWith": "git-show"
+                    }
+                  ],
+                  "target": {
+                    "mode": "commit",
+                    "scope": [
+                      "README.md"
+                    ],
+                    "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                    "changedFileCount": 1,
+                    "changedLineCount": 4,
+                    "focus": "attack-surface",
+                    "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                    "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                  }
+                }
+              ],
+              "use_inventory": false,
+              "command.output": "blob://sha256/fdcc0e74556ba29c3110ee2dc2be53b1c202cb4a4ea9f24d4a702aa236581263",
+              "empty_target": false,
+              "ensemble_enabled": false,
+              "products_dir": "CLAUDE-SECURITY-20260730-115740",
+              "mode": "commit",
+              "effort": "low",
+              "run_file_review": true
+            },
+            "notes": "Script completed: python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 82a6abd2f1e455b95f00617837c261d003d9f561 --range '' --focus attack-surface",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1361,
+              "active_time_ms": 1361
+            }
+          },
+          "research": {
+            "status": "succeeded",
+            "context_updates": {
+              "parallel.results": [
+                {
+                  "id": "researcher",
+                  "index": 0,
+                  "item_label": "repository:all",
+                  "status": "succeeded",
+                  "context_updates": {
+                    "last_response": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one",
+                    "last_stage": "researcher",
+                    "output.researcher": {
+                      "findings": []
+                    },
+                    "response.researcher": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one commit (`82a6abd` \"Document bounded receipt pass\") with a single parent — confirmed via `log --parents`. `diff --raw -M -C` shows one entry, `:100644 100644 M README.md`: no mode change, no symlink or submodule conversion, no rename. `diff -U0` shows the entire change is three prose lines at `README.md:133-135`, replacing one sentence-ending line, appending: \"This pass stays bounded to assigned files; the existing research pipeline performs the broad attack-path review.\"\n\n**Why no finding survives here.** I looked for the only mechanisms by which a documentation-only change could carry security weight:\n\n- *Runtime ingestion.* README text would need to reach executing code or an agent's instruction context. The graph binds every agent to `@prompts/*.md` only (`security-review.fabro`), and the engine never reads a repo-root markdown file — its sole `.md` references are the report it writes (`security_review.py:3213`, `render_report.py:579`). `rg` across `.fabro/` found no reference to `README.md`. There is no source-to-sink path.\n- *Prompt injection.* The added sentence is descriptive prose about division of labor, not text addressing an agent, and it does not instruct anyone to skip a file or trust a security claim. It is also accurate: it matches the actual prompt change in the parent commit `63b3043`, which bounds `prompts/file-review.md` to assigned files while the research matrix does the broad audit. Since it is neither loaded as instructions nor steering, calling it injection would be speculative.\n- *Secrets.* No credential-like content in the changed lines or the file (`token|secret|password|api_key|ghp_|AKIA|BEGIN` all negative).\n\nOne thing worth naming for your judgment, deliberately **not** reported as a finding: the substantive behavioral change — narrowing the changed-file review pass in `prompts/file-review.md` — lives in the parent commit `63b3043`, outside this two-sided range. This commit only documents it. That narrowing reduces review depth per file rather than creating an attacker capability, so it is a coverage-policy tradeoff, not a vulnerability.\n\nNot checked: nothing was built, executed, or fetched, per the read-only rule; all history came through the `git_readonly.py` wrapper.\n\n```json\n{\n  \"findings\": []\n}\n```"
+                  }
+                }
+              ],
+              "parallel.branch_count": 1
+            },
+            "jump_to_node": "research_join",
+            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+            "usage": null
+          },
+          "file_review_join": {
+            "status": "succeeded",
+            "notes": "Joined 1 parallel branch",
+            "usage": null
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "threat_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: threat_gate",
+            "usage": null
+          },
+          "target_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: target_gate",
+            "usage": null
+          },
+          "research_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: research_gate",
+            "usage": null
+          },
+          "post_file_review_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: post_file_review_gate",
+            "usage": null
+          },
+          "merge_file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "file_review_results_merged": 1,
+              "command.output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4"
+            },
+            "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1326,
+              "active_time_ms": 1326
+            }
+          }
+        },
+        "next_node_id": "merge_research",
+        "git_commit_sha": "7fb6b4b452fb85c375d62cf6bc5f51bbc91eb62d",
+        "node_visits": {
+          "file_review_join": 1,
+          "research_join": 1,
+          "plan_matrix": 1,
+          "target_gate": 1,
+          "start": 1,
+          "post_file_review_gate": 1,
+          "threat_gate": 1,
+          "prepare": 1,
+          "file_review": 1,
+          "merge_file_review": 1,
+          "research_gate": 1,
+          "research": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-07-30T12:02:56.032782956Z",
+        "current_node": "merge_research",
+        "completed_nodes": [
+          "start",
+          "prepare",
+          "target_gate",
+          "file_review",
+          "file_review_join",
+          "merge_file_review",
+          "post_file_review_gate",
+          "plan_matrix",
+          "threat_gate",
+          "research_gate",
+          "research",
+          "research_join",
+          "merge_research"
         ],
         "node_retries": {},
         "context_values": {
@@ -7269,10 +7706,11 @@
           "thread.research_gate.current_node": "research",
           "internal.retry_count.post_file_review_gate": 0,
           "internal.retry_count.merge_file_review": 0,
-          "current_node": "research_join",
+          "current_node": "merge_research",
           "internal.retry_count.threat_gate": 0,
           "graph.stall_timeout": "3600000ms",
-          "command.output": "blob://sha256/97d9138007e98f006d9af967d1883782fda1e1ed6a038ab809262b636350d6bd",
+          "thread.research_join.current_node": "merge_research",
+          "command.output": "blob://sha256/1116e77eb8af9fed65358b93b4330e1578c86026fc39cba600d2e078f48e1139",
           "internal.retry_count.file_review": 0,
           "outcome": "succeeded",
           "internal.retry_count.file_review_join": 0,
@@ -7283,6 +7721,7 @@
           "thread.file_review.current_node": "file_review_join",
           "graph.default_max_retries": "0",
           "internal.retry_count.research": 0,
+          "internal.retry_count.merge_research": 0,
           "internal.run_id": "01KYSE67719DAZ0ZE2446V6737",
           "internal.retry_count.research_gate": 0,
           "file_review_results_merged": 1,
@@ -7338,6 +7777,7 @@
               }
             }
           ],
+          "research_results_merged": 1,
           "run_ensemble_research": false,
           "thread.threat_gate.current_node": "research_gate",
           "failure_signature": "",
@@ -7349,7 +7789,7 @@
           "thread.prepare.current_node": "target_gate",
           "internal.work_dir": "/home/daytona/workspace/security-review",
           "thread.merge_file_review.current_node": "post_file_review_gate",
-          "internal.thread_id": "research",
+          "internal.thread_id": "research_join",
           "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        "
         },
         "node_outcomes": {
@@ -7426,6 +7866,21 @@
             "jump_to_node": "research_join",
             "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
             "usage": null
+          },
+          "merge_research": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/1116e77eb8af9fed65358b93b4330e1578c86026fc39cba600d2e078f48e1139",
+              "research_results_merged": 1
+            },
+            "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py merge research",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1312,
+              "active_time_ms": 1312
+            }
           },
           "post_file_review_gate": {
             "status": "succeeded",
@@ -7587,12 +8042,13 @@
             }
           }
         },
-        "next_node_id": "merge_research",
+        "next_node_id": "sweep_gate",
         "node_visits": {
           "post_file_review_gate": 1,
           "research": 1,
           "research_join": 1,
           "target_gate": 1,
+          "merge_research": 1,
           "plan_matrix": 1,
           "merge_file_review": 1,
           "start": 1,
@@ -7632,42 +8088,6 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
-    "target_gate@1": {
-      "first_event_seq": 33,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Conditional node evaluated: target_gate",
-        "failure_reason": null,
-        "timestamp": "2026-07-30T11:57:44.665872622Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": null,
-      "output": null,
-      "started_at": "2026-07-30T11:57:44.576291201Z",
-      "handler": "conditional",
-      "graph_visit": 1,
-      "timing": {
-        "wall_time_ms": 0,
-        "inference_time_ms": 0,
-        "tool_time_ms": 0,
-        "active_time_ms": 0
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "agent_control": "running",
-      "state": "succeeded"
-    },
     "researcher@1": {
       "first_event_seq": 140,
       "prompt": null,
@@ -7963,42 +8383,6 @@
       "agent_control": "running",
       "state": "succeeded"
     },
-    "threat_gate@1": {
-      "first_event_seq": 122,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Conditional node evaluated: threat_gate",
-        "failure_reason": null,
-        "timestamp": "2026-07-30T11:58:46.007743899Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": null,
-      "output": null,
-      "started_at": "2026-07-30T11:58:45.918103181Z",
-      "handler": "conditional",
-      "graph_visit": 1,
-      "timing": {
-        "wall_time_ms": 0,
-        "inference_time_ms": 0,
-        "tool_time_ms": 0,
-        "active_time_ms": 0
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "agent_control": "running",
-      "state": "succeeded"
-    },
     "file_review_join@1": {
       "first_event_seq": 86,
       "prompt": null,
@@ -8020,66 +8404,6 @@
       "graph_visit": 1,
       "timing": {
         "wall_time_ms": 0,
-        "inference_time_ms": 0,
-        "tool_time_ms": 0,
-        "active_time_ms": 0
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "agent_control": "running",
-      "state": "succeeded"
-    },
-    "file_review@1": {
-      "first_event_seq": 41,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
-        "failure_reason": null,
-        "timestamp": "2026-07-30T11:58:29.291968415Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": [
-        {
-          "id": "file_reviewer",
-          "index": 0,
-          "item_label": "changed-files:1",
-          "status": "succeeded",
-          "context_updates": {
-            "last_response": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no i",
-            "last_stage": "file_reviewer",
-            "output.file_reviewer": {
-              "receipts": [
-                {
-                  "path": "README.md",
-                  "status": "reviewed",
-                  "reason": "",
-                  "workNeeded": ""
-                }
-              ],
-              "supportingFilesReviewed": [],
-              "findings": []
-            },
-            "response.file_reviewer": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no instructions.\" paragraph, exit code 0, no truncation.\n\nThe range diff is a 4-line prose change to the \"Change scans account for every changed path.\" paragraph, adding that the changed-file pass stays bounded to assigned files while the research pipeline performs the broad attack-path review. Per the pass rules I did not audit the implementation behind that documentation claim.\n\nScanning the complete file for concrete security content in the assigned file itself: no credentials, tokens, keys, URLs, or endpoints of any kind; the only commands documented are `fabro run` on in-repo workflow TOMLs and `python3 tests/test_fabro_workflow.py`, with no attacker-controlled interpolation. Nothing in the file addresses an agent as an instruction, so there is no prompt-injection candidate either. No concrete source-to-sink path exists in a Markdown document with no executable role, so no candidate needed cross-file proof and no explorer was dispatched.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [],\n  \"findings\": []\n}\n```\n\n**Verification performed:** `git_readonly.py show 82a6abd...:README.md` (complete file) and `git_readonly.py diff 63b3043..82a6abd -- README.md` (range diff). **Not checked:** the workflow engine, prompts, and scripts that implement the bounded-receipt behavior the changed prose describes — that belongs to the broad repository audit, not this bounded pass."
-          }
-        }
-      ],
-      "output": null,
-      "started_at": "2026-07-30T11:57:47.661423202Z",
-      "handler": "parallel",
-      "graph_visit": 1,
-      "timing": {
-        "wall_time_ms": 41512,
         "inference_time_ms": 0,
         "tool_time_ms": 0,
         "active_time_ms": 0
@@ -8203,6 +8527,280 @@
       "graph_visit": 1,
       "timing": {
         "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "research@1": {
+      "first_event_seq": 138,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T12:02:48.610414720Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": [
+        {
+          "id": "researcher",
+          "index": 0,
+          "item_label": "repository:all",
+          "status": "succeeded",
+          "context_updates": {
+            "last_response": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one",
+            "last_stage": "researcher",
+            "output.researcher": {
+              "findings": []
+            },
+            "response.researcher": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one commit (`82a6abd` \"Document bounded receipt pass\") with a single parent — confirmed via `log --parents`. `diff --raw -M -C` shows one entry, `:100644 100644 M README.md`: no mode change, no symlink or submodule conversion, no rename. `diff -U0` shows the entire change is three prose lines at `README.md:133-135`, replacing one sentence-ending line, appending: \"This pass stays bounded to assigned files; the existing research pipeline performs the broad attack-path review.\"\n\n**Why no finding survives here.** I looked for the only mechanisms by which a documentation-only change could carry security weight:\n\n- *Runtime ingestion.* README text would need to reach executing code or an agent's instruction context. The graph binds every agent to `@prompts/*.md` only (`security-review.fabro`), and the engine never reads a repo-root markdown file — its sole `.md` references are the report it writes (`security_review.py:3213`, `render_report.py:579`). `rg` across `.fabro/` found no reference to `README.md`. There is no source-to-sink path.\n- *Prompt injection.* The added sentence is descriptive prose about division of labor, not text addressing an agent, and it does not instruct anyone to skip a file or trust a security claim. It is also accurate: it matches the actual prompt change in the parent commit `63b3043`, which bounds `prompts/file-review.md` to assigned files while the research matrix does the broad audit. Since it is neither loaded as instructions nor steering, calling it injection would be speculative.\n- *Secrets.* No credential-like content in the changed lines or the file (`token|secret|password|api_key|ghp_|AKIA|BEGIN` all negative).\n\nOne thing worth naming for your judgment, deliberately **not** reported as a finding: the substantive behavioral change — narrowing the changed-file review pass in `prompts/file-review.md` — lives in the parent commit `63b3043`, outside this two-sided range. This commit only documents it. That narrowing reduces review depth per file rather than creating an attacker capability, so it is a coverage-policy tradeoff, not a vulnerability.\n\nNot checked: nothing was built, executed, or fetched, per the read-only rule; all history came through the `git_readonly.py` wrapper.\n\n```json\n{\n  \"findings\": []\n}\n```"
+          }
+        }
+      ],
+      "output": null,
+      "started_at": "2026-07-30T11:58:51.593456737Z",
+      "handler": "parallel",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 236892,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "start@1": {
+      "first_event_seq": 18,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:57:40.334812397Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-07-30T11:57:40.268692925Z",
+      "handler": "start",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "merge_file_review@1": {
+      "first_event_seq": 94,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:58:36.426521277Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "command": "exec 2>&1\npython3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "language": "shell",
+        "timeout_ms": 180000
+      },
+      "script_timing": {
+        "output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4",
+        "exit_code": 0,
+        "duration_ms": 1326,
+        "termination": "exited",
+        "output_bytes": 94,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 94,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-07-30T11:58:34.978131987Z",
+      "handler": "command",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 1360,
+        "inference_time_ms": 0,
+        "tool_time_ms": 1326,
+        "active_time_ms": 1326
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "merge_research@1": {
+      "first_event_seq": 255,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "python3 .fabro/workflows/security-review/scripts/security_review.py merge research",
+        "command": "exec 2>&1\npython3 .fabro/workflows/security-review/scripts/security_review.py merge research",
+        "language": "shell",
+        "timeout_ms": 180000
+      },
+      "script_timing": {
+        "output": "blob://sha256/1116e77eb8af9fed65358b93b4330e1578c86026fc39cba600d2e078f48e1139",
+        "exit_code": 0,
+        "duration_ms": 1312,
+        "termination": "exited",
+        "output_bytes": 88,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 88,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-07-30T12:02:54.579795168Z",
+      "handler": "command",
+      "graph_visit": 1,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "running"
+    },
+    "threat_gate@1": {
+      "first_event_seq": 122,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Conditional node evaluated: threat_gate",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:58:46.007743899Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-07-30T11:58:45.918103181Z",
+      "handler": "conditional",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "file_review@1": {
+      "first_event_seq": 41,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:58:29.291968415Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": [
+        {
+          "id": "file_reviewer",
+          "index": 0,
+          "item_label": "changed-files:1",
+          "status": "succeeded",
+          "context_updates": {
+            "last_response": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no i",
+            "last_stage": "file_reviewer",
+            "output.file_reviewer": {
+              "receipts": [
+                {
+                  "path": "README.md",
+                  "status": "reviewed",
+                  "reason": "",
+                  "workNeeded": ""
+                }
+              ],
+              "supportingFilesReviewed": [],
+              "findings": []
+            },
+            "response.file_reviewer": "Full-file review complete. `README.md` at `82a6abd` is documentation only: the wrapper returned the complete blob from the first byte (`# security-review`) through the closing \"Sub-agents inherit no instructions.\" paragraph, exit code 0, no truncation.\n\nThe range diff is a 4-line prose change to the \"Change scans account for every changed path.\" paragraph, adding that the changed-file pass stays bounded to assigned files while the research pipeline performs the broad attack-path review. Per the pass rules I did not audit the implementation behind that documentation claim.\n\nScanning the complete file for concrete security content in the assigned file itself: no credentials, tokens, keys, URLs, or endpoints of any kind; the only commands documented are `fabro run` on in-repo workflow TOMLs and `python3 tests/test_fabro_workflow.py`, with no attacker-controlled interpolation. Nothing in the file addresses an agent as an instruction, so there is no prompt-injection candidate either. No concrete source-to-sink path exists in a Markdown document with no executable role, so no candidate needed cross-file proof and no explorer was dispatched.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [],\n  \"findings\": []\n}\n```\n\n**Verification performed:** `git_readonly.py show 82a6abd...:README.md` (complete file) and `git_readonly.py diff 63b3043..82a6abd -- README.md` (range diff). **Not checked:** the workflow engine, prompts, and scripts that implement the bounded-receipt behavior the changed prose describes — that belongs to the broad repository audit, not this bounded pass."
+          }
+        }
+      ],
+      "output": null,
+      "started_at": "2026-07-30T11:57:47.661423202Z",
+      "handler": "parallel",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 41512,
         "inference_time_ms": 0,
         "tool_time_ms": 0,
         "active_time_ms": 0
@@ -8462,62 +9060,16 @@
       "agent_control": "running",
       "state": "succeeded"
     },
-    "research@1": {
-      "first_event_seq": 138,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
-        "failure_reason": null,
-        "timestamp": "2026-07-30T12:02:48.610414720Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": [
-        {
-          "id": "researcher",
-          "index": 0,
-          "item_label": "repository:all",
-          "status": "succeeded",
-          "context_updates": {
-            "last_response": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one",
-            "last_stage": "researcher",
-            "output.researcher": {
-              "findings": []
-            },
-            "response.researcher": "Review complete. The target range is a single prose-only commit, and I verified it end to end rather than assuming from the line count.\n\n**What the range actually contains.** `63b3043..82a6abd` is one commit (`82a6abd` \"Document bounded receipt pass\") with a single parent — confirmed via `log --parents`. `diff --raw -M -C` shows one entry, `:100644 100644 M README.md`: no mode change, no symlink or submodule conversion, no rename. `diff -U0` shows the entire change is three prose lines at `README.md:133-135`, replacing one sentence-ending line, appending: \"This pass stays bounded to assigned files; the existing research pipeline performs the broad attack-path review.\"\n\n**Why no finding survives here.** I looked for the only mechanisms by which a documentation-only change could carry security weight:\n\n- *Runtime ingestion.* README text would need to reach executing code or an agent's instruction context. The graph binds every agent to `@prompts/*.md` only (`security-review.fabro`), and the engine never reads a repo-root markdown file — its sole `.md` references are the report it writes (`security_review.py:3213`, `render_report.py:579`). `rg` across `.fabro/` found no reference to `README.md`. There is no source-to-sink path.\n- *Prompt injection.* The added sentence is descriptive prose about division of labor, not text addressing an agent, and it does not instruct anyone to skip a file or trust a security claim. It is also accurate: it matches the actual prompt change in the parent commit `63b3043`, which bounds `prompts/file-review.md` to assigned files while the research matrix does the broad audit. Since it is neither loaded as instructions nor steering, calling it injection would be speculative.\n- *Secrets.* No credential-like content in the changed lines or the file (`token|secret|password|api_key|ghp_|AKIA|BEGIN` all negative).\n\nOne thing worth naming for your judgment, deliberately **not** reported as a finding: the substantive behavioral change — narrowing the changed-file review pass in `prompts/file-review.md` — lives in the parent commit `63b3043`, outside this two-sided range. This commit only documents it. That narrowing reduces review depth per file rather than creating an attacker capability, so it is a coverage-policy tradeoff, not a vulnerability.\n\nNot checked: nothing was built, executed, or fetched, per the read-only rule; all history came through the `git_readonly.py` wrapper.\n\n```json\n{\n  \"findings\": []\n}\n```"
-          }
-        }
-      ],
-      "output": null,
-      "started_at": "2026-07-30T11:58:51.593456737Z",
-      "handler": "parallel",
-      "graph_visit": 1,
-      "timing": {
-        "wall_time_ms": 236892,
-        "inference_time_ms": 0,
-        "tool_time_ms": 0,
-        "active_time_ms": 0
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "agent_control": "running",
-      "state": "succeeded"
-    },
     "research_join@1": {
       "first_event_seq": 247,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Joined 1 parallel branch",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T12:02:51.427383498Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -8526,36 +9078,6 @@
       "output": null,
       "started_at": "2026-07-30T12:02:51.327014576Z",
       "handler": "parallel.fan_in",
-      "graph_visit": 1,
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "agent_control": "running",
-      "state": "running"
-    },
-    "start@1": {
-      "first_event_seq": 18,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": null,
-        "failure_reason": null,
-        "timestamp": "2026-07-30T11:57:40.334812397Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": null,
-      "output": null,
-      "started_at": "2026-07-30T11:57:40.268692925Z",
-      "handler": "start",
       "graph_visit": 1,
       "timing": {
         "wall_time_ms": 0,
@@ -8574,45 +9096,30 @@
       "agent_control": "running",
       "state": "succeeded"
     },
-    "merge_file_review@1": {
-      "first_event_seq": 94,
+    "target_gate@1": {
+      "first_event_seq": 33,
       "prompt": null,
       "response": null,
       "completion": {
         "outcome": "succeeded",
-        "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "notes": "Conditional node evaluated: target_gate",
         "failure_reason": null,
-        "timestamp": "2026-07-30T11:58:36.426521277Z"
+        "timestamp": "2026-07-30T11:57:44.665872622Z"
       },
       "provider_used": null,
       "diff": null,
-      "script_invocation": {
-        "script": "python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
-        "command": "exec 2>&1\npython3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
-        "language": "shell",
-        "timeout_ms": 180000
-      },
-      "script_timing": {
-        "output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4",
-        "exit_code": 0,
-        "duration_ms": 1326,
-        "termination": "exited",
-        "output_bytes": 94,
-        "live_streaming": true
-      },
+      "script_invocation": null,
+      "script_timing": null,
       "parallel_results": null,
       "output": null,
-      "output_bytes": 94,
-      "live_streaming": true,
-      "termination": "exited",
-      "started_at": "2026-07-30T11:58:34.978131987Z",
-      "handler": "command",
+      "started_at": "2026-07-30T11:57:44.576291201Z",
+      "handler": "conditional",
       "graph_visit": 1,
       "timing": {
-        "wall_time_ms": 1360,
+        "wall_time_ms": 0,
         "inference_time_ms": 0,
-        "tool_time_ms": 1326,
-        "active_time_ms": 1326
+        "tool_time_ms": 0,
+        "active_time_ms": 0
       },
       "usage": {
         "input_tokens": 0,
