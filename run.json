@@ -3983,7 +3983,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-07-30T12:07:13.199009120Z",
-  "last_event_at": "2026-07-30T12:08:02.317781123Z",
+  "last_event_at": "2026-07-30T12:08:07.142598530Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -4685,9 +4685,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 94,
       "checkpoint": {
-        "timestamp": "2026-07-30T12:08:02.454625915Z",
+        "timestamp": "2026-07-30T12:08:05.694691765Z",
         "current_node": "file_review_join",
         "completed_nodes": [
           "start",
@@ -4698,9 +4698,284 @@
         ],
         "node_retries": {},
         "context_values": {
+          "mode": "commit",
+          "effort": "low",
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
+          "internal.run_id": "01KYSEQPY2C032WQCRVJWEA7B1",
+          "internal.thread_id": "file_review",
+          "graph.stall_timeout": "3600000ms",
+          "inventory_assignment": {
+            "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+            "target": {
+              "mode": "commit",
+              "scope": [
+                "README.md"
+              ],
+              "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+              "changedFileCount": 1,
+              "changedLineCount": 4,
+              "focus": "attack-surface",
+              "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+              "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+            },
+            "maxComponents": 12,
+            "topLevelDirectories": null,
+            "wholeTreeCompletenessRequired": false
+          },
+          "internal.retry_count.file_review": 0,
+          "thread.prepare.current_node": "target_gate",
+          "failure_signature": "",
+          "run_ensemble_file_review": false,
+          "products_dir": "CLAUDE-SECURITY-20260730-120714",
+          "parallel.results": [
+            {
+              "id": "file_reviewer",
+              "index": 0,
+              "item_label": "changed-files:1",
+              "status": "succeeded",
+              "context_updates": {
+                "last_response": "I read `README.md` complete at the pinned target revision `82a6abd` (8,540 bytes shown, matching the manifest byte size exactly) plus the range diff for `63b3043..82a6abd`.\n\n**Assessment:** the change",
+                "last_stage": "file_reviewer",
+                "output.file_reviewer": {
+                  "receipts": [
+                    {
+                      "path": "README.md",
+                      "status": "reviewed",
+                      "reason": "",
+                      "workNeeded": ""
+                    }
+                  ],
+                  "supportingFilesReviewed": [],
+                  "findings": []
+                },
+                "response.file_reviewer": "I read `README.md` complete at the pinned target revision `82a6abd` (8,540 bytes shown, matching the manifest byte size exactly) plus the range diff for `63b3043..82a6abd`.\n\n**Assessment:** the change is documentation-only — two sentences appended to the \"Change scans account for every changed path\" paragraph, clarifying that the changed-file pass stays bounded to assigned files while the research pipeline does the broad attack-path review. Per the review rules for documentation, the complete file plus range diff is sufficient and I did not audit the implementation behind the prose. I checked the full file for the issues that still matter in docs: no hardcoded secrets, credentials, tokens, or embedded URLs; no changed command examples that alter execution surface (the `fabro run` and `python3 tests/test_fabro_workflow.py` invocations are unchanged); and no text in the file that attempts to address or instruct a reviewing agent. No concrete attacker-controlled source-to-sink path exists in this file, so there is nothing to prove out cross-file and no explorer was needed.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [],\n  \"findings\": []\n}\n```"
+              }
+            }
+          ],
+          "use_inventory": false,
+          "command.output": "blob://sha256/5ecc8662b49ca2e4daf39e85fe672becc1e35b02ae941cb1518e4e73d8d789db",
+          "parallel.branch_count": 1,
+          "failure_class": "",
+          "graph.default_max_retries": "0",
+          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "thread.file_review.current_node": "file_review_join",
+          "thread.start.current_node": "prepare",
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "current_node": "file_review_join",
+          "graph.default_fidelity": "compact",
+          "file_review_jobs": [
+            {
+              "name": "changed-files:1",
+              "job_id": "file-review:1",
+              "kind": "file-review",
+              "files": [
+                {
+                  "path": "README.md",
+                  "change": "modified",
+                  "changeCode": "M",
+                  "contentRevision": "82a6abd2f1e455b95f00617837c261d003d9f561",
+                  "reviewRequired": true,
+                  "gitMode": "100644",
+                  "gitObjectType": "blob",
+                  "blobId": "43aacd81fb23533df504eb6264c7db1f9f17b56a",
+                  "bytes": 8540,
+                  "disposition": "pending",
+                  "reason": null,
+                  "workNeeded": null,
+                  "readWith": "git-show"
+                }
+              ],
+              "target": {
+                "mode": "commit",
+                "scope": [
+                  "README.md"
+                ],
+                "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                "changedFileCount": 1,
+                "changedLineCount": 4,
+                "focus": "attack-surface",
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+              }
+            }
+          ],
+          "internal.retry_count.start": 0,
+          "internal.retry_count.file_review_join": 0,
+          "run_standard_file_review": true,
+          "run_file_review": true,
+          "thread.target_gate.current_node": "file_review",
+          "ensemble_enabled": false,
+          "internal.retry_count.prepare": 0,
+          "outcome": "succeeded",
+          "empty_target": false,
+          "internal.node_visit_count": 1,
+          "internal.fidelity": "compact",
+          "graph.rankdir": "LR",
+          "internal.retry_count.target_gate": 0
+        },
+        "node_outcomes": {
+          "target_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: target_gate",
+            "usage": null
+          },
+          "prepare": {
+            "status": "succeeded",
+            "context_updates": {
+              "products_dir": "CLAUDE-SECURITY-20260730-120714",
+              "command.output": "blob://sha256/5ecc8662b49ca2e4daf39e85fe672becc1e35b02ae941cb1518e4e73d8d789db",
+              "inventory_assignment": {
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "target": {
+                  "mode": "commit",
+                  "scope": [
+                    "README.md"
+                  ],
+                  "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                  "changedFileCount": 1,
+                  "changedLineCount": 4,
+                  "focus": "attack-surface",
+                  "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                  "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                },
+                "maxComponents": 12,
+                "topLevelDirectories": null,
+                "wholeTreeCompletenessRequired": false
+              },
+              "ensemble_enabled": false,
+              "empty_target": false,
+              "use_inventory": false,
+              "mode": "commit",
+              "effort": "low",
+              "run_file_review": true,
+              "run_ensemble_file_review": false,
+              "run_standard_file_review": true,
+              "file_review_jobs": [
+                {
+                  "name": "changed-files:1",
+                  "job_id": "file-review:1",
+                  "kind": "file-review",
+                  "files": [
+                    {
+                      "path": "README.md",
+                      "change": "modified",
+                      "changeCode": "M",
+                      "contentRevision": "82a6abd2f1e455b95f00617837c261d003d9f561",
+                      "reviewRequired": true,
+                      "gitMode": "100644",
+                      "gitObjectType": "blob",
+                      "blobId": "43aacd81fb23533df504eb6264c7db1f9f17b56a",
+                      "bytes": 8540,
+                      "disposition": "pending",
+                      "reason": null,
+                      "workNeeded": null,
+                      "readWith": "git-show"
+                    }
+                  ],
+                  "target": {
+                    "mode": "commit",
+                    "scope": [
+                      "README.md"
+                    ],
+                    "range": "63b30435fa890790f1ee7b8f9397f8db43b31893..82a6abd2f1e455b95f00617837c261d003d9f561",
+                    "changedFileCount": 1,
+                    "changedLineCount": 4,
+                    "focus": "attack-surface",
+                    "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                    "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                  }
+                }
+              ]
+            },
+            "notes": "Script completed: python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 82a6abd2f1e455b95f00617837c261d003d9f561 --range '' --focus attack-surface",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1447,
+              "active_time_ms": 1447
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "parallel.branch_count": 1,
+              "parallel.results": [
+                {
+                  "id": "file_reviewer",
+                  "index": 0,
+                  "item_label": "changed-files:1",
+                  "status": "succeeded",
+                  "context_updates": {
+                    "last_response": "I read `README.md` complete at the pinned target revision `82a6abd` (8,540 bytes shown, matching the manifest byte size exactly) plus the range diff for `63b3043..82a6abd`.\n\n**Assessment:** the change",
+                    "last_stage": "file_reviewer",
+                    "output.file_reviewer": {
+                      "receipts": [
+                        {
+                          "path": "README.md",
+                          "status": "reviewed",
+                          "reason": "",
+                          "workNeeded": ""
+                        }
+                      ],
+                      "supportingFilesReviewed": [],
+                      "findings": []
+                    },
+                    "response.file_reviewer": "I read `README.md` complete at the pinned target revision `82a6abd` (8,540 bytes shown, matching the manifest byte size exactly) plus the range diff for `63b3043..82a6abd`.\n\n**Assessment:** the change is documentation-only — two sentences appended to the \"Change scans account for every changed path\" paragraph, clarifying that the changed-file pass stays bounded to assigned files while the research pipeline does the broad attack-path review. Per the review rules for documentation, the complete file plus range diff is sufficient and I did not audit the implementation behind the prose. I checked the full file for the issues that still matter in docs: no hardcoded secrets, credentials, tokens, or embedded URLs; no changed command examples that alter execution surface (the `fabro run` and `python3 tests/test_fabro_workflow.py` invocations are unchanged); and no text in the file that attempts to address or instruct a reviewing agent. No concrete attacker-controlled source-to-sink path exists in this file, so there is nothing to prove out cross-file and no explorer was needed.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"supportingFilesReviewed\": [],\n  \"findings\": []\n}\n```"
+                  }
+                }
+              ]
+            },
+            "jump_to_node": "file_review_join",
+            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+            "usage": null
+          },
+          "file_review_join": {
+            "status": "succeeded",
+            "notes": "Joined 1 parallel branch",
+            "usage": null
+          }
+        },
+        "next_node_id": "merge_file_review",
+        "git_commit_sha": "95024356fae38442258c42cea667188b99b33033",
+        "node_visits": {
+          "file_review_join": 1,
+          "start": 1,
+          "target_gate": 1,
+          "file_review": 1,
+          "prepare": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-07-30T12:08:07.317270907Z",
+        "current_node": "merge_file_review",
+        "completed_nodes": [
+          "start",
+          "prepare",
+          "target_gate",
+          "file_review",
+          "file_review_join",
+          "merge_file_review"
+        ],
+        "node_retries": {},
+        "context_values": {
           "thread.start.current_node": "prepare",
           "graph.default_max_retries": "0",
-          "current_node": "file_review_join",
+          "current_node": "merge_file_review",
           "internal.retry_count.file_review_join": 0,
           "inventory_assignment": {
             "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
@@ -4722,8 +4997,8 @@
           },
           "parallel.branch_count": 1,
           "graph.stall_timeout": "3600000ms",
-          "command.output": "blob://sha256/5ecc8662b49ca2e4daf39e85fe672becc1e35b02ae941cb1518e4e73d8d789db",
-          "internal.thread_id": "file_review",
+          "command.output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4",
+          "internal.thread_id": "file_review_join",
           "empty_target": false,
           "run_file_review": true,
           "thread.prepare.current_node": "target_gate",
@@ -4732,6 +5007,7 @@
           "internal.retry_count.prepare": 0,
           "failure_class": "",
           "graph.default_fidelity": "compact",
+          "internal.retry_count.merge_file_review": 0,
           "products_dir": "CLAUDE-SECURITY-20260730-120714",
           "internal.fidelity": "compact",
           "thread.file_review.current_node": "file_review_join",
@@ -4770,9 +5046,11 @@
           "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
           "internal.retry_count.file_review": 0,
           "internal.retry_count.target_gate": 0,
+          "thread.file_review_join.current_node": "merge_file_review",
           "internal.retry_count.start": 0,
           "ensemble_enabled": false,
           "effort": "low",
+          "file_review_results_merged": 1,
           "mode": "commit",
           "run_standard_file_review": true,
           "file_review_jobs": [
@@ -4930,6 +5208,21 @@
             "notes": "Conditional node evaluated: target_gate",
             "usage": null
           },
+          "merge_file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "file_review_results_merged": 1,
+              "command.output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4"
+            },
+            "notes": "Script completed: python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1407,
+              "active_time_ms": 1407
+            }
+          },
           "start": {
             "status": "succeeded",
             "usage": null
@@ -4940,9 +5233,10 @@
             "usage": null
           }
         },
-        "next_node_id": "merge_file_review",
+        "next_node_id": "post_file_review_gate",
         "node_visits": {
           "prepare": 1,
+          "merge_file_review": 1,
           "file_review": 1,
           "target_gate": 1,
           "file_review_join": 1,
@@ -4982,7 +5276,12 @@
       "first_event_seq": 89,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Joined 1 parallel branch",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T12:08:02.453829208Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -4991,6 +5290,52 @@
       "output": null,
       "started_at": "2026-07-30T12:08:02.317781123Z",
       "handler": "parallel.fan_in",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "merge_file_review@1": {
+      "first_event_seq": 97,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "command": "exec 2>&1\npython3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
+        "language": "shell",
+        "timeout_ms": 180000
+      },
+      "script_timing": {
+        "output": "blob://sha256/091fda61b87df578600c7a4acd39e0c8fb42972f2258c90ed93ca4a0a457e2c4",
+        "exit_code": 0,
+        "duration_ms": 1407,
+        "termination": "exited",
+        "output_bytes": 94,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 94,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-07-30T12:08:05.706916647Z",
+      "handler": "command",
       "graph_visit": 1,
       "usage": {
         "input_tokens": 0,
