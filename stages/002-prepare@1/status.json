@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 2\n\n## output\nsecurity_review.py: commit '40ca71968bd513b281be9594fd4d7b03cc4583e4' does not resolve to a commit in this checkout; the workflow does not fetch missing refs\n",
+  "timestamp": "2026-07-30T11:27:20.736490636Z"
+}

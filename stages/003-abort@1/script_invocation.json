@@ -1,0 +1,6 @@
+{
+  "script": "echo 'Security-review workflow stopped after a fatal deterministic failure.' >&2; exit 1",
+  "command": "exec 2>&1\necho 'Security-review workflow stopped after a fatal deterministic failure.' >&2; exit 1",
+  "language": "shell",
+  "timeout_ms": 10000
+}
