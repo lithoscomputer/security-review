@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from argparse import Namespace
@@ -35,6 +36,7 @@ def load_module(name: str, path: Path):
     return module
 
 
+sys.dont_write_bytecode = True
 DRIVER = load_module("fabro_security_review_driver", DRIVER_PATH)
 
 
