@@ -2,10 +2,10 @@
 """Render a scan's machine-readable artifacts from its run directory.
 
 Writes CLAUDE-SECURITY-RESULTS.jsonl (one finding per line, fields in a fixed
-order), CLAUDE-SECURITY-FILE-COVERAGE.json, and the
-CLAUDE-SECURITY-REVISION-<tag>.json stamp, then places the report Markdown
-beside them. Filenames, JSONL field order, and verification.status semantics
-are stable across releases.
+order) and the CLAUDE-SECURITY-REVISION-<tag>.json stamp, places the report
+markdown beside them, then removes the scan's run directory now that its
+records are rendered. Filenames, JSONL field order, and verification.status
+semantics are stable across releases.
 
 Usage: render_report.py <run-dir> [--products-dir <dir>]
 Python 3.9-compatible, stdlib only.
@@ -80,7 +80,6 @@ PANEL_VOTER_COUNT = 3
 PANEL_KEEP_QUORUM = 2
 
 REVISION_PREFIX = "CLAUDE-SECURITY-REVISION-"
-FILE_COVERAGE_NAME = "CLAUDE-SECURITY-FILE-COVERAGE.json"
 RUN_DIR_NAME = ".claude-security-run"
 # \Z, not $: `$` also matches before a trailing newline, and this names a file.
 HEX_RE = re.compile(r"^[0-9a-fA-F]{7,64}\Z")
@@ -331,35 +330,6 @@ def coverage_enum(value: object, allowed: tuple[str, ...]) -> str | None:
     return value if isinstance(value, str) and value in allowed else None
 
 
-def file_coverage_summary(raw: object) -> dict[str, object] | None:
-    item = as_map(raw)
-    if item is None:
-        return None
-    counts_raw = as_map(item.get("counts")) or {}
-    counts: dict[str, object] = {}
-    for name in (
-        "changedPaths",
-        "reviewRequired",
-        "reviewed",
-        "excluded",
-        "deferred",
-    ):
-        value = counts_raw.get(name)
-        counts[name] = (
-            value
-            if isinstance(value, int) and not isinstance(value, bool)
-            else None
-        )
-    return {
-        "applicable": bool(item.get("applicable")),
-        "completeness": coverage_enum(
-            item.get("completeness"),
-            ("complete", "partial", "not-applicable"),
-        ),
-        "counts": counts,
-    }
-
-
 def run_shape(coverage: JsonMap | None, source: str, effort: object) -> dict[str, object]:
     """What shape actually ran, distinct from the effort tier that was asked."""
     shape: dict[str, object] = {"requested_effort": effort, "collapsed": None, "source": source}
@@ -369,7 +339,6 @@ def run_shape(coverage: JsonMap | None, source: str, effort: object) -> dict[str
     shape["diff_files"] = coverage.get("diffFiles")
     shape["diff_lines"] = coverage.get("diffLines")
     shape["scope_files"] = coverage.get("scopeFiles")
-    shape["file_coverage"] = file_coverage_summary(coverage.get("fileCoverage"))
     shape["empty_diff"] = bool(coverage.get("emptyDiff"))
     shape["empty_scope"] = bool(coverage.get("emptyScope"))
     shape["researchers_dispatched"] = coverage.get("researchersDispatched")
@@ -541,7 +510,6 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
     meta_raw = read_json(run_dir, "scan-meta.json")
     findings_raw = read_json(run_dir, "findings.json")
     votes: object = read_json(run_dir, "votes.json", required=False)
-    file_coverage_raw = read_json(run_dir, "file-coverage.json")
     coverage, coverage_source = read_coverage(run_dir)
     votes_present = votes is not None
     if votes is None:
@@ -555,9 +523,6 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
     votes_map = as_map(votes)
     if votes_map is None:
         raise RenderError("votes.json must be a JSON object mapping the vote record")
-    file_coverage = as_map(file_coverage_raw)
-    if file_coverage is None:
-        raise RenderError("file-coverage.json must be a JSON object")
     rounds_raw = votes_map.get("rounds")
     rounds_by_id: JsonMap = {} if rounds_raw is None else (as_map(rounds_raw) or {})
     if rounds_raw is not None and not isinstance(rounds_raw, dict):
@@ -596,11 +561,6 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
     atomic_write(
         os.path.join(products_dir, "CLAUDE-SECURITY-RESULTS.jsonl"),
         "".join(jsonl_line(f) + "\n" for f in findings),
-    )
-    atomic_write(
-        os.path.join(products_dir, FILE_COVERAGE_NAME),
-        json.dumps(file_coverage, ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n",
     )
     markdown_out = os.path.join(products_dir, "CLAUDE-SECURITY-RESULTS.md")
     if os.path.realpath(markdown_path) != os.path.realpath(markdown_out):
@@ -675,8 +635,8 @@ def main(argv: list[str]) -> int:
     removal = remove_run_dir(run_dir, products_dir)
     print(
         f"wrote CLAUDE-SECURITY-RESULTS.jsonl ({len(findings)} finding"
-        f"{'' if len(findings) == 1 else 's'}), {FILE_COVERAGE_NAME}, and "
-        f"{REVISION_PREFIX}{tag}.json into {products_dir}"
+        f"{'' if len(findings) == 1 else 's'}) and {REVISION_PREFIX}{tag}.json "
+        f"into {products_dir}"
     )
     print(f"stamp: {REVISION_PREFIX}{tag}.json")
     print(f"verification.status: {verification.get('status')}")

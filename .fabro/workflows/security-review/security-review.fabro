@@ -29,41 +29,9 @@ digraph SecurityReview {
         label="Resolve and size scan target",
         timeout="180s",
         output_schema="routing",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 2580e0ac88a8bbadd7ff6907050c14dc548928bf3834f7624cc309fb45c83868 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 4c8f5da67d87efe0367bb1a86914368f1bf66673be47072f4d43f012ef23afaa .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py e319c564b10b3b0f6ed58e8cc48d4df1bb3bc400256c3b2cc3138431678d16c3 .fabro/workflows/security-review/specs/report-spec.md 663c66cdbd519e6bdebf2dbc396c2d4c74e94a468c32228fcbbeb285c39d5a58 && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
     target_gate [shape=diamond, label="Target has work?"]
-
-    file_review [
-        shape=component,
-        label="Changed-file completion review",
-        for_each="context.file_review_jobs",
-        max_parallel=8,
-        auto_status=true
-    ]
-    file_reviewer [
-        label="Read assigned changed files in full",
-        class="research",
-        prompt="@prompts/file-review.md",
-        output_schema="@schemas/file-review.schema.json",
-        output_retries=2,
-        max_retries=2,
-        auto_status=true,
-        timeout="1800s",
-        project_memory=false
-    ]
-    file_review_join [shape=tripleoctagon, label="Gather file receipts"]
-    merge_file_review [
-        shape=parallelogram,
-        label="Merge file receipts and candidates",
-        stdin_source="context.parallel.results",
-        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge file_review",
-        output_schema="routing",
-        timeout="180s"
-    ]
-    post_file_review_gate [
-        shape=diamond,
-        label="Component inventory needed?"
-    ]
 
     inventory [
         label="Inventory",
@@ -340,16 +308,8 @@ digraph SecurityReview {
     prepare -> target_gate [condition="outcome=succeeded"]
     prepare -> abort
     target_gate -> exit [condition="context.empty_target=true"]
-    target_gate -> file_review [condition="context.run_file_review=true"]
     target_gate -> inventory [condition="context.use_inventory=true"]
     target_gate -> plan_matrix
-
-    file_review -> file_reviewer [fidelity="truncate"]
-    file_reviewer -> file_review_join -> merge_file_review
-    merge_file_review -> post_file_review_gate [condition="outcome=succeeded"]
-    merge_file_review -> abort
-    post_file_review_gate -> inventory [condition="context.use_inventory=true"]
-    post_file_review_gate -> plan_matrix
 
     inventory -> merge_inventory [condition="outcome=succeeded"]
     inventory -> inventory_failed

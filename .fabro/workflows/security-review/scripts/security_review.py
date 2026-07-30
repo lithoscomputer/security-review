@@ -46,8 +46,6 @@ MAX_COMPONENTS_EXPANDED = 24
 # ceiling. Keep the driver's direct-input guard aligned with that transport.
 MAX_STDIN_BYTES = 30 * 1024 * 1024
 MAX_RESULT_TEXT = 8000
-FILE_REVIEW_BATCH_SIZE = 4
-FILE_REVIEW_MAX_BYTES = 512 * 1024
 
 EFFORT_TIERS = ("low", "medium", "high", "max")
 SCAN_MODES = ("scan", "changes", "commit")
@@ -98,7 +96,6 @@ MERGEABLE_FINDING_FIELDS = (
     "cweId",
 )
 PHASE_OUTPUT_KEYS = {
-    "file_review": "output.file_reviewer",
     "threat": "output.threat_model",
     "research": "output.researcher",
     "sweep": "output.sweeper",
@@ -107,7 +104,6 @@ PHASE_OUTPUT_KEYS = {
     "redteam": "output.redteam_verifier",
 }
 PHASE_JOB_KEYS = {
-    "file_review": "file_review_jobs",
     "threat": "threat_jobs",
     "research": "research_jobs",
     "sweep": "sweep_jobs",
@@ -356,18 +352,6 @@ def normalize_repo_path(value: Any) -> Optional[str]:
     return path.as_posix()
 
 
-def normalize_git_path(value: Any) -> Optional[str]:
-    """Validate a path emitted by Git without changing its identity."""
-    if not isinstance(value, str) or not value or value.startswith("/"):
-        return None
-    if "\0" in value:
-        return None
-    parts = value.split("/")
-    if any(part in {"", ".", ".."} for part in parts):
-        return None
-    return value
-
-
 def normalize_coverage_path(value: Any) -> Optional[str]:
     normalized = normalize_repo_path(value)
     if normalized is None:
@@ -464,7 +448,6 @@ def diff_stats(
 ) -> Tuple[List[str], Optional[int]]:
     suffix = ["--", *scopes] if scopes else ["--"]
     names = git(
-        "--literal-pathspecs",
         "diff",
         "--no-ext-diff",
         "--no-textconv",
@@ -476,7 +459,6 @@ def diff_stats(
     )
     files = decode_z_paths(names.stdout)
     numstat = git(
-        "--literal-pathspecs",
         "diff",
         "--no-ext-diff",
         "--no-textconv",
@@ -496,290 +478,6 @@ def diff_stats(
             return files, None
         total += int(columns[0]) + int(columns[1])
     return files, total
-
-
-def diff_entries(
-    revision_range: str,
-    scopes: Sequence[str],
-) -> List[Dict[str, Any]]:
-    """Return one normalized row per changed path at the target revision."""
-    suffix = ["--", *scopes] if scopes else ["--"]
-    result = git(
-        "--literal-pathspecs",
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--find-renames",
-        "--name-status",
-        "-z",
-        revision_range,
-        *suffix,
-        check=True,
-    )
-    fields = [field for field in result.stdout.split(b"\0") if field]
-    rows: List[Dict[str, Any]] = []
-    index = 0
-    change_names = {
-        "A": "added",
-        "C": "copied",
-        "D": "deleted",
-        "M": "modified",
-        "R": "renamed",
-        "T": "type-changed",
-        "U": "unmerged",
-        "X": "unknown",
-        "B": "broken-pairing",
-    }
-    while index < len(fields):
-        status = fields[index].decode("ascii", "replace")
-        index += 1
-        code = status[:1]
-        if code in {"R", "C"}:
-            if index + 1 >= len(fields):
-                raise WorkflowDataError(
-                    "Git returned a truncated rename or copy row"
-                )
-            old_path = fields[index].decode(
-                "utf-8",
-                "surrogateescape",
-            )
-            path = fields[index + 1].decode(
-                "utf-8",
-                "surrogateescape",
-            )
-            index += 2
-        else:
-            if index >= len(fields):
-                raise WorkflowDataError("Git returned a truncated change row")
-            old_path = None
-            path = fields[index].decode(
-                "utf-8",
-                "surrogateescape",
-            )
-            index += 1
-        normalized = normalize_git_path(path)
-        normalized_old = (
-            normalize_git_path(old_path) if old_path is not None else None
-        )
-        if normalized is None or normalized == ".":
-            raise WorkflowDataError(
-                f"Git returned an unsafe changed path: {path!r}"
-            )
-        if old_path is not None and (
-            normalized_old is None or normalized_old == "."
-        ):
-            raise WorkflowDataError(
-                f"Git returned an unsafe rename source: {old_path!r}"
-            )
-        row: Dict[str, Any] = {
-            "path": normalized,
-            "change": change_names.get(code, "unknown"),
-            "changeCode": status,
-        }
-        if normalized_old is not None:
-            row["oldPath"] = normalized_old
-        rows.append(row)
-    rows.sort(key=lambda row: str(row["path"]))
-    return rows
-
-
-def target_tree_entry(
-    target_commit: str,
-    path: str,
-) -> Optional[Tuple[str, str, str]]:
-    result = git(
-        "--literal-pathspecs",
-        "ls-tree",
-        "--full-tree",
-        "-z",
-        target_commit,
-        "--",
-        path,
-        check=True,
-    )
-    rows = [row for row in result.stdout.split(b"\0") if row]
-    if not rows:
-        return None
-    if len(rows) != 1:
-        raise WorkflowDataError(
-            f"Git returned multiple tree rows for exact path {path!r}"
-        )
-    row = rows[0]
-    metadata, separator, _listed_path = row.partition(b"\t")
-    fields = metadata.decode("ascii", "replace").split()
-    if not separator or len(fields) != 3:
-        raise WorkflowDataError(
-            f"Git returned an invalid tree row for {path!r}"
-        )
-    listed_path = _listed_path.decode("utf-8", "surrogateescape")
-    if listed_path != path:
-        raise WorkflowDataError(
-            f"Git returned the wrong tree row for exact path {path!r}"
-        )
-    mode, object_type, object_id = fields
-    return mode, object_type, object_id
-
-
-def classify_manifest_row(
-    raw: Mapping[str, Any],
-    target_commit: str,
-) -> Dict[str, Any]:
-    row = dict(raw)
-    row["contentRevision"] = target_commit
-    row["reviewRequired"] = False
-    if row.get("change") == "deleted":
-        row.update(
-            disposition="excluded",
-            reason="deleted at the target revision; no target file exists",
-        )
-        return row
-    if row.get("change") in {"unmerged", "unknown", "broken-pairing"}:
-        row.update(
-            disposition="deferred",
-            reason=f"unsupported Git change type {row.get('changeCode')!r}",
-            workNeeded=(
-                "resolve the Git index state, then rerun the changed-file review"
-            ),
-        )
-        return row
-
-    path = str(row["path"])
-    entry = target_tree_entry(target_commit, path)
-    if entry is None:
-        row.update(
-            disposition="deferred",
-            reason="the target revision has no tree entry for this path",
-            workNeeded=(
-                "repair or recreate the target commit so the changed path has "
-                "a readable tree entry, then rerun the review"
-            ),
-        )
-        return row
-    mode, object_type, object_id = entry
-    row.update(
-        gitMode=mode,
-        gitObjectType=object_type,
-        blobId=object_id,
-    )
-    if mode == "160000" or object_type == "commit":
-        row.update(
-            disposition="excluded",
-            reason="Git submodule entry; there is no in-repository file to read",
-        )
-        return row
-    if mode == "120000":
-        row.update(
-            disposition="excluded",
-            reason="symbolic link; following it would not be a contained full-file read",
-        )
-        return row
-    if object_type != "blob":
-        row.update(
-            disposition="deferred",
-            reason=f"unsupported Git object type {object_type!r}",
-            workNeeded=(
-                "review this Git object with a reader that supports its object "
-                "type"
-            ),
-        )
-        return row
-
-    size_text = git_text("cat-file", "-s", object_id)
-    if size_text is None or not size_text.isdigit():
-        row.update(
-            disposition="deferred",
-            reason="Git could not determine the target blob size",
-            workNeeded=(
-                "restore access to the target Git object, then rerun the review"
-            ),
-        )
-        return row
-    size = int(size_text)
-    row["bytes"] = size
-    if size > FILE_REVIEW_MAX_BYTES:
-        row.update(
-            disposition="deferred",
-            reason=(
-                f"target blob is {size} bytes; the full-file review limit is "
-                f"{FILE_REVIEW_MAX_BYTES} bytes"
-            ),
-            workNeeded=(
-                "review the complete blob with a higher file-size limit or a "
-                "reader designed for large generated files"
-            ),
-        )
-        return row
-
-    blob = git("cat-file", "blob", object_id)
-    if blob.returncode != 0:
-        row.update(
-            disposition="deferred",
-            reason="Git could not read the target blob",
-            workNeeded=(
-                "restore access to the target Git object, then rerun the review"
-            ),
-        )
-        return row
-    if b"\0" in blob.stdout:
-        row.update(
-            disposition="excluded",
-            reason="binary blob; the source-review agents cannot read it as text",
-        )
-        return row
-
-    row.update(
-        disposition="pending",
-        reason=None,
-        workNeeded=None,
-        reviewRequired=True,
-        readWith="git-show",
-    )
-    return row
-
-
-def build_file_manifest(
-    revision_range: str,
-    target_commit: str,
-    scopes: Sequence[str],
-) -> Dict[str, Any]:
-    files = [
-        classify_manifest_row(row, target_commit)
-        for row in diff_entries(revision_range, scopes)
-    ]
-    return {
-        "version": 1,
-        "applicable": True,
-        "range": revision_range,
-        "targetCommit": target_commit,
-        "files": files,
-    }
-
-
-def build_file_review_jobs(state: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    manifest = state.get("file_manifest")
-    rows = manifest.get("files") if isinstance(manifest, dict) else None
-    if not isinstance(rows, list):
-        return []
-    pending = [
-        dict(row)
-        for row in rows
-        if isinstance(row, dict) and row.get("disposition") == "pending"
-    ]
-    jobs: List[Dict[str, Any]] = []
-    target = common_target(state)
-    for offset in range(0, len(pending), FILE_REVIEW_BATCH_SIZE):
-        number = len(jobs) + 1
-        files = pending[offset : offset + FILE_REVIEW_BATCH_SIZE]
-        jobs.append(
-            {
-                "name": f"changed-files:{number}",
-                "job_id": f"file-review:{number}",
-                "kind": "file-review",
-                "files": files,
-                "target": target,
-            }
-        )
-    return jobs
 
 
 def workspace_digest() -> str:
@@ -1074,23 +772,6 @@ def prepare(args: argparse.Namespace) -> None:
     diff_file_count = (
         len(changed_files) if mode in {"changes", "commit"} else None
     )
-    file_manifest: Dict[str, Any] = {
-        "version": 1,
-        "applicable": False,
-        "range": revision_range,
-        "targetCommit": target_commit,
-        "files": [],
-    }
-    if (
-        mode in {"changes", "commit"}
-        and revision_range is not None
-        and target_commit is not None
-    ):
-        file_manifest = build_file_manifest(
-            revision_range,
-            target_commit,
-            scope,
-        )
     empty_diff = mode in {"changes", "commit"} and diff_file_count == 0
     empty_scope = (
         mode == "scan" and scope_file_count is not None and scope_file_count == 0
@@ -1134,7 +815,6 @@ def prepare(args: argparse.Namespace) -> None:
         "commit": target_commit,
         "parent": parent,
         "changed_files": changed_files,
-        "file_manifest": file_manifest,
         "diff_files": diff_file_count,
         "diff_lines": diff_lines,
         "scope_files": scope_file_count,
@@ -1177,10 +857,6 @@ def prepare(args: argparse.Namespace) -> None:
         "phase_results": {},
         "phase_jobs": {},
     }
-    file_review_jobs = build_file_review_jobs(state)
-    state["file_review_jobs"] = file_review_jobs
-    state["run_file_review"] = bool(file_review_jobs)
-    set_phase_jobs(state, "file_review", file_review_jobs)
 
     if empty_target:
         save_state(state)
@@ -1234,7 +910,6 @@ def prepare(args: argparse.Namespace) -> None:
         "range": revision_range,
     }
     write_json(run_dir / "scan-meta.json", scan_meta)
-    write_json(run_dir / "file-manifest.json", file_manifest)
     state["workspace_digest"] = workspace_digest()
     save_state(state)
 
@@ -1266,25 +941,13 @@ def prepare(args: argparse.Namespace) -> None:
         print("low effort: one whole-repository component")
     shape = "single-researcher" if use_single else "component-matrix"
     print(f"Prepared {effort} {mode} security review using the {shape} shape")
-    routing_updates: Dict[str, Any] = {
-        "empty_target": False,
-        "use_inventory": use_inventory,
-        "effort": effort,
-        "mode": mode,
-        "inventory_assignment": inventory_assignment,
-        "products_dir": products_rel,
-        "run_file_review": bool(file_review_jobs),
-    }
-    if file_review_jobs:
-        routing_updates.update(
-            phase_jobs_context(state, "file_review", file_review_jobs)
-        )
-        print(
-            f"file manifest: {len(file_manifest['files'])} changed path(s), "
-            f"{len(file_review_jobs)} full-file review batch(es)"
-        )
     emit(
-        **routing_updates,
+        empty_target=False,
+        use_inventory=use_inventory,
+        effort=effort,
+        mode=mode,
+        inventory_assignment=inventory_assignment,
+        products_dir=products_rel,
     )
 
 
@@ -1987,57 +1650,6 @@ def normalize_findings_result(value: Any) -> Optional[Dict[str, Any]]:
     return {"findings": findings}
 
 
-def normalize_file_review_result(value: Any) -> Optional[Dict[str, Any]]:
-    findings = normalize_findings_result(value)
-    if findings is None or not isinstance(value.get("receipts"), list):
-        return None
-    supporting = string_list(
-        value.get("supportingFilesReviewed"),
-        cap=200,
-        item_cap=1000,
-    )
-    if supporting is None:
-        return None
-    normalized_supporting: List[str] = []
-    for raw_path in supporting:
-        path = normalize_repo_path(raw_path)
-        if path is None or path == ".":
-            return None
-        if path not in normalized_supporting:
-            normalized_supporting.append(path)
-
-    receipts: List[Dict[str, str]] = []
-    for raw in value["receipts"][:100]:
-        if not isinstance(raw, dict):
-            return None
-        path = normalize_git_path(raw.get("path"))
-        status = one_line(raw.get("status"), 40).lower()
-        reason = one_line(raw.get("reason"), 1000).strip()
-        work_needed = one_line(raw.get("workNeeded"), 1000).strip()
-        if (
-            path is None
-            or status not in {"reviewed", "deferred"}
-            or (
-                status == "deferred"
-                and (not reason or not work_needed)
-            )
-        ):
-            return None
-        receipts.append(
-            {
-                "path": path,
-                "status": status,
-                "reason": reason,
-                "workNeeded": work_needed,
-            }
-        )
-    return {
-        "findings": findings["findings"],
-        "receipts": receipts,
-        "supportingFilesReviewed": normalized_supporting,
-    }
-
-
 def normalize_verdict(value: Any) -> Optional[Dict[str, str]]:
     if not isinstance(value, dict):
         return None
@@ -2051,8 +1663,6 @@ def normalize_verdict(value: Any) -> Optional[Dict[str, str]]:
 
 
 def normalize_phase_result(phase: str, value: Any) -> Optional[Any]:
-    if phase == "file_review":
-        return normalize_file_review_result(value)
     if phase == "threat":
         return normalize_threat_model(value)
     if phase in {"research", "sweep"}:
@@ -2185,16 +1795,10 @@ def verification_claim(candidate: Mapping[str, Any]) -> Dict[str, Any]:
 
 def dedup_rank() -> None:
     state = load_state()
-    file_review_jobs = list(state.get("file_review_jobs") or [])
     research_jobs = list(state.get("research_jobs") or [])
     sweep_jobs = list(state.get("sweep_jobs") or [])
-    jobs = file_review_jobs + research_jobs + sweep_jobs
+    jobs = research_jobs + sweep_jobs
     phase_results = state.get("phase_results") or {}
-    file_review_results = (
-        phase_results.get("file_review", {})
-        if isinstance(phase_results, dict)
-        else {}
-    )
     research_results = (
         phase_results.get("research", {})
         if isinstance(phase_results, dict)
@@ -2211,33 +1815,18 @@ def dedup_rank() -> None:
     for job in jobs:
         if not isinstance(job, dict):
             continue
-        if job.get("kind") == "file-review":
-            phase = "file_review"
-            source = file_review_results
-        elif job.get("kind") == "sweep":
-            phase = "sweep"
-            source = sweep_results
-        else:
-            phase = "research"
-            source = research_results
+        phase = "sweep" if job.get("kind") == "sweep" else "research"
+        source = sweep_results if phase == "sweep" else research_results
         raw = source.get(job.get("job_id")) if isinstance(source, dict) else None
-        normalized = (
-            normalize_file_review_result(raw)
-            if phase == "file_review"
-            else normalize_findings_result(raw)
-        )
+        normalized = normalize_findings_result(raw)
         if normalized is None:
             invalid_results.append(one_line(job.get("name"), 200))
             continue
         returned += 1
         component = (
-            "changed-file review"
-            if phase == "file_review"
-            else (
             job.get("component", {}).get("name", "repository")
             if isinstance(job.get("component"), dict)
             else "sweep"
-            )
         )
         for finding in normalized["findings"]:
             copy = dict(finding)
@@ -2522,198 +2111,6 @@ def confidence_sort_key(record: Mapping[str, Any]) -> Tuple[int, int]:
     )
 
 
-def file_coverage_from_state(state: Mapping[str, Any]) -> Dict[str, Any]:
-    manifest = state.get("file_manifest")
-    if not isinstance(manifest, dict) or not manifest.get("applicable"):
-        return {
-            "version": 1,
-            "applicable": False,
-            "completeness": "not-applicable",
-            "counts": {
-                "changedPaths": 0,
-                "reviewRequired": 0,
-                "reviewed": 0,
-                "excluded": 0,
-                "deferred": 0,
-            },
-            "files": [],
-            "supportingFilesReviewed": [],
-            "invalidReceiptClaims": [],
-        }
-
-    raw_rows = manifest.get("files")
-    manifest_rows = raw_rows if isinstance(raw_rows, list) else []
-    jobs = [
-        job
-        for job in (state.get("file_review_jobs") or [])
-        if isinstance(job, dict)
-    ]
-    phase_results = state.get("phase_results")
-    raw_results = (
-        phase_results.get("file_review", {})
-        if isinstance(phase_results, dict)
-        else {}
-    )
-    results = raw_results if isinstance(raw_results, dict) else {}
-    owners: Dict[str, Dict[str, Any]] = {}
-    invalid_claims: List[str] = []
-    returned_jobs = 0
-    supporting_files: List[Dict[str, str]] = []
-    normalized_results: Dict[str, Dict[str, Any]] = {}
-
-    for job in jobs:
-        job_id = str(job.get("job_id") or "")
-        assigned = job.get("files")
-        assigned_rows = assigned if isinstance(assigned, list) else []
-        assigned_paths = {
-            str(row.get("path"))
-            for row in assigned_rows
-            if isinstance(row, dict) and isinstance(row.get("path"), str)
-        }
-        for path in sorted(assigned_paths):
-            if path in owners:
-                invalid_claims.append(
-                    f"{path}: assigned to more than one file-review job"
-                )
-            else:
-                owners[path] = job
-
-        result = normalize_file_review_result(results.get(job_id))
-        if result is None:
-            continue
-        returned_jobs += 1
-        normalized_results[job_id] = result
-        for receipt in result["receipts"]:
-            path = receipt["path"]
-            if path not in assigned_paths:
-                invalid_claims.append(
-                    f"{job_id}: receipt for unassigned path {path}"
-                )
-        for path in result["supportingFilesReviewed"]:
-            item = {"path": path, "jobId": job_id}
-            if item not in supporting_files:
-                supporting_files.append(item)
-
-    files: List[Dict[str, Any]] = []
-    for raw_row in manifest_rows:
-        if not isinstance(raw_row, dict):
-            continue
-        row = dict(raw_row)
-        path = str(row.get("path") or "")
-        if row.get("disposition") != "pending":
-            row.pop("reviewRequired", None)
-            files.append(row)
-            continue
-
-        job = owners.get(path)
-        if job is None:
-            row.update(
-                disposition="deferred",
-                reason="no file-review job was assigned",
-                workNeeded=(
-                    "assign this path to one full-file reviewer and collect one "
-                    "valid completion receipt"
-                ),
-            )
-            row.pop("reviewRequired", None)
-            files.append(row)
-            continue
-        job_id = str(job.get("job_id") or "")
-        result = normalized_results.get(job_id)
-        if result is None:
-            row.update(
-                disposition="deferred",
-                reason=(
-                    f"assigned reviewer {job_id} did not return a valid "
-                    "completion receipt"
-                ),
-                workNeeded=(
-                    f"retry {job_id} and collect one valid receipt for this path"
-                ),
-                receipt={"jobId": job_id, "status": "missing"},
-            )
-            row.pop("reviewRequired", None)
-            files.append(row)
-            continue
-        receipts = [
-            receipt
-            for receipt in result["receipts"]
-            if receipt.get("path") == path
-        ]
-        if len(receipts) != 1:
-            row.update(
-                disposition="deferred",
-                reason=(
-                    f"assigned reviewer {job_id} returned "
-                    f"{len(receipts)} receipts for this path"
-                ),
-                workNeeded=(
-                    f"retry {job_id} and collect exactly one receipt for this path"
-                ),
-                receipt={"jobId": job_id, "status": "invalid"},
-            )
-            row.pop("reviewRequired", None)
-            files.append(row)
-            continue
-        receipt = receipts[0]
-        row.update(
-            disposition=receipt["status"],
-            reason=receipt["reason"] or None,
-            workNeeded=receipt["workNeeded"] or None,
-            receipt={
-                "jobId": job_id,
-                "status": receipt["status"],
-                "reason": receipt["reason"] or None,
-                "workNeeded": receipt["workNeeded"] or None,
-            },
-        )
-        row.pop("reviewRequired", None)
-        files.append(row)
-
-    counts = {
-        "changedPaths": len(files),
-        "reviewRequired": sum(
-            raw.get("disposition") == "pending"
-            for raw in manifest_rows
-            if isinstance(raw, dict)
-        ),
-        "reviewed": sum(row.get("disposition") == "reviewed" for row in files),
-        "excluded": sum(row.get("disposition") == "excluded" for row in files),
-        "deferred": sum(row.get("disposition") == "deferred" for row in files),
-    }
-    completeness_reasons = [
-        f"{counts['deferred']} changed path(s) were deferred"
-    ] if counts["deferred"] else []
-    if invalid_claims:
-        completeness_reasons.append(
-            f"{len(set(invalid_claims))} invalid receipt claim(s) were ignored"
-        )
-    return {
-        "version": 1,
-        "applicable": True,
-        "range": manifest.get("range"),
-        "targetCommit": manifest.get("targetCommit"),
-        "completeness": (
-            "complete" if not completeness_reasons else "partial"
-        ),
-        "completenessReasons": completeness_reasons,
-        "counts": counts,
-        "reviewersDispatched": len(jobs),
-        "reviewersReturned": returned_jobs,
-        "files": files,
-        "supportingFilesReviewed": sorted(
-            supporting_files,
-            key=lambda item: (item["path"], item["jobId"]),
-        ),
-        "invalidReceiptClaims": sorted(set(invalid_claims)),
-        "receiptMeaning": (
-            "reviewed means the assigned agent attested that it read the "
-            "complete target file; it is an auditable receipt, not mechanical "
-            "proof of model attention"
-        ),
-    }
-
-
 def coverage_from_state(state: Mapping[str, Any]) -> Dict[str, Any]:
     planned = state.get("planned_components") or []
     return {
@@ -2765,7 +2162,6 @@ def coverage_from_state(state: Mapping[str, Any]) -> Dict[str, Any]:
         "invalidResearchResults": (
             state.get("invalid_research_results") or []
         ),
-        "fileCoverage": file_coverage_from_state(state),
     }
 
 
@@ -2928,10 +2324,6 @@ def write_final_files(
     write_json(run_dir / "findings.json", result["findings"])
     write_json(run_dir / "votes.json", result["votes"])
     write_json(run_dir / "coverage.json", result["coverage"])
-    write_json(
-        run_dir / "file-coverage.json",
-        result["coverage"]["fileCoverage"],
-    )
     write_json(run_dir / "final.json", result)
 
 
@@ -2997,9 +2389,7 @@ def render_report() -> None:
     save_state(state)
     print(
         f"Wrote {products_rel}/CLAUDE-SECURITY-RESULTS.md, "
-        "CLAUDE-SECURITY-RESULTS.jsonl, "
-        "CLAUDE-SECURITY-FILE-COVERAGE.json, "
-        f"and {stamp_name}; "
+        f"CLAUDE-SECURITY-RESULTS.jsonl, and {stamp_name}; "
         "scratch records retained in the cloud sandbox"
     )
     emit(

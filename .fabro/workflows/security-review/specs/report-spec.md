@@ -57,18 +57,6 @@ both -- quote the recorded value, and state its actual consequence for the
 tier that ran: at medium, the target was not treated as small so the full
 pipeline ran instead of the fast path; and, when a file count was the
 unreadable one, an empty range or scope could not have been short-circuited.
-For a change or commit scan, coverage.fileCoverage is the exact changed-path
-ledger. State its completeness and counts. "complete" means every reviewable
-target text file has one `reviewed` receipt and every other changed path has an
-explicit `excluded` reason. "partial" means at least one path was deferred or
-an invalid receipt claim was ignored: list every deferred path, its reason, and
-its `workNeeded` to finish the review. Do not describe the changed files as
-fully reviewed. List excluded paths and their deterministic reasons separately;
-deletion, binary content, symlinks, and submodules are accounted for but were
-not full-file reads. A `reviewed` receipt is an auditable agent attestation
-that it read through end of file, not mechanical proof of model attention.
-Supporting-file entries are context only and never replace a changed-file
-receipt.
 This section is
 what makes the rest of the report trustworthy: a reader who knows what you did
 not look at can calibrate everything else.>

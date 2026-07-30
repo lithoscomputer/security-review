@@ -40,9 +40,7 @@ routing; the effort tier changes the amount of work.
 
 A run writes `CLAUDE-SECURITY-<timestamp>/` holding the human-readable
 `CLAUDE-SECURITY-RESULTS.md`, the machine-readable
-`CLAUDE-SECURITY-RESULTS.jsonl` for CI gates,
-`CLAUDE-SECURITY-FILE-COVERAGE.json` with the changed-file manifest and
-completion receipts, and
+`CLAUDE-SECURITY-RESULTS.jsonl` for CI gates, and
 `CLAUDE-SECURITY-REVISION-<tag>.json` — the stamp recording what was reviewed,
 at what effort, and how it was verified. The directory carries its own
 `.gitignore`, so nothing in it reaches a commit unless you delete that file.
@@ -121,17 +119,6 @@ examination. Text that addresses an agent is a finding to report
 phase. A phase's agent outputs are merged by a deterministic step that
 normalizes them and records what failed to return, so a missing agent degrades
 the run's coverage instead of corrupting its arithmetic.
-
-**Change scans account for every changed path.** Before agents run, Git creates
-a deterministic manifest. Deleted files, binary blobs, symlinks, submodules,
-and oversized files get explicit reasons. Reviewable text files are batched
-through a full-file pass from the pinned target Git object, including generated
-text files. Each assigned path must receive one exact `reviewed` or `deferred`
-receipt. A deferred receipt records both the reason and the work needed to
-finish. A missing receipt makes file coverage `partial`. Supporting files stay
-in a separate ledger and cannot satisfy a changed-file receipt. This pass stays
-bounded to assigned files; the existing research pipeline performs the broad
-attack-path review.
 
 **Support files are pinned.** Before anything runs, `prepare` verifies the
 SHA-256 of the engine, the Git wrapper, the renderer, and the report spec
