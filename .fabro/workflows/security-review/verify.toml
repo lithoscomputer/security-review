@@ -8,9 +8,9 @@ goal = "Verify the security-review workflow against its deliberate command-injec
 
 [run.inputs]
 mode = "scan"
-# Keep the fixture check on the standard path. Set this existing input to
-# "max" to exercise neutral model slots A/B/C/D.
 effort = "low"
+# The smoke run checks the default ensemble path.
+ensemble = true
 scope = ".fabro/workflows/security-review/fixtures/command_injection.py"
 base = ""
 commit = ""

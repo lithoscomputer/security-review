@@ -190,6 +190,18 @@ def one_line(value: Any, cap: int = 500) -> str:
     )
 
 
+def boolean_input(value: Any, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+    raise WorkflowDataError(f"{name} must be true or false, got {value!r}")
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -684,6 +696,7 @@ def prepare(args: argparse.Namespace) -> None:
         raise WorkflowDataError(
             f"mode must be one of {', '.join(SCAN_MODES)}, got {args.mode!r}"
         )
+    ensemble_enabled = boolean_input(args.ensemble, "ensemble")
     effort = args.effort if args.effort in EFFORT_TIERS else "medium"
     if args.effort and args.effort not in EFFORT_TIERS:
         print(
@@ -840,7 +853,6 @@ def prepare(args: argparse.Namespace) -> None:
     )
     use_single = effort == "low" or collapsed is not None
     use_inventory = not use_single
-    ensemble_enabled = effort == "max"
     whole_tree_inventory = (
         use_inventory and mode == "scan" and not scope
     )
@@ -996,8 +1008,8 @@ def prepare(args: argparse.Namespace) -> None:
     print(f"Prepared {effort} {mode} security review using the {shape} shape")
     if ensemble_enabled:
         print(
-            "max effort: enabling neutral model slots A/B for research, "
-            "A/B/C for verification, and D for report synthesis"
+            "ensemble input: enabling neutral model slots A/B/C/D across "
+            "research, verification, and report synthesis"
         )
     emit(
         empty_target=False,
@@ -2579,6 +2591,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser = subparsers.add_parser("prepare")
     prepare_parser.add_argument("--mode", default="scan")
     prepare_parser.add_argument("--effort", default="medium")
+    prepare_parser.add_argument("--ensemble", default="true")
     prepare_parser.add_argument("--scope", default="")
     prepare_parser.add_argument("--base", default="")
     prepare_parser.add_argument("--commit", default="")

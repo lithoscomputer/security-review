@@ -84,6 +84,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         *,
         mode: str = "scan",
         effort: str = "max",
+        ensemble: object = True,
         scope: str = "",
         base: str = "",
         commit: str = "",
@@ -95,6 +96,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             Namespace(
                 mode=mode,
                 effort=effort,
+                ensemble=ensemble,
                 scope=scope,
                 base=base,
                 commit=commit,
@@ -354,13 +356,22 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(stamp["verification"]["status"], "verified")
         self.assertEqual(stamp["findings"]["total"], 1)
 
-    def test_existing_effort_input_selects_ensemble_only_for_max(self) -> None:
-        for effort in ("low", "medium", "high"):
+    def test_ensemble_input_controls_routing_independently_of_effort(
+        self,
+    ) -> None:
+        for effort in DRIVER.EFFORT_TIERS:
             with self.subTest(effort=effort):
-                state = self.prepare(effort=effort)
+                state = self.prepare(effort=effort, ensemble="true")
+                self.assertTrue(state["ensemble_enabled"])
+                state = self.prepare(effort=effort, ensemble="false")
                 self.assertFalse(state["ensemble_enabled"])
-        state = self.prepare(effort="max")
-        self.assertTrue(state["ensemble_enabled"])
+
+    def test_invalid_ensemble_input_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "ensemble must be true or false",
+        ):
+            self.prepare(ensemble="sometimes")
 
     def test_merge_leaves_exhausted_native_retry_results_missing(self) -> None:
         self.prepare(effort="low")
@@ -453,6 +464,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                 Namespace(
                     mode="scan",
                     effort="turbo",
+                    ensemble="true",
                     scope="",
                     base="",
                     commit="",
@@ -503,7 +515,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertIn("broad shared-parent paths", feedback)
 
     def test_verifiers_see_only_the_reported_claim(self) -> None:
-        self.prepare(effort="low")
+        self.prepare(effort="low", ensemble=False)
         self.call(DRIVER.plan_matrix)
         state = DRIVER.load_state()
         self.assertTrue(state["run_standard_research"])
@@ -787,7 +799,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertIn(f"    {gate} -> {default_target}\n", graph)
 
-    def test_max_effort_routes_through_neutral_ensemble_slots(self) -> None:
+    def test_ensemble_routes_through_neutral_model_slots(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for edge in (
             (
@@ -823,6 +835,13 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 graph,
                 rf'(?s){node} \[.*?class="ensemble-{slot}".*?\]',
             )
+
+    def test_ensemble_input_defaults_to_true(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertIn("--ensemble {{ inputs.ensemble }}", graph)
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            self.assertRegex(config, r"(?m)^ensemble = true$")
 
     def test_phase_barriers_use_fabro_native_agent_retries(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
