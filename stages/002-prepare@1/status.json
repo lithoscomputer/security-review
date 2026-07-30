@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 8a824ba7a4066c510fe971f55bfb4dc049f1860a --range '' --focus ''",
+  "failure_reason": null,
+  "timestamp": "2026-07-30T11:09:09.002631632Z"
+}
