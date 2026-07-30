@@ -3983,7 +3983,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-07-30T11:14:11.402463096Z",
-  "last_event_at": "2026-07-30T11:58:33.270995373Z",
+  "last_event_at": "2026-07-30T11:58:36.562463916Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -4420,15 +4420,301 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 764,
       "checkpoint": {
-        "timestamp": "2026-07-30T11:58:33.384303549Z",
+        "timestamp": "2026-07-30T11:58:36.548433926Z",
         "current_node": "file_review",
         "completed_nodes": [
           "start",
           "prepare",
           "target_gate",
           "file_review"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "graph.default_fidelity": "compact",
+          "graph.stall_timeout": "3600000ms",
+          "internal.thread_id": "target_gate",
+          "inventory_assignment": {
+            "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+            "target": {
+              "mode": "commit",
+              "scope": [
+                "README.md"
+              ],
+              "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+              "changedFileCount": 1,
+              "changedLineCount": 13,
+              "focus": null,
+              "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+              "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+            },
+            "maxComponents": 12,
+            "topLevelDirectories": null,
+            "wholeTreeCompletenessRequired": false
+          },
+          "effort": "low",
+          "outcome": "succeeded",
+          "thread.prepare.current_node": "target_gate",
+          "internal.run_id": "01KYSBPHN4CN8YVCJ694TJ9RZE",
+          "internal.node_visit_count": 1,
+          "ensemble_enabled": false,
+          "graph.rankdir": "LR",
+          "parallel.results": [
+            {
+              "id": "file_reviewer",
+              "index": 0,
+              "item_label": "changed-files:1",
+              "status": "succeeded",
+              "context_updates": {
+                "last_response": "Full-file review complete. The target blob (8427 bytes, 151 lines) was read end to end via the restricted wrapper at `8a824ba7a4066c510fe971f55bfb4dc049f1860a:README.md`, and it is byte-identical to t",
+                "last_stage": "file_reviewer",
+                "output.file_reviewer": {
+                  "receipts": [
+                    {
+                      "path": "README.md",
+                      "status": "reviewed",
+                      "reason": "",
+                      "workNeeded": ""
+                    }
+                  ],
+                  "findings": [],
+                  "supportingFilesReviewed": [
+                    ".fabro/workflows/security-review/scripts/security_review.py",
+                    ".fabro/workflows/security-review/scripts/render_report.py",
+                    ".fabro/workflows/security-review/scripts/git_readonly.py",
+                    ".fabro/workflows/security-review/security-review.fabro",
+                    ".fabro/workflows/security-review/workflow.toml",
+                    ".fabro/workflows/security-review/prompts/file-review.md",
+                    ".fabro/workflows/security-review/schemas/file-review.schema.json",
+                    ".fabro/workflows/security-review/specs/report-spec.md",
+                    "tests/test_fabro_workflow.py"
+                  ]
+                },
+                "response.file_reviewer": "Full-file review complete. The target blob (8427 bytes, 151 lines) was read end to end via the restricted wrapper at `8a824ba7a4066c510fe971f55bfb4dc049f1860a:README.md`, and it is byte-identical to the working tree (`git_readonly.py diff 8a824ba…​ -- README.md` returned empty, exit 0).\n\nThe change is documentation-only: 13 added lines that document the new changed-file coverage machinery (`README.md:44-46` and `README.md:126-133`). Since prose cannot itself be a sink, I traced every safety claim the new text makes into the engine to check for a documented-but-absent control, which would be the one way a docs change creates security-relevant exposure. All of them are actually implemented:\n\n- `CLAUDE-SECURITY-FILE-COVERAGE.json` is really written, from a required input, at `.fabro/workflows/security-review/scripts/render_report.py:600-604` (name constant at `:83`, source at `:544`).\n- The `.gitignore` containing `*` is created in that directory at `.fabro/workflows/security-review/scripts/security_review.py:1280`, and the coverage file lands inside it.\n- Explicit reasons exist for each enumerated category in `classify_manifest_row`: deleted (`security_review.py:694`), submodule (`:728`), symlink (`:734`), oversized (`:763`, limit `FILE_REVIEW_MAX_BYTES = 512 * 1024` at `:50`), binary (`:787`).\n- Batching is four rows per job (`:49`, `:834-836`), matching the schema's `maxItems: 4`; generated text files are *not* filtered out of the manifest, consistent with the new wording.\n- Exactly-one-receipt reconciliation and the `partial` downgrade are enforced in code at `:2848-2862` and `:2889-2903`; receipts for unassigned paths are recorded as invalid and ignored at `:2791-2796`; `supportingFilesReviewed` is kept in a separate ledger (`:2797-2800`, `:2909-2912`) and never sets a row disposition.\n- The four pinned support-file SHA-256 hashes at `security-review.fabro:36` match the README's list exactly.\n\nI found no attacker-controlled source-to-sink path introduced or exposed by this range, and the added text contains no instruction-like content directed at an agent. One robustness observation, reported as context rather than a finding because it lies outside the target range and is defended in practice: receipt `path` has no length cap or control-character scrubbing (`normalize_git_path`, `security_review.py:423-432`) before being interpolated into `invalidReceiptClaims` at `:2795`; `json.dumps` still escapes control characters on output, and the consuming report prompt treats the value as untrusted data.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"findings\": [],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/scripts/security_review.py\",\n    \".fabro/workflows/security-review/scripts/render_report.py\",\n    \".fabro/workflows/security-review/scripts/git_readonly.py\",\n    \".fabro/workflows/security-review/security-review.fabro\",\n    \".fabro/workflows/security-review/workflow.toml\",\n    \".fabro/workflows/security-review/prompts/file-review.md\",\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\",\n    \".fabro/workflows/security-review/specs/report-spec.md\",\n    \"tests/test_fabro_workflow.py\"\n  ]\n}\n```"
+              }
+            }
+          ],
+          "run_ensemble_file_review": false,
+          "current_node": "file_review",
+          "internal.retry_count.start": 0,
+          "empty_target": false,
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "parallel.branch_count": 1,
+          "use_inventory": false,
+          "run_file_review": true,
+          "graph.default_max_retries": "0",
+          "command.output": "blob://sha256/2da5c0b81d60bceabb15bc3d737ba9ee280bd8d296ad520a1cfb7e67352b4e9f",
+          "internal.retry_count.prepare": 0,
+          "run_standard_file_review": true,
+          "mode": "commit",
+          "internal.fidelity": "compact",
+          "internal.retry_count.file_review": 0,
+          "failure_class": "",
+          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "products_dir": "CLAUDE-SECURITY-20260730-111412",
+          "thread.start.current_node": "prepare",
+          "thread.target_gate.current_node": "file_review",
+          "internal.retry_count.target_gate": 0,
+          "failure_signature": "",
+          "file_review_jobs": [
+            {
+              "name": "changed-files:1",
+              "job_id": "file-review:1",
+              "kind": "file-review",
+              "files": [
+                {
+                  "path": "README.md",
+                  "change": "modified",
+                  "changeCode": "M",
+                  "contentRevision": "8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                  "reviewRequired": true,
+                  "gitMode": "100644",
+                  "gitObjectType": "blob",
+                  "blobId": "d28d2af088d13b94fc5c4ab247181c535ab08a2a",
+                  "bytes": 8427,
+                  "disposition": "pending",
+                  "reason": null,
+                  "workNeeded": null,
+                  "readWith": "git-show"
+                }
+              ],
+              "target": {
+                "mode": "commit",
+                "scope": [
+                  "README.md"
+                ],
+                "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                "changedFileCount": 1,
+                "changedLineCount": 13,
+                "focus": null,
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+              }
+            }
+          ],
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings."
+        },
+        "node_outcomes": {
+          "prepare": {
+            "status": "succeeded",
+            "context_updates": {
+              "empty_target": false,
+              "command.output": "blob://sha256/2da5c0b81d60bceabb15bc3d737ba9ee280bd8d296ad520a1cfb7e67352b4e9f",
+              "ensemble_enabled": false,
+              "products_dir": "CLAUDE-SECURITY-20260730-111412",
+              "run_ensemble_file_review": false,
+              "file_review_jobs": [
+                {
+                  "name": "changed-files:1",
+                  "job_id": "file-review:1",
+                  "kind": "file-review",
+                  "files": [
+                    {
+                      "path": "README.md",
+                      "change": "modified",
+                      "changeCode": "M",
+                      "contentRevision": "8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                      "reviewRequired": true,
+                      "gitMode": "100644",
+                      "gitObjectType": "blob",
+                      "blobId": "d28d2af088d13b94fc5c4ab247181c535ab08a2a",
+                      "bytes": 8427,
+                      "disposition": "pending",
+                      "reason": null,
+                      "workNeeded": null,
+                      "readWith": "git-show"
+                    }
+                  ],
+                  "target": {
+                    "mode": "commit",
+                    "scope": [
+                      "README.md"
+                    ],
+                    "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                    "changedFileCount": 1,
+                    "changedLineCount": 13,
+                    "focus": null,
+                    "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                    "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                  }
+                }
+              ],
+              "run_file_review": true,
+              "mode": "commit",
+              "run_standard_file_review": true,
+              "effort": "low",
+              "use_inventory": false,
+              "inventory_assignment": {
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "target": {
+                  "mode": "commit",
+                  "scope": [
+                    "README.md"
+                  ],
+                  "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                  "changedFileCount": 1,
+                  "changedLineCount": 13,
+                  "focus": null,
+                  "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                  "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                },
+                "maxComponents": 12,
+                "topLevelDirectories": null,
+                "wholeTreeCompletenessRequired": false
+              }
+            },
+            "notes": "Script completed: python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 8a824ba7a4066c510fe971f55bfb4dc049f1860a --range '' --focus ''",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1406,
+              "active_time_ms": 1406
+            }
+          },
+          "file_review": {
+            "status": "succeeded",
+            "context_updates": {
+              "parallel.branch_count": 1,
+              "parallel.results": [
+                {
+                  "id": "file_reviewer",
+                  "index": 0,
+                  "item_label": "changed-files:1",
+                  "status": "succeeded",
+                  "context_updates": {
+                    "last_response": "Full-file review complete. The target blob (8427 bytes, 151 lines) was read end to end via the restricted wrapper at `8a824ba7a4066c510fe971f55bfb4dc049f1860a:README.md`, and it is byte-identical to t",
+                    "last_stage": "file_reviewer",
+                    "output.file_reviewer": {
+                      "receipts": [
+                        {
+                          "path": "README.md",
+                          "status": "reviewed",
+                          "reason": "",
+                          "workNeeded": ""
+                        }
+                      ],
+                      "findings": [],
+                      "supportingFilesReviewed": [
+                        ".fabro/workflows/security-review/scripts/security_review.py",
+                        ".fabro/workflows/security-review/scripts/render_report.py",
+                        ".fabro/workflows/security-review/scripts/git_readonly.py",
+                        ".fabro/workflows/security-review/security-review.fabro",
+                        ".fabro/workflows/security-review/workflow.toml",
+                        ".fabro/workflows/security-review/prompts/file-review.md",
+                        ".fabro/workflows/security-review/schemas/file-review.schema.json",
+                        ".fabro/workflows/security-review/specs/report-spec.md",
+                        "tests/test_fabro_workflow.py"
+                      ]
+                    },
+                    "response.file_reviewer": "Full-file review complete. The target blob (8427 bytes, 151 lines) was read end to end via the restricted wrapper at `8a824ba7a4066c510fe971f55bfb4dc049f1860a:README.md`, and it is byte-identical to the working tree (`git_readonly.py diff 8a824ba…​ -- README.md` returned empty, exit 0).\n\nThe change is documentation-only: 13 added lines that document the new changed-file coverage machinery (`README.md:44-46` and `README.md:126-133`). Since prose cannot itself be a sink, I traced every safety claim the new text makes into the engine to check for a documented-but-absent control, which would be the one way a docs change creates security-relevant exposure. All of them are actually implemented:\n\n- `CLAUDE-SECURITY-FILE-COVERAGE.json` is really written, from a required input, at `.fabro/workflows/security-review/scripts/render_report.py:600-604` (name constant at `:83`, source at `:544`).\n- The `.gitignore` containing `*` is created in that directory at `.fabro/workflows/security-review/scripts/security_review.py:1280`, and the coverage file lands inside it.\n- Explicit reasons exist for each enumerated category in `classify_manifest_row`: deleted (`security_review.py:694`), submodule (`:728`), symlink (`:734`), oversized (`:763`, limit `FILE_REVIEW_MAX_BYTES = 512 * 1024` at `:50`), binary (`:787`).\n- Batching is four rows per job (`:49`, `:834-836`), matching the schema's `maxItems: 4`; generated text files are *not* filtered out of the manifest, consistent with the new wording.\n- Exactly-one-receipt reconciliation and the `partial` downgrade are enforced in code at `:2848-2862` and `:2889-2903`; receipts for unassigned paths are recorded as invalid and ignored at `:2791-2796`; `supportingFilesReviewed` is kept in a separate ledger (`:2797-2800`, `:2909-2912`) and never sets a row disposition.\n- The four pinned support-file SHA-256 hashes at `security-review.fabro:36` match the README's list exactly.\n\nI found no attacker-controlled source-to-sink path introduced or exposed by this range, and the added text contains no instruction-like content directed at an agent. One robustness observation, reported as context rather than a finding because it lies outside the target range and is defended in practice: receipt `path` has no length cap or control-character scrubbing (`normalize_git_path`, `security_review.py:423-432`) before being interpolated into `invalidReceiptClaims` at `:2795`; `json.dumps` still escapes control characters on output, and the consuming report prompt treats the value as untrusted data.\n\n```json\n{\n  \"receipts\": [\n    {\n      \"path\": \"README.md\",\n      \"status\": \"reviewed\",\n      \"reason\": \"\",\n      \"workNeeded\": \"\"\n    }\n  ],\n  \"findings\": [],\n  \"supportingFilesReviewed\": [\n    \".fabro/workflows/security-review/scripts/security_review.py\",\n    \".fabro/workflows/security-review/scripts/render_report.py\",\n    \".fabro/workflows/security-review/scripts/git_readonly.py\",\n    \".fabro/workflows/security-review/security-review.fabro\",\n    \".fabro/workflows/security-review/workflow.toml\",\n    \".fabro/workflows/security-review/prompts/file-review.md\",\n    \".fabro/workflows/security-review/schemas/file-review.schema.json\",\n    \".fabro/workflows/security-review/specs/report-spec.md\",\n    \"tests/test_fabro_workflow.py\"\n  ]\n}\n```"
+                  }
+                }
+              ]
+            },
+            "jump_to_node": "file_review_join",
+            "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+            "usage": null
+          },
+          "target_gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: target_gate",
+            "usage": null
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "file_review_join",
+        "git_commit_sha": "5d7e5ad1915152a6f954834ce89649f906190c2f",
+        "node_visits": {
+          "target_gate": 1,
+          "file_review": 1,
+          "start": 1,
+          "prepare": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-07-30T11:58:36.656326694Z",
+        "current_node": "file_review_join",
+        "completed_nodes": [
+          "start",
+          "prepare",
+          "target_gate",
+          "file_review",
+          "file_review_join"
         ],
         "node_retries": {},
         "context_values": {
@@ -4462,7 +4748,7 @@
             "topLevelDirectories": null,
             "wholeTreeCompletenessRequired": false
           },
-          "internal.thread_id": "target_gate",
+          "internal.thread_id": "file_review",
           "internal.fidelity": "compact",
           "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
           "graph.rankdir": "LR",
@@ -4470,6 +4756,8 @@
           "ensemble_enabled": false,
           "failure_signature": "",
           "run_file_review": true,
+          "thread.file_review.current_node": "file_review_join",
+          "internal.retry_count.file_review_join": 0,
           "internal.node_visit_count": 1,
           "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
           "run_ensemble_file_review": false,
@@ -4512,7 +4800,7 @@
             }
           ],
           "internal.retry_count.start": 0,
-          "current_node": "file_review",
+          "current_node": "file_review_join",
           "thread.target_gate.current_node": "file_review",
           "run_standard_file_review": true,
           "internal.retry_count.prepare": 0,
@@ -4556,6 +4844,11 @@
           "thread.start.current_node": "prepare"
         },
         "node_outcomes": {
+          "file_review_join": {
+            "status": "succeeded",
+            "notes": "Joined 1 parallel branch",
+            "usage": null
+          },
           "prepare": {
             "status": "succeeded",
             "context_updates": {
@@ -4687,9 +4980,10 @@
             "usage": null
           }
         },
-        "next_node_id": "file_review_join",
+        "next_node_id": "merge_file_review",
         "node_visits": {
           "prepare": 1,
+          "file_review_join": 1,
           "start": 1,
           "target_gate": 1,
           "file_review": 1
@@ -4779,7 +5073,12 @@
       "first_event_seq": 41,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Parallel node dispatched 1 branches (1 succeeded, 0 failed)",
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:58:33.383979847Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -4823,6 +5122,12 @@
       "started_at": "2026-07-30T11:14:19.870598084Z",
       "handler": "parallel",
       "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 2653400,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -4832,7 +5137,7 @@
         "cache_write_tokens": 0
       },
       "agent_control": "running",
-      "state": "running"
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 18,
@@ -5133,6 +5438,31 @@
       },
       "agent_control": "running",
       "state": "succeeded"
+    },
+    "file_review_join@1": {
+      "first_event_seq": 767,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-07-30T11:58:36.562463916Z",
+      "handler": "parallel.fan_in",
+      "graph_visit": 1,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "running"
     },
     "target_gate@1": {
       "first_event_seq": 33,
