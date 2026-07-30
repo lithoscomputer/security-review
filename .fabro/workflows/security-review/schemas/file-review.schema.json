@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receipts", "supportingFilesReviewed", "findings"],
+  "properties": {
+    "receipts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "status", "reason", "workNeeded"],
+        "properties": {
+          "path": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["reviewed", "deferred"]
+          },
+          "reason": { "type": "string" },
+          "workNeeded": { "type": "string" }
+        }
+      }
+    },
+    "supportingFilesReviewed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "line",
+          "category",
+          "severity",
+          "confidence",
+          "title",
+          "rationale",
+          "evidence",
+          "snippet",
+          "symbol",
+          "impact",
+          "exploitScenario",
+          "preconditions",
+          "recommendation"
+        ],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "category": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"]
+          },
+          "title": { "type": "string" },
+          "rationale": { "type": "string" },
+          "evidence": { "type": "string" },
+          "snippet": { "type": "string" },
+          "symbol": { "type": "string" },
+          "impact": { "type": "string" },
+          "exploitScenario": { "type": "string" },
+          "preconditions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "recommendation": { "type": "string" },
+          "cweId": { "type": "string" }
+        }
+      }
+    }
+  }
+}

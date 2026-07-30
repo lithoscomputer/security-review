@@ -614,6 +614,258 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(state["diff_files"], 1)
         self.assertEqual(state["changed_files"], ["src/app.py"])
         self.assertEqual(state["collapsed"], "small-diff")
+        self.assertEqual(
+            state["file_manifest"]["files"][0]["readWith"],
+            "git-show",
+        )
+
+    def test_change_manifest_classifies_every_changed_path(self) -> None:
+        (self.root / "delete.py").write_text("delete_me = True\n", encoding="utf-8")
+        (self.root / "rename.py").write_text(
+            "".join(f"line_{index} = {index}\n" for index in range(30)),
+            encoding="utf-8",
+        )
+        run("git", "add", "delete.py", "rename.py", cwd=self.root)
+        run("git", "commit", "-qm", "manifest base", cwd=self.root)
+
+        (self.root / "src/app.py").write_text(
+            "import os\n\n\ndef run(value):\n    os.system(value + ' changed')\n",
+            encoding="utf-8",
+        )
+        (self.root / "delete.py").unlink()
+        run("git", "mv", "rename.py", "renamed.py", cwd=self.root)
+        (self.root / "binary.dat").write_bytes(b"binary\x00data")
+        (self.root / "generated.min.js").write_text(
+            "window.generated=true;\n",
+            encoding="utf-8",
+        )
+        (self.root / "oversized.txt").write_text(
+            "x" * (DRIVER.FILE_REVIEW_MAX_BYTES + 1),
+            encoding="utf-8",
+        )
+        (self.root / "link.py").symlink_to("src/app.py")
+        run(
+            "git",
+            "add",
+            "-A",
+            "src/app.py",
+            "delete.py",
+            "renamed.py",
+            "binary.dat",
+            "generated.min.js",
+            "oversized.txt",
+            "link.py",
+            cwd=self.root,
+        )
+        head = run("git", "rev-parse", "HEAD", cwd=self.root).stdout.decode().strip()
+        run(
+            "git",
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            "160000",
+            head,
+            "vendored",
+            cwd=self.root,
+        )
+        run("git", "commit", "-qm", "manifest changes", cwd=self.root)
+
+        state = self.prepare(
+            mode="changes",
+            effort="low",
+            ensemble=False,
+            base="HEAD^",
+        )
+        rows = {
+            row["path"]: row for row in state["file_manifest"]["files"]
+        }
+        self.assertEqual(set(rows), {
+            "binary.dat",
+            "delete.py",
+            "generated.min.js",
+            "link.py",
+            "oversized.txt",
+            "renamed.py",
+            "src/app.py",
+            "vendored",
+        })
+        self.assertEqual(rows["src/app.py"]["disposition"], "pending")
+        self.assertEqual(rows["renamed.py"]["disposition"], "pending")
+        self.assertEqual(rows["generated.min.js"]["disposition"], "pending")
+        self.assertTrue(rows["generated.min.js"]["reviewRequired"])
+        self.assertEqual(rows["renamed.py"]["oldPath"], "rename.py")
+        self.assertEqual(rows["delete.py"]["disposition"], "excluded")
+        self.assertIn("deleted", rows["delete.py"]["reason"])
+        self.assertEqual(rows["binary.dat"]["disposition"], "excluded")
+        self.assertIn("binary", rows["binary.dat"]["reason"])
+        self.assertEqual(rows["link.py"]["disposition"], "excluded")
+        self.assertIn("symbolic link", rows["link.py"]["reason"])
+        self.assertEqual(rows["vendored"]["disposition"], "excluded")
+        self.assertIn("submodule", rows["vendored"]["reason"])
+        self.assertEqual(rows["oversized.txt"]["disposition"], "deferred")
+        self.assertIn("full-file review limit", rows["oversized.txt"]["reason"])
+        self.assertIn("higher file-size limit", rows["oversized.txt"]["workNeeded"])
+        for path in ("generated.min.js", "renamed.py", "src/app.py"):
+            self.assertEqual(rows[path]["readWith"], "git-show")
+
+        assigned = [
+            row["path"]
+            for job in state["file_review_jobs"]
+            for row in job["files"]
+        ]
+        self.assertEqual(
+            sorted(assigned),
+            ["generated.min.js", "renamed.py", "src/app.py"],
+        )
+        self.assertEqual(len(assigned), len(set(assigned)))
+        self.assertTrue(state["run_standard_file_review"])
+        self.assertFalse(state["run_ensemble_file_review"])
+
+    def test_change_manifest_preserves_exact_literal_git_paths(self) -> None:
+        paths = [" leading.py", ":(glob)*.py"]
+        for path in paths:
+            (self.root / path).write_text("changed = True\n", encoding="utf-8")
+        run("git", "add", "--", *paths, cwd=self.root)
+        run("git", "commit", "-qm", "literal path changes", cwd=self.root)
+
+        state = self.prepare(
+            mode="changes",
+            effort="low",
+            ensemble=False,
+            base="HEAD^",
+        )
+        self.assertEqual(
+            [row["path"] for row in state["file_manifest"]["files"]],
+            paths,
+        )
+        self.assertEqual(
+            [
+                row["path"]
+                for job in state["file_review_jobs"]
+                for row in job["files"]
+            ],
+            paths,
+        )
+
+    def test_file_receipt_completes_change_coverage_and_is_exported(self) -> None:
+        (self.root / "src/app.py").write_text(
+            "import os\n\n\ndef run(value):\n    os.system(value + ' changed')\n",
+            encoding="utf-8",
+        )
+        run("git", "add", "src/app.py", cwd=self.root)
+        run("git", "commit", "-qm", "change", cwd=self.root)
+
+        state = self.prepare(
+            mode="changes",
+            effort="low",
+            ensemble=False,
+            base="HEAD^",
+        )
+        self.assertEqual(len(state["phase_jobs"]["file_review"]), 1)
+        self.merge_success(
+            "file_review",
+            [{
+                "receipts": [{
+                    "path": "src/app.py",
+                    "status": "reviewed",
+                    "reason": "",
+                    "workNeeded": "",
+                }],
+                "supportingFilesReviewed": [],
+                "findings": [],
+            }],
+        )
+        coverage = DRIVER.file_coverage_from_state(DRIVER.load_state())
+        self.assertEqual(coverage["completeness"], "complete")
+        self.assertEqual(coverage["counts"], {
+            "changedPaths": 1,
+            "reviewRequired": 1,
+            "reviewed": 1,
+            "excluded": 0,
+            "deferred": 0,
+        })
+        self.assertEqual(coverage["files"][0]["receipt"], {
+            "jobId": "file-review:1",
+            "status": "reviewed",
+            "reason": None,
+            "workNeeded": None,
+        })
+
+        self.call(DRIVER.plan_matrix)
+        self.merge_success("research", [{"findings": []}])
+        self.call(DRIVER.dedup_rank)
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        state = DRIVER.load_state()
+        self.assertEqual(
+            state["final"]["coverage"]["fileCoverage"]["completeness"],
+            "complete",
+        )
+        run_dir = Path(state["run_dir"])
+        report_path = run_dir / "CLAUDE-SECURITY-RESULTS.md"
+        report_path.write_text("# Claude Security results\n", encoding="utf-8")
+        self.call(DRIVER.render_report)
+        exported = (
+            Path(DRIVER.load_state()["products_dir"])
+            / "CLAUDE-SECURITY-FILE-COVERAGE.json"
+        )
+        self.assertEqual(
+            json.loads(exported.read_text(encoding="utf-8"))["completeness"],
+            "complete",
+        )
+
+    def test_missing_or_unassigned_receipt_makes_coverage_partial(self) -> None:
+        (self.root / "src/app.py").write_text("changed\n", encoding="utf-8")
+        run("git", "add", "src/app.py", cwd=self.root)
+        run("git", "commit", "-qm", "change", cwd=self.root)
+        self.prepare(
+            mode="changes",
+            effort="low",
+            ensemble=False,
+            base="HEAD^",
+        )
+        self.merge_success(
+            "file_review",
+            [{
+                "receipts": [{
+                    "path": "src/support.py",
+                    "status": "reviewed",
+                    "reason": "",
+                    "workNeeded": "",
+                }],
+                "supportingFilesReviewed": ["src/app.py"],
+                "findings": [],
+            }],
+        )
+        coverage = DRIVER.file_coverage_from_state(DRIVER.load_state())
+        self.assertEqual(coverage["completeness"], "partial")
+        self.assertEqual(coverage["counts"]["deferred"], 1)
+        self.assertIn(
+            "0 receipts for this path",
+            coverage["files"][0]["reason"],
+        )
+        self.assertEqual(len(coverage["invalidReceiptClaims"]), 1)
+        self.assertEqual(
+            coverage["supportingFilesReviewed"],
+            [{"path": "src/app.py", "jobId": "file-review:1"}],
+        )
+
+    def test_commit_manifest_reads_non_checkout_target_with_git_show(self) -> None:
+        target = run("git", "rev-parse", "HEAD", cwd=self.root).stdout.decode().strip()
+        (self.root / "src/app.py").write_text("later checkout\n", encoding="utf-8")
+        run("git", "add", "src/app.py", cwd=self.root)
+        run("git", "commit", "-qm", "later", cwd=self.root)
+
+        state = self.prepare(
+            mode="commit",
+            commit=target,
+            effort="low",
+            ensemble=False,
+        )
+        self.assertEqual(
+            state["file_manifest"]["files"][0]["readWith"],
+            "git-show",
+        )
 
     def test_source_change_fails_closed_at_publication(self) -> None:
         self.prepare(effort="low")
@@ -676,6 +928,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         ):
             self.assertIn(rule, graph)
         for node, cap in (
+            ("file_review_jobs", 8),
+            ("file_review_jobs_a", 8),
             ("threat_jobs", 4),
             ("research_jobs", 8),
             ("research_jobs_a", 8),
@@ -732,17 +986,59 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ):
                 self.assertIn(f"`{field}`", prompt)
 
+    def test_file_review_contract_requires_exact_completion_receipts(self) -> None:
+        schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/file-review.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            set(schema["required"]),
+            {"receipts", "supportingFilesReviewed", "findings"},
+        )
+        receipts = schema["properties"]["receipts"]
+        self.assertEqual(receipts["maxItems"], DRIVER.FILE_REVIEW_BATCH_SIZE)
+        self.assertEqual(
+            set(receipts["items"]["properties"]["status"]["enum"]),
+            {"reviewed", "deferred"},
+        )
+        self.assertEqual(
+            set(receipts["items"]["required"]),
+            {"path", "status", "reason", "workNeeded"},
+        )
+        prompt = (WORKFLOW_ROOT / "prompts/file-review.md").read_text(
+            encoding="utf-8"
+        )
+        for statement in (
+            "Read from the first byte through end of file",
+            "Return exactly one receipt",
+            "never replaces a required changed-file receipt",
+            "the exact `workNeeded`",
+            "The receipts array is never optional",
+        ):
+            self.assertIn(statement, prompt)
+        self.assertIsNone(DRIVER.normalize_file_review_result({
+            "receipts": [{
+                "path": "src/app.py",
+                "status": "deferred",
+                "reason": "the file was truncated",
+            }],
+            "supportingFilesReviewed": [],
+            "findings": [],
+        }))
+
     def test_merges_pipe_context_directly_to_deterministic_scripts(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertEqual(
             graph.count('stdin_source="context.parallel.results"'),
-            14,
+            16,
         )
         self.assertEqual(
             graph.count('stdin_source="context.output.inventory"'),
             1,
         )
         for phase in (
+            "file_review",
             "inventory",
             "threat",
             "research",
@@ -765,6 +1061,16 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn(f"merge_{node} [", graph)
         self.assertIn(
             'target_gate -> inventory [condition="context.use_inventory=true"]',
+            graph,
+        )
+        self.assertIn(
+            "target_gate -> file_review_a "
+            '[condition="context.run_ensemble_file_review=true"]',
+            graph,
+        )
+        self.assertIn(
+            "target_gate -> file_review "
+            '[condition="context.run_standard_file_review=true"]',
             graph,
         )
         self.assertIn(
@@ -803,6 +1109,10 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for edge in (
             (
+                'target_gate -> file_review_a '
+                '[condition="context.run_ensemble_file_review=true"]'
+            ),
+            (
                 'research_gate -> research_a '
                 '[condition="context.run_ensemble_research=true"]'
             ),
@@ -821,6 +1131,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         ):
             self.assertIn(edge, graph)
         for node, slot in (
+            ("file_reviewer_a", "a"),
             ("researcher_a", "a"),
             ("researcher_b", "b"),
             ("panel_verifier_a", "a"),
@@ -864,7 +1175,13 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertNotIn(f"wait_{phase}_", graph)
             self.assertNotIn(f"{phase}_retry_gate", graph)
+        self.assertIn(
+            'merge_file_review -> post_file_review_gate '
+            '[condition="outcome=succeeded"]',
+            graph,
+        )
         for merge_node, next_node in (
+            ("merge_file_review_a", "post_file_review_gate"),
             ("merge_research_a", "research_b"),
             ("merge_research_b", "sweep_gate"),
             ("merge_panel_a", "panel_b"),
@@ -879,7 +1196,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 '[condition="outcome=succeeded"]',
                 graph,
             )
-        self.assertEqual(graph.count("max_retries=2"), 17)
+        self.assertEqual(graph.count("max_retries=2"), 19)
 
     def test_agent_failures_degrade_before_aborting(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -916,6 +1233,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
 
     def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
         for name in (
+            "file-review.md",
             "threat-model.md",
             "research.md",
             "sweep.md",
@@ -942,6 +1260,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "CLAUDE-SECURITY-*/.gitignore",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
+            "CLAUDE-SECURITY-*/CLAUDE-SECURITY-FILE-COVERAGE.json",
             "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
         ):
             self.assertIn(artifact, config)
