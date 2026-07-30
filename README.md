@@ -130,7 +130,9 @@ through a full-file pass from the pinned target Git object, including generated
 text files. Each assigned path must receive one exact `reviewed` or `deferred`
 receipt. A deferred receipt records both the reason and the work needed to
 finish. A missing receipt makes file coverage `partial`. Supporting files stay
-in a separate ledger and cannot satisfy a changed-file receipt.
+in a separate ledger and cannot satisfy a changed-file receipt. This pass stays
+bounded to assigned files; the existing research pipeline performs the broad
+attack-path review.
 
 **Support files are pinned.** Before anything runs, `prepare` verifies the
 SHA-256 of the engine, the Git wrapper, the renderer, and the report spec
