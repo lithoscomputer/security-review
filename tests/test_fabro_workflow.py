@@ -319,6 +319,39 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "inventory-failed",
         )
 
+    def grow_repository(self, file_count: int) -> None:
+        bulk = self.root / "bulk"
+        bulk.mkdir()
+        for index in range(file_count):
+            (bulk / f"file{index}.py").write_text("x = 1\n", encoding="utf-8")
+        run("git", "add", "bulk", cwd=self.root)
+        run("git", "commit", "-qm", "bulk", cwd=self.root)
+
+    def test_large_repository_focuses_on_the_attack_surface(self) -> None:
+        self.grow_repository(DRIVER.LARGE_REPOSITORY_FILES + 1)
+        state = self.prepare(effort="medium")
+        self.assertEqual(state["focus"], "attack-surface")
+        # The plugin couples the secrets pass to focus.
+        self.assertTrue(state["secrets_sweep"])
+
+    def test_small_repository_reads_the_whole_tree(self) -> None:
+        state = self.prepare(effort="medium")
+        self.assertIsNone(state["focus"])
+        self.assertFalse(state["secrets_sweep"])
+
+    def test_change_scans_are_never_focused(self) -> None:
+        self.grow_repository(DRIVER.LARGE_REPOSITORY_FILES + 1)
+        state = self.prepare(mode="changes", effort="medium", base="HEAD^")
+        self.assertIsNone(state["focus"])
+
+    def test_focus_can_be_requested_or_declined_explicitly(self) -> None:
+        declined = self.prepare(effort="low", focus="none")
+        self.assertIsNone(declined["focus"])
+        shutil.rmtree(declined["products_dir"])
+
+        requested = self.prepare(effort="low", focus="attack-surface")
+        self.assertEqual(requested["focus"], "attack-surface")
+
     def test_top_level_directories_count_tracked_gitlinks(self) -> None:
         # A submodule lists as a tracked top-level path that is a directory
         # on disk; approximate one without submodule plumbing.

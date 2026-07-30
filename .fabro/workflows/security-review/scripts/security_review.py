@@ -36,6 +36,11 @@ SMALL_DIFF_MAX_FILES = 5
 SMALL_DIFF_MAX_LINES = 300
 SMALL_SCOPE_MAX_FILES = 5
 MAX_COMPONENTS_DEFAULT = 12
+# Above this many files a tree is too large to read whole, so a full scan
+# focuses on the attack surface. The plugin has its Security Lead judge this
+# from a `git ls-files` count ("a few hundred files or fewer counts as small");
+# with no Lead here, the same gauge becomes a number.
+LARGE_REPOSITORY_FILES = 500
 MAX_COMPONENTS_EXPANDED = 24
 # Fabro resolves stdin_source before starting a command and enforces this same
 # ceiling. Keep the driver's direct-input guard aligned with that transport.
@@ -379,6 +384,14 @@ def tracked_files(scopes: Sequence[str] = ()) -> List[str]:
     return sorted(decode_z_paths(result.stdout))
 
 
+def repository_file_count() -> int:
+    """The scan target's file count, by the plugin's gauge: tracked files in a
+    worktree, otherwise a recursive listing."""
+    if inside_git_worktree():
+        return len(tracked_files())
+    return len(repo_files())
+
+
 def is_generated_path(path: str) -> bool:
     normalized = path.replace("\\", "/")
     while normalized.startswith("./"):
@@ -630,7 +643,40 @@ def prepare(args: argparse.Namespace) -> None:
             f'unknown effort "{one_line(args.effort, 60)}" -- using medium '
             f"(tiers: {', '.join(EFFORT_TIERS)})"
         )
-    focus = "attack-surface" if args.focus == "attack-surface" else None
+    focus_input = args.focus.strip().lower()
+    if focus_input == "attack-surface":
+        focus = "attack-surface"
+    elif focus_input in {"none", "off", "whole-tree"}:
+        focus = None
+    else:
+        if focus_input:
+            print(
+                f'unknown focus "{one_line(args.focus, 60)}" -- choosing by '
+                "repository size (values: attack-surface, none)"
+            )
+        # A change or commit scan is never focused: the range already says
+        # what to read, so an "only production code" filter would contradict
+        # the only-what-changed instruction.
+        if mode == "scan":
+            file_count = repository_file_count()
+            if file_count > LARGE_REPOSITORY_FILES:
+                focus = "attack-surface"
+                print(
+                    f"large repository ({file_count} files): focusing on the "
+                    "attack surface -- production code that handles input, "
+                    "requests, files, credentials, or executes anything. "
+                    "Tests, fixtures, generated code, build output, and "
+                    "vendored trees are background, and a secrets pass keeps "
+                    "fixtures in scope"
+                )
+            else:
+                focus = None
+                print(
+                    f"small repository ({file_count} files): reading the "
+                    "whole tree, no attack-surface focus"
+                )
+        else:
+            focus = None
     scope = parse_scope(args.scope)
     base_input = args.base.strip()
     commit_input = args.commit.strip()
