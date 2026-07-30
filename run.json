@@ -3974,14 +3974,244 @@
     }
   },
   "web_url": "https://fabro-testing.walleye-rainbow.ts.net/runs/01KYSBPHN4CN8YVCJ694TJ9RZE",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-07-30T11:14:11.402437657Z",
+    "run_branch": "fabro/run/01KYSBPHN4CN8YVCJ694TJ9RZE",
+    "base_sha": "40ca719c1c83d50aee18f4341ab8c23c9895e8c2"
   },
-  "status_updated_at": "2026-07-30T11:14:05.744965673Z",
-  "last_event_at": "2026-07-30T11:14:11.116568280Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-07-30T11:14:11.402463096Z",
+  "last_event_at": "2026-07-30T11:14:14.208686738Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 21,
+      "checkpoint": {
+        "timestamp": "2026-07-30T11:14:12.786805203Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "graph.default_fidelity": "compact",
+          "internal.run_id": "01KYSBPHN4CN8YVCJ694TJ9RZE",
+          "graph.default_max_retries": "0",
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "failure_signature": "",
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
+          "internal.fidelity": "compact",
+          "failure_class": "",
+          "outcome": "succeeded",
+          "graph.stall_timeout": "3600000ms",
+          "current_node": "start",
+          "graph.rankdir": "LR",
+          "internal.thread_id": null
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "prepare",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-07-30T11:14:14.322060775Z",
+        "current_node": "prepare",
+        "completed_nodes": [
+          "start",
+          "prepare"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "empty_target": false,
+          "effort": "low",
+          "outcome": "succeeded",
+          "products_dir": "CLAUDE-SECURITY-20260730-111412",
+          "internal.work_dir": "/home/daytona/workspace/security-review",
+          "graph.default_max_retries": "0",
+          "graph.default_fidelity": "compact",
+          "graph.stall_timeout": "3600000ms",
+          "failure_class": "",
+          "inventory_assignment": {
+            "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+            "target": {
+              "mode": "commit",
+              "scope": [
+                "README.md"
+              ],
+              "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+              "changedFileCount": 1,
+              "changedLineCount": 13,
+              "focus": null,
+              "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+              "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+            },
+            "maxComponents": 12,
+            "topLevelDirectories": null,
+            "wholeTreeCompletenessRequired": false
+          },
+          "internal.thread_id": "start",
+          "internal.fidelity": "compact",
+          "graph.goal": "Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
+          "graph.rankdir": "LR",
+          "command.output": "blob://sha256/2da5c0b81d60bceabb15bc3d737ba9ee280bd8d296ad520a1cfb7e67352b4e9f",
+          "ensemble_enabled": false,
+          "failure_signature": "",
+          "run_file_review": true,
+          "internal.node_visit_count": 1,
+          "graph.model_stylesheet": "\n            * { model: sonnet; reasoning_effort: low; }\n            .inventory { model: sonnet; reasoning_effort: medium; }\n            .threat-model { model: opus; reasoning_effort: medium; }\n            .research { model: opus; reasoning_effort: xhigh; }\n            .verification { model: opus; reasoning_effort: xhigh; }\n            .report-author { model: opus; reasoning_effort: xhigh; }\n            .ensemble-a { model: gpt-5.6-sol; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-b { model: claude-opus-4-8; provider: openrouter; reasoning_effort: xhigh; }\n            .ensemble-c { model: kimi-k3; provider: openrouter; reasoning_effort: high; }\n            .ensemble-d { model: glm-5.2; provider: openrouter; reasoning_effort: high; }\n        ",
+          "run_ensemble_file_review": false,
+          "use_inventory": false,
+          "mode": "commit",
+          "internal.retry_count.start": 0,
+          "current_node": "prepare",
+          "run_standard_file_review": true,
+          "internal.retry_count.prepare": 0,
+          "file_review_jobs": [
+            {
+              "name": "changed-files:1",
+              "job_id": "file-review:1",
+              "kind": "file-review",
+              "files": [
+                {
+                  "path": "README.md",
+                  "change": "modified",
+                  "changeCode": "M",
+                  "contentRevision": "8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                  "reviewRequired": true,
+                  "gitMode": "100644",
+                  "gitObjectType": "blob",
+                  "blobId": "d28d2af088d13b94fc5c4ab247181c535ab08a2a",
+                  "bytes": 8427,
+                  "disposition": "pending",
+                  "reason": null,
+                  "workNeeded": null,
+                  "readWith": "git-show"
+                }
+              ],
+              "target": {
+                "mode": "commit",
+                "scope": [
+                  "README.md"
+                ],
+                "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                "changedFileCount": 1,
+                "changedLineCount": 13,
+                "focus": null,
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+              }
+            }
+          ],
+          "internal.run_id": "01KYSBPHN4CN8YVCJ694TJ9RZE",
+          "thread.start.current_node": "prepare"
+        },
+        "node_outcomes": {
+          "prepare": {
+            "status": "succeeded",
+            "context_updates": {
+              "empty_target": false,
+              "command.output": "blob://sha256/2da5c0b81d60bceabb15bc3d737ba9ee280bd8d296ad520a1cfb7e67352b4e9f",
+              "ensemble_enabled": false,
+              "products_dir": "CLAUDE-SECURITY-20260730-111412",
+              "run_ensemble_file_review": false,
+              "file_review_jobs": [
+                {
+                  "name": "changed-files:1",
+                  "job_id": "file-review:1",
+                  "kind": "file-review",
+                  "files": [
+                    {
+                      "path": "README.md",
+                      "change": "modified",
+                      "changeCode": "M",
+                      "contentRevision": "8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                      "reviewRequired": true,
+                      "gitMode": "100644",
+                      "gitObjectType": "blob",
+                      "blobId": "d28d2af088d13b94fc5c4ab247181c535ab08a2a",
+                      "bytes": 8427,
+                      "disposition": "pending",
+                      "reason": null,
+                      "workNeeded": null,
+                      "readWith": "git-show"
+                    }
+                  ],
+                  "target": {
+                    "mode": "commit",
+                    "scope": [
+                      "README.md"
+                    ],
+                    "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                    "changedFileCount": 1,
+                    "changedLineCount": 13,
+                    "focus": null,
+                    "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                    "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                  }
+                }
+              ],
+              "run_file_review": true,
+              "mode": "commit",
+              "run_standard_file_review": true,
+              "effort": "low",
+              "use_inventory": false,
+              "inventory_assignment": {
+                "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                "target": {
+                  "mode": "commit",
+                  "scope": [
+                    "README.md"
+                  ],
+                  "range": "9b0a8c2457db52e828a53eabfaa13ba0e181f6f3..8a824ba7a4066c510fe971f55bfb4dc049f1860a",
+                  "changedFileCount": 1,
+                  "changedLineCount": 13,
+                  "focus": null,
+                  "scanRoot": "/home/daytona/repos/lithoscomputer/security-review",
+                  "gitWrapper": "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+                },
+                "maxComponents": 12,
+                "topLevelDirectories": null,
+                "wholeTreeCompletenessRequired": false
+              }
+            },
+            "notes": "Script completed: python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 8a824ba7a4066c510fe971f55bfb4dc049f1860a --range '' --focus ''",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1406,
+              "active_time_ms": 1406
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "target_gate",
+        "node_visits": {
+          "prepare": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -4007,5 +4237,82 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 18,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-07-30T11:14:12.786668773Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-07-30T11:14:12.722420854Z",
+      "handler": "start",
+      "graph_visit": 1,
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "succeeded"
+    },
+    "prepare@1": {
+      "first_event_seq": 22,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 8a824ba7a4066c510fe971f55bfb4dc049f1860a --range '' --focus ''",
+        "command": "exec 2>&1\npython3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py f6aec93246a95c3d6668c650e5175df13d90cc6973a46159e35d6c4d73445631 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 4675ca0ad2fa5900464db0af325b0adc6c52838e263f64451fa955525723b2c1 .fabro/workflows/security-review/specs/report-spec.md d99c9e2fe9e93077d07637388f6ec7b93bcc2ead7d3a0003331e3e166f4f698a && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --mode commit --effort low --ensemble false --scope README.md --base '' --commit 8a824ba7a4066c510fe971f55bfb4dc049f1860a --range '' --focus ''",
+        "language": "shell",
+        "timeout_ms": 180000
+      },
+      "script_timing": {
+        "output": "blob://sha256/2da5c0b81d60bceabb15bc3d737ba9ee280bd8d296ad520a1cfb7e67352b4e9f",
+        "exit_code": 0,
+        "duration_ms": 1406,
+        "termination": "exited",
+        "output_bytes": 1721,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 1721,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-07-30T11:14:12.800920976Z",
+      "handler": "command",
+      "graph_visit": 1,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "agent_control": "running",
+      "state": "running"
+    }
+  }
 }
