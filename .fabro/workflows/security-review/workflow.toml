@@ -8,6 +8,8 @@ goal = "Perform an adversarial, read-only security review of this repository and
 
 [run.inputs]
 mode = "scan"
+# The existing max tier enables neutral model slots A/B/C/D. Lower tiers use
+# the standard Sonnet/Opus path.
 effort = "medium"
 scope = ""
 base = ""

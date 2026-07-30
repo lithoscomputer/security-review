@@ -111,6 +111,53 @@ PHASE_JOB_KEYS = {
     "repanel": "repanel_jobs",
     "redteam": "redteam_jobs",
 }
+ENSEMBLE_BATCHES = {
+    "research-a": (
+        "research",
+        "research_jobs_a",
+        "output.researcher_a",
+    ),
+    "research-b": (
+        "research",
+        "research_jobs_b",
+        "output.researcher_b",
+    ),
+    "panel-a": (
+        "panel",
+        "verification_jobs_a",
+        "output.panel_verifier_a",
+    ),
+    "panel-b": (
+        "panel",
+        "verification_jobs_b",
+        "output.panel_verifier_b",
+    ),
+    "panel-c": (
+        "panel",
+        "verification_jobs_c",
+        "output.panel_verifier_c",
+    ),
+    "repanel-a": (
+        "repanel",
+        "repanel_jobs_a",
+        "output.repanel_verifier_a",
+    ),
+    "repanel-b": (
+        "repanel",
+        "repanel_jobs_b",
+        "output.repanel_verifier_b",
+    ),
+    "repanel-c": (
+        "repanel",
+        "repanel_jobs_c",
+        "output.repanel_verifier_c",
+    ),
+}
+VERIFICATION_SLOT_BY_LENS = {
+    "REACHABILITY": "a",
+    "IMPACT": "b",
+    "DEFENSES": "c",
+}
 
 
 class WorkflowDataError(RuntimeError):
@@ -793,6 +840,7 @@ def prepare(args: argparse.Namespace) -> None:
     )
     use_single = effort == "low" or collapsed is not None
     use_inventory = not use_single
+    ensemble_enabled = effort == "max"
     whole_tree_inventory = (
         use_inventory and mode == "scan" and not scope
     )
@@ -807,6 +855,7 @@ def prepare(args: argparse.Namespace) -> None:
         "run_dir": None,
         "mode": mode,
         "effort": effort,
+        "ensemble_enabled": ensemble_enabled,
         "focus": focus,
         "scope": scope,
         "range": revision_range,
@@ -871,6 +920,7 @@ def prepare(args: argparse.Namespace) -> None:
             empty_reason=reason,
             mode=mode,
             effort=effort,
+            ensemble_enabled=ensemble_enabled,
         )
         return
 
@@ -899,10 +949,13 @@ def prepare(args: argparse.Namespace) -> None:
         "mode": mode,
         "scope": scope,
         "effort": effort,
+        "model_strategy": "ensemble" if ensemble_enabled else "standard",
         "model": {
             "provider": "openrouter",
             "inventory": "sonnet",
-            "scan": "opus",
+            "scan": (
+                "ensemble-a/b/c/d" if ensemble_enabled else "opus"
+            ),
         },
         "revision": revision,
         "revision_source": "self-reported",
@@ -941,10 +994,16 @@ def prepare(args: argparse.Namespace) -> None:
         print("low effort: one whole-repository component")
     shape = "single-researcher" if use_single else "component-matrix"
     print(f"Prepared {effort} {mode} security review using the {shape} shape")
+    if ensemble_enabled:
+        print(
+            "max effort: enabling neutral model slots A/B for research, "
+            "A/B/C for verification, and D for report synthesis"
+        )
     emit(
         empty_target=False,
         use_inventory=use_inventory,
         effort=effort,
+        ensemble_enabled=ensemble_enabled,
         mode=mode,
         inventory_assignment=inventory_assignment,
         products_dir=products_rel,
@@ -1443,6 +1502,10 @@ def build_cells(state: Dict[str, Any]) -> None:
         else {}
     )
     research_jobs: List[Dict[str, Any]] = []
+    research_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
+        "a": [],
+        "b": [],
+    }
     pruned: List[str] = []
     passes = int(state["researchers_per_cell"])
     target = common_target(state)
@@ -1489,22 +1552,24 @@ def build_cells(state: Dict[str, Any]) -> None:
                 f"research:{component['artifact_key']}:{key}"
                 + (f":{pass_number}" if suffix else "")
             )
-            research_jobs.append(
-                {
-                    "name": f"{component['name']}:{key}{suffix}",
-                    "job_id": job_id,
-                    "kind": "research",
-                    "component": {
-                        "name": component["name"],
-                        "paths": component["paths"],
-                        "language": component["language"],
-                        "role": component.get("role", ""),
-                    },
-                    "lens": lens,
-                    "threatModel": model,
-                    "target": target,
-                }
-            )
+            job = {
+                "name": f"{component['name']}:{key}{suffix}",
+                "job_id": job_id,
+                "kind": "research",
+                "component": {
+                    "name": component["name"],
+                    "paths": component["paths"],
+                    "language": component["language"],
+                    "role": component.get("role", ""),
+                },
+                "lens": lens,
+                "threatModel": model,
+                "target": target,
+            }
+            research_jobs.append(job)
+            if state.get("ensemble_enabled"):
+                slot = "a" if pass_number % 2 else "b"
+                research_jobs_by_slot[slot].append(job)
 
     covered_paths = ", ".join(
         path
@@ -1550,9 +1615,17 @@ def build_cells(state: Dict[str, Any]) -> None:
             }
         )
     state["research_jobs"] = research_jobs
+    state["research_jobs_a"] = research_jobs_by_slot["a"]
+    state["research_jobs_b"] = research_jobs_by_slot["b"]
     state["sweep_jobs"] = sweep_jobs
     state["pruned_buckets"] = pruned
     state["run_research"] = bool(research_jobs)
+    state["run_ensemble_research"] = bool(
+        state.get("ensemble_enabled") and research_jobs
+    )
+    state["run_standard_research"] = bool(
+        not state.get("ensemble_enabled") and research_jobs
+    )
     state["run_sweeps"] = bool(sweep_jobs)
     set_phase_jobs(state, "research", research_jobs)
     set_phase_jobs(state, "sweep", sweep_jobs)
@@ -1565,10 +1638,24 @@ def research_sweep_updates(state: Mapping[str, Any]) -> Dict[str, Any]:
     sweep_jobs = list(state.get("sweep_jobs") or [])
     updates: Dict[str, Any] = {
         "run_research": bool(research_jobs),
+        "run_ensemble_research": bool(
+            state.get("run_ensemble_research")
+        ),
+        "run_standard_research": bool(
+            state.get("run_standard_research")
+        ),
         "run_sweeps": bool(sweep_jobs),
     }
     if research_jobs:
-        updates.update(phase_jobs_context(state, "research", research_jobs))
+        if state.get("ensemble_enabled"):
+            updates["research_jobs_a"] = list(
+                state.get("research_jobs_a") or []
+            )
+            updates["research_jobs_b"] = list(
+                state.get("research_jobs_b") or []
+            )
+        else:
+            updates.update(phase_jobs_context(state, "research", research_jobs))
     if sweep_jobs:
         updates.update(phase_jobs_context(state, "sweep", sweep_jobs))
     return updates
@@ -1689,22 +1776,26 @@ def merge_phase(
     state: Dict[str, Any],
     phase: str,
     raw_results: Any,
+    *,
+    jobs: Optional[Sequence[Mapping[str, Any]]] = None,
+    output_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     if phase not in PHASE_OUTPUT_KEYS:
         raise WorkflowDataError(f"unknown parallel merge phase: {phase}")
     if not isinstance(raw_results, list):
         raise WorkflowDataError("parallel merge input must be a JSON array")
-    jobs = (
-        state.get("phase_jobs", {}).get(phase)
-        if isinstance(state.get("phase_jobs"), dict)
-        else None
-    )
+    if jobs is None:
+        jobs = (
+            state.get("phase_jobs", {}).get(phase)
+            if isinstance(state.get("phase_jobs"), dict)
+            else None
+        )
     if not isinstance(jobs, list):
         raise WorkflowDataError(f"{phase} merge jobs are missing from state")
     result_map = state.setdefault("phase_results", {}).setdefault(phase, {})
     if not isinstance(result_map, dict):
         raise WorkflowDataError(f"{phase} result accumulator is invalid")
-    output_key = PHASE_OUTPUT_KEYS[phase]
+    selected_output_key = output_key or PHASE_OUTPUT_KEYS[phase]
 
     for position, branch in enumerate(raw_results):
         if position >= len(jobs) or not isinstance(branch, dict):
@@ -1722,7 +1813,7 @@ def merge_phase(
         updates = branch.get("context_updates")
         if not isinstance(updates, dict):
             continue
-        value = updates.get(output_key)
+        value = updates.get(selected_output_key)
         normalized = normalize_phase_result(phase, value)
         if normalized is None:
             continue
@@ -1756,6 +1847,30 @@ def merge(phase: str) -> None:
             f"{updates[f'{phase}_results_merged']} result(s) recorded"
         )
     save_state(state)
+    emit(**updates)
+
+
+def merge_ensemble(batch: str) -> None:
+    phase, jobs_key, output_key = ENSEMBLE_BATCHES[batch]
+    state = load_state()
+    jobs = state.get(jobs_key)
+    if not isinstance(jobs, list):
+        raise WorkflowDataError(
+            f"{batch} merge jobs are missing from state"
+        )
+    updates = merge_phase(
+        state,
+        phase,
+        read_merge_input(),
+        jobs=jobs,
+        output_key=output_key,
+    )
+    save_state(state)
+    print(
+        f"Merged ensemble batch {batch}: "
+        f"{updates[f'{phase}_results_merged']} total {phase} result(s) "
+        "recorded"
+    )
     emit(**updates)
 
 
@@ -1885,19 +2000,27 @@ def dedup_rank() -> None:
 
     candidates_for_verification = deduplicated[:VERIFICATION_CAP]
     verification_jobs: List[Dict[str, Any]] = []
+    verification_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
+        "a": [],
+        "b": [],
+        "c": [],
+    }
     for candidate in candidates_for_verification:
         for lens in VERIFICATION_LENSES:
             lower_lens = lens.lower()
-            verification_jobs.append(
-                {
-                    "name": f"{candidate['id']}:{lower_lens}",
-                    "job_id": f"panel:{candidate['id']}:{lower_lens}",
-                    "candidate_id": candidate["id"],
-                    "finding": verification_claim(candidate),
-                    "lens": lens,
-                    "target": common_target(state),
-                }
-            )
+            job = {
+                "name": f"{candidate['id']}:{lower_lens}",
+                "job_id": f"panel:{candidate['id']}:{lower_lens}",
+                "candidate_id": candidate["id"],
+                "finding": verification_claim(candidate),
+                "lens": lens,
+                "target": common_target(state),
+            }
+            verification_jobs.append(job)
+            if state.get("ensemble_enabled"):
+                verification_jobs_by_slot[
+                    VERIFICATION_SLOT_BY_LENS[lens]
+                ].append(job)
 
     state["raw_candidate_count"] = len(raw_candidates)
     state["candidates_dropped_by_cap"] = candidates_dropped
@@ -1909,15 +2032,36 @@ def dedup_rank() -> None:
         len(deduplicated) - len(candidates_for_verification),
     )
     state["verification_jobs"] = verification_jobs
+    state["verification_jobs_a"] = verification_jobs_by_slot["a"]
+    state["verification_jobs_b"] = verification_jobs_by_slot["b"]
+    state["verification_jobs_c"] = verification_jobs_by_slot["c"]
     state["run_panel"] = bool(verification_jobs)
+    state["run_ensemble_panel"] = bool(
+        state.get("ensemble_enabled") and verification_jobs
+    )
+    state["run_standard_panel"] = bool(
+        not state.get("ensemble_enabled") and verification_jobs
+    )
     state["researchers_dispatched"] = len(jobs)
     state["researchers_returned"] = returned
     state["invalid_research_results"] = invalid_results
     set_phase_jobs(state, "panel", verification_jobs)
     save_state(state)
-    updates: Dict[str, Any] = {"run_panel": bool(verification_jobs)}
+    updates: Dict[str, Any] = {
+        "run_panel": bool(verification_jobs),
+        "run_ensemble_panel": bool(state.get("run_ensemble_panel")),
+        "run_standard_panel": bool(state.get("run_standard_panel")),
+    }
     if verification_jobs:
-        updates.update(phase_jobs_context(state, "panel", verification_jobs))
+        if state.get("ensemble_enabled"):
+            for slot in ("a", "b", "c"):
+                updates[f"verification_jobs_{slot}"] = list(
+                    state.get(f"verification_jobs_{slot}") or []
+                )
+        else:
+            updates.update(
+                phase_jobs_context(state, "panel", verification_jobs)
+            )
     if invalid_results:
         print(
             f"research: {len(invalid_results)} of {len(jobs)} research "
@@ -1977,6 +2121,11 @@ def tally() -> None:
     reviewed: List[Dict[str, Any]] = []
     panel_vote_count = 0
     repanel_jobs: List[Dict[str, Any]] = []
+    repanel_jobs_by_slot: Dict[str, List[Dict[str, Any]]] = {
+        "a": [],
+        "b": [],
+        "c": [],
+    }
 
     for candidate in candidates:
         candidate_jobs = [
@@ -2000,32 +2149,52 @@ def tally() -> None:
         if state["effort"] == "max" and kept and true_votes == 2:
             for lens in VERIFICATION_LENSES:
                 lower_lens = lens.lower()
-                repanel_jobs.append(
-                    {
-                        "name": f"repanel:{candidate['id']}:{lower_lens}",
-                        "job_id": (
-                            f"repanel:{candidate['id']}:{lower_lens}"
-                        ),
-                        "candidate_id": candidate["id"],
-                        "finding": verification_claim(candidate),
-                        "lens": lens,
-                        "target": common_target(state),
-                    }
-                )
+                job = {
+                    "name": f"repanel:{candidate['id']}:{lower_lens}",
+                    "job_id": f"repanel:{candidate['id']}:{lower_lens}",
+                    "candidate_id": candidate["id"],
+                    "finding": verification_claim(candidate),
+                    "lens": lens,
+                    "target": common_target(state),
+                }
+                repanel_jobs.append(job)
+                if state.get("ensemble_enabled"):
+                    repanel_jobs_by_slot[
+                        VERIFICATION_SLOT_BY_LENS[lens]
+                    ].append(job)
 
     state["reviewed"] = reviewed
     state["panel_vote_count"] = panel_vote_count
     state["repanel_jobs"] = repanel_jobs
+    state["repanel_jobs_a"] = repanel_jobs_by_slot["a"]
+    state["repanel_jobs_b"] = repanel_jobs_by_slot["b"]
+    state["repanel_jobs_c"] = repanel_jobs_by_slot["c"]
     state["max_effort"] = state["effort"] == "max"
     state["run_repanel"] = bool(repanel_jobs)
+    state["run_ensemble_repanel"] = bool(
+        state.get("ensemble_enabled") and repanel_jobs
+    )
+    state["run_standard_repanel"] = bool(
+        not state.get("ensemble_enabled") and repanel_jobs
+    )
     set_phase_jobs(state, "repanel", repanel_jobs)
     save_state(state)
     updates: Dict[str, Any] = {
         "max_effort": state["max_effort"],
         "run_repanel": bool(repanel_jobs),
+        "run_ensemble_repanel": bool(state.get("run_ensemble_repanel")),
+        "run_standard_repanel": bool(state.get("run_standard_repanel")),
     }
     if repanel_jobs:
-        updates.update(phase_jobs_context(state, "repanel", repanel_jobs))
+        if state.get("ensemble_enabled"):
+            for slot in ("a", "b", "c"):
+                updates[f"repanel_jobs_{slot}"] = list(
+                    state.get(f"repanel_jobs_{slot}") or []
+                )
+        else:
+            updates.update(
+                phase_jobs_context(state, "repanel", repanel_jobs)
+            )
     print(
         f"Panel returned {panel_vote_count} vote(s) for "
         f"{len(reviewed)} candidate(s)"
@@ -2351,6 +2520,8 @@ def final_tally() -> None:
         provisional_verification_status=result["verification"]["status"],
         report_run_dir=state["run_dir"],
         products_dir=state["products_rel"],
+        run_ensemble_report=bool(state.get("ensemble_enabled")),
+        run_standard_report=not bool(state.get("ensemble_enabled")),
     )
 
 
@@ -2419,6 +2590,11 @@ def build_parser() -> argparse.ArgumentParser:
         "phase",
         choices=("inventory", *PHASE_OUTPUT_KEYS.keys()),
     )
+    merge_ensemble_parser = subparsers.add_parser("merge-ensemble")
+    merge_ensemble_parser.add_argument(
+        "batch",
+        choices=tuple(ENSEMBLE_BATCHES),
+    )
 
     for name in (
         "inventory-failed",
@@ -2439,6 +2615,7 @@ def main(argv: Sequence[str]) -> int:
     commands = {
         "prepare": lambda: prepare(args),
         "merge": lambda: merge(args.phase),
+        "merge-ensemble": lambda: merge_ensemble(args.batch),
         "inventory-failed": inventory_failed,
         "plan-matrix": plan_matrix,
         "zip-cells": zip_cells,
