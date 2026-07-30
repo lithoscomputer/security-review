@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nSecurity-review workflow stopped after a fatal deterministic failure.\n",
+  "timestamp": "2026-07-30T11:27:24.662306072Z"
+}
