@@ -1165,6 +1165,12 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 '".fabro/workflows/security-review/runtime/**",',
                 config,
             )
+        workflow_ignore = (WORKFLOW_ROOT / ".gitignore").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("runtime/*", workflow_ignore)
+        self.assertIn("!runtime/.gitkeep", workflow_ignore)
+        self.assertTrue((WORKFLOW_ROOT / "runtime/.gitkeep").is_file())
 
     def test_phase_barriers_use_fabro_native_agent_retries(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
