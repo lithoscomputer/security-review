@@ -30,15 +30,28 @@ genuinely lands there.
 
 Every finding must:
 
-- name the exact repository-relative sink file and line;
+- name the exact repository-relative root-control file and line;
 - put the complete source-to-sink proof in `evidence`;
 - quote that sink line verbatim in `snippet`;
-- name the enclosing function or method in `symbol`;
+- name the root control's enclosing function or method in `symbol`;
+- use a stable `ruleId` in the form `<category>.<control-family>`, such as
+  `command-injection.shell-command`;
+- set `identity.anchor` to a short lowercase slug for the conceptual root
+  control, such as `report-command-dispatch`;
+- set `identity.instance` only when two distinct vulnerable controls share the
+  same rule and anchor; use a stable lowercase slug that distinguishes them;
 - use `HIGH`, `MEDIUM`, or `LOW` for severity and confidence;
 - put the concrete impact in `impact`;
 - put the exploit scenario in `exploitScenario`;
 - put every required condition for exploitation in `preconditions`;
 - put the root-cause fix in `recommendation`.
+
+Stable identity describes the vulnerable control, not its current location.
+Do not put a file name, line number, scan ID, display ID such as `F1`, or other
+run-specific text in `ruleId`, `identity.anchor`, or `identity.instance`.
+Use lowercase letters, digits, and single hyphens in each slug. A line move
+must not change the identity. Report downstream evidence under the one root
+control instead of creating a finding for each effect.
 
 Prefer these category slugs:
 

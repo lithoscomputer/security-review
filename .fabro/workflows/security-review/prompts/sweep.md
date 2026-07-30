@@ -14,6 +14,18 @@ source-to-sink proof in `evidence`. Put the concrete impact in `impact`, the
 attack in `exploitScenario`, every required condition in `preconditions`, and
 the root-cause fix in `recommendation`.
 
+The reported `file`, `line`, and `symbol` must identify the root vulnerable
+control. Give it a stable `ruleId` in the form `<category>.<control-family>`,
+such as `command-injection.shell-command`. Set `identity.anchor` to a short
+lowercase slug for the conceptual root control, such as
+`report-command-dispatch`. A line move must not change it. Do not put a file
+name, line number, scan ID, display ID such as `F1`, or other run-specific text
+in these fields. Set `identity.instance` only when distinct sibling controls
+share the same rule and anchor, using a stable lowercase slug to distinguish
+them. Use only lowercase letters, digits, and single hyphens in each slug.
+Put supporting and downstream locations in `evidence`, not in separate
+findings for the same root control.
+
 For a change or commit scan, examine only the explicit two-sided range and
 report findings the change introduces or exposes. For a scoped scan, respect
 the scope unless a data flow crosses it.

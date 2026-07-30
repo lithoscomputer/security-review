@@ -20,9 +20,11 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 
 WORKFLOW_ROOT = Path(".fabro/workflows/security-review")
@@ -46,6 +48,8 @@ MAX_COMPONENTS_EXPANDED = 24
 # ceiling. Keep the driver's direct-input guard aligned with that transport.
 MAX_STDIN_BYTES = 30 * 1024 * 1024
 MAX_RESULT_TEXT = 8000
+MAX_SCAN_ID_STDIN_BYTES = 256
+MAX_IDENTITY_FIELD_LENGTH = 160
 
 EFFORT_TIERS = ("low", "medium", "high", "max")
 SCAN_MODES = ("scan", "changes", "commit")
@@ -84,8 +88,22 @@ MANAGED_LANGUAGE_RE = re.compile(
 )
 LANGUAGE_JOIN_WORD_RE = re.compile(r"^(and|with|plus|or)$", re.IGNORECASE)
 SAFE_REV_RE = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9._/@{}^~:+-]{0,399}$")
+SCAN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+TARGET_ID_RE = re.compile(
+    r"^security-review-target/v1:sha256:[0-9a-f]{64}$"
+)
+RULE_ID_RE = re.compile(
+    r"^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+)
+IDENTITY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SCP_REMOTE_RE = re.compile(
+    r"^(?:[^@/\s]+@)?(?P<host>[^:/\s]+):(?P<path>[^?#]+)"
+    r"(?:[?#].*)?$"
+)
 SEVERITY_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
 CONFIDENCE_RANK = SEVERITY_RANK
+FINGERPRINT_PREFIX = "codex-security/v1:sha256:"
+TARGET_ID_PREFIX = "security-review-target/v1:sha256:"
 MERGEABLE_FINDING_FIELDS = (
     "evidence",
     "impact",
@@ -234,6 +252,150 @@ def git_text(*arguments: str, check: bool = False) -> Optional[str]:
 
 def inside_git_worktree() -> bool:
     return git_text("rev-parse", "--is-inside-work-tree") == "true"
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def canonical_remote_identity(value: Any) -> Optional[str]:
+    """Return a credential-free host/path identity for a Git remote."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > 8192 or any(ord(character) < 0x20 for character in text):
+        return None
+
+    host: Optional[str]
+    path: str
+    if "://" not in text:
+        match = SCP_REMOTE_RE.fullmatch(text)
+        if not match:
+            return None
+        host = match.group("host").lower()
+        path = match.group("path")
+    else:
+        try:
+            parsed = urlsplit(text)
+            host = parsed.hostname.lower() if parsed.hostname else None
+            port = parsed.port
+        except ValueError:
+            return None
+        if not host:
+            return None
+        host = f"{host}:{port}" if port is not None else host
+        path = parsed.path
+
+    parts = [part for part in path.replace("\\", "/").split("/") if part and part != "."]
+    if not host or not parts or any(part == ".." for part in parts):
+        return None
+    if parts[-1].lower().endswith(".git"):
+        parts[-1] = parts[-1][:-4]
+    if not parts[-1]:
+        return None
+    return host + "/" + "/".join(parts)
+
+
+def stable_target_identity() -> Tuple[str, str]:
+    """Derive a stable target ID without retaining remote credentials."""
+    if inside_git_worktree():
+        remote = git_text("config", "--get", "remote.origin.url")
+        canonical = canonical_remote_identity(remote)
+        if canonical:
+            material = "git-origin\0" + canonical
+            source = "git-origin"
+        else:
+            roots = git_text("rev-list", "--max-parents=0", "HEAD", check=True)
+            root_commits = sorted(line for line in (roots or "").splitlines() if line)
+            if not root_commits:
+                raise WorkflowDataError("Git returned no root commit for target identity")
+            material = "git-root\0" + "\0".join(root_commits)
+            source = "git-root"
+    else:
+        material = "local-path\0" + str(root())
+        source = "local-path"
+    return TARGET_ID_PREFIX + sha256_text(material), source
+
+
+def scan_id_from_args(args: argparse.Namespace) -> str:
+    """Resolve the run-scoped scan ID, using Fabro's run ID when supplied."""
+    explicit = getattr(args, "scan_id", "")
+    from_stdin = bool(getattr(args, "scan_id_stdin", False))
+    if from_stdin:
+        raw = sys.stdin.buffer.read(MAX_SCAN_ID_STDIN_BYTES + 1)
+        if len(raw) > MAX_SCAN_ID_STDIN_BYTES:
+            raise WorkflowDataError(
+                f"scan ID input exceeds {MAX_SCAN_ID_STDIN_BYTES} bytes"
+            )
+        try:
+            explicit = raw.decode("utf-8").strip()
+        except UnicodeError as error:
+            raise WorkflowDataError("scan ID input is not valid UTF-8") from error
+        if not explicit:
+            raise WorkflowDataError("Fabro did not supply a scan ID")
+    scan_id = str(explicit or f"local_{uuid.uuid4().hex}").strip()
+    if not SCAN_ID_RE.fullmatch(scan_id):
+        raise WorkflowDataError("scan ID has an invalid format")
+    return scan_id
+
+
+def normalize_rule_id(value: Any) -> Optional[str]:
+    text = one_line(value, MAX_IDENTITY_FIELD_LENGTH + 1).strip()
+    if len(text) > MAX_IDENTITY_FIELD_LENGTH or not RULE_ID_RE.fullmatch(text):
+        return None
+    return text
+
+
+def normalize_identity(value: Any) -> Optional[Dict[str, str]]:
+    if not isinstance(value, dict):
+        return None
+    if set(value) - {"anchor", "instance"}:
+        return None
+    anchor = one_line(value.get("anchor"), MAX_IDENTITY_FIELD_LENGTH + 1).strip()
+    if (
+        len(anchor) > MAX_IDENTITY_FIELD_LENGTH
+        or not IDENTITY_SLUG_RE.fullmatch(anchor)
+    ):
+        return None
+    identity = {"anchor": anchor}
+    if "instance" in value:
+        instance = one_line(
+            value.get("instance"),
+            MAX_IDENTITY_FIELD_LENGTH + 1,
+        ).strip()
+        if (
+            len(instance) > MAX_IDENTITY_FIELD_LENGTH
+            or not IDENTITY_SLUG_RE.fullmatch(instance)
+        ):
+            return None
+        identity["instance"] = instance
+    return identity
+
+
+def derive_finding_identity(
+    target_id: str,
+    scan_id: str,
+    finding: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Derive the Codex Security v1 identity fields for one finding."""
+    rule_id = str(finding["ruleId"])
+    identity = finding["identity"]
+    if not isinstance(identity, dict):
+        raise WorkflowDataError("normalized finding identity is not an object")
+    anchor = str(identity["anchor"])
+    instance = str(identity.get("instance") or "")
+    digest = sha256_text(
+        "\0".join(
+            ["codex-security/v1", target_id, rule_id, anchor, instance]
+        )
+    )
+    fingerprint = FINGERPRINT_PREFIX + digest
+    return {
+        "findingId": "csf_" + sha256_text(fingerprint)[:24],
+        "occurrenceId": "occ_"
+        + sha256_text(scan_id + "\0" + fingerprint)[:24],
+        "fingerprints": {"primary": fingerprint},
+    }
 
 
 def validate_revision(value: str, field: str) -> str:
@@ -632,6 +794,8 @@ def common_target(state: Mapping[str, Any]) -> Dict[str, Any]:
 
 def prepare(args: argparse.Namespace) -> None:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    scan_id = scan_id_from_args(args)
+    target_id, target_id_source = stable_target_identity()
     mode = args.mode.strip().lower()
     if mode not in SCAN_MODES:
         raise WorkflowDataError(
@@ -800,8 +964,11 @@ def prepare(args: argparse.Namespace) -> None:
     empty_target = empty_diff or empty_scope
 
     state: Dict[str, Any] = {
-        "version": 3,
+        "version": 4,
         "root": str(root()),
+        "scan_id": scan_id,
+        "target_id": target_id,
+        "target_id_source": target_id_source,
         "products_dir": None,
         "products_rel": None,
         "run_dir": None,
@@ -892,6 +1059,9 @@ def prepare(args: argparse.Namespace) -> None:
         revision_range,
     )
     scan_meta = {
+        "scan_id": scan_id,
+        "target_id": target_id,
+        "target_id_source": target_id_source,
         "scan_root": str(root()),
         "run_dir": run_dir.as_posix(),
         "flow": "scan" if mode == "scan" else "changes",
@@ -1602,6 +1772,8 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
     category = normalize_category(value.get("category"))
     title = one_line(value.get("title"), 300).strip()
     rationale = clean_text(value.get("rationale"), 4000).strip()
+    rule_id = normalize_rule_id(value.get("ruleId"))
+    identity = normalize_identity(value.get("identity"))
     if (
         path is None
         or path == "."
@@ -1613,6 +1785,8 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
         or not category
         or not title
         or not rationale
+        or rule_id is None
+        or identity is None
     ):
         return None
     preconditions = string_list(
@@ -1623,6 +1797,8 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
     return {
         "file": path,
         "line": line,
+        "ruleId": rule_id,
+        "identity": identity,
         "category": category,
         "severity": severity,
         "confidence": confidence,
@@ -1756,18 +1932,21 @@ def merge(phase: str) -> None:
     emit(**updates)
 
 
-def finding_key(finding: Mapping[str, Any]) -> Tuple[str, int, str]:
-    return (
-        str(finding.get("file", "")).strip(),
-        int(finding.get("line") or 0),
-        str(finding.get("category", "")).strip().lower(),
-    )
+def finding_key(finding: Mapping[str, Any]) -> str:
+    fingerprints = finding.get("fingerprints")
+    if not isinstance(fingerprints, dict):
+        raise WorkflowDataError("finding has no derived fingerprint")
+    primary = fingerprints.get("primary")
+    if not isinstance(primary, str) or not primary.startswith(FINGERPRINT_PREFIX):
+        raise WorkflowDataError("finding has no valid primary fingerprint")
+    return primary
 
 
-def rank_key(finding: Mapping[str, Any]) -> Tuple[int, int]:
+def rank_key(finding: Mapping[str, Any]) -> Tuple[int, int, str]:
     return (
         -SEVERITY_RANK.get(str(finding.get("severity")), 0),
         -CONFIDENCE_RANK.get(str(finding.get("confidence")), 0),
+        str(finding.get("findingId") or ""),
     )
 
 
@@ -1795,6 +1974,15 @@ def verification_claim(candidate: Mapping[str, Any]) -> Dict[str, Any]:
 
 def dedup_rank() -> None:
     state = load_state()
+    scan_id = state.get("scan_id")
+    target_id = state.get("target_id")
+    if not isinstance(scan_id, str) or not SCAN_ID_RE.fullmatch(scan_id):
+        raise WorkflowDataError("state has no valid scan ID")
+    if (
+        not isinstance(target_id, str)
+        or not TARGET_ID_RE.fullmatch(target_id)
+    ):
+        raise WorkflowDataError("state has no valid target ID")
     research_jobs = list(state.get("research_jobs") or [])
     sweep_jobs = list(state.get("sweep_jobs") or [])
     jobs = research_jobs + sweep_jobs
@@ -1810,6 +1998,9 @@ def dedup_rank() -> None:
         else {}
     )
     raw_candidates: List[Dict[str, Any]] = []
+    roots_by_fingerprint: Dict[str, Tuple[str, str]] = {}
+    fingerprints_by_finding_id: Dict[str, str] = {}
+    fingerprints_by_occurrence_id: Dict[str, str] = {}
     returned = 0
     invalid_results: List[str] = []
     for job in jobs:
@@ -1831,12 +2022,39 @@ def dedup_rank() -> None:
         for finding in normalized["findings"]:
             copy = dict(finding)
             copy["component"] = one_line(component, 120)
+            copy.update(derive_finding_identity(target_id, scan_id, copy))
+            fingerprint = finding_key(copy)
+            root_control = (
+                str(copy.get("file") or ""),
+                str(copy.get("symbol") or ""),
+            )
+            existing_root = roots_by_fingerprint.setdefault(
+                fingerprint,
+                root_control,
+            )
+            if existing_root != root_control:
+                raise WorkflowDataError(
+                    "stable finding identity is ambiguous across root controls"
+                )
+            for derived_field, collision_map in (
+                ("findingId", fingerprints_by_finding_id),
+                ("occurrenceId", fingerprints_by_occurrence_id),
+            ):
+                derived_id = str(copy[derived_field])
+                existing_fingerprint = collision_map.setdefault(
+                    derived_id,
+                    fingerprint,
+                )
+                if existing_fingerprint != fingerprint:
+                    raise WorkflowDataError(
+                        f"{derived_field} collision across distinct fingerprints"
+                    )
             raw_candidates.append(copy)
 
     ranked = sorted(raw_candidates, key=rank_key)
     capped = ranked[:CANDIDATE_CAP]
     candidates_dropped = max(0, len(raw_candidates) - len(capped))
-    by_key: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
+    by_key: Dict[str, Dict[str, Any]] = {}
     for report in capped:
         key = finding_key(report)
         existing = by_key.get(key)
@@ -1875,6 +2093,7 @@ def dedup_rank() -> None:
             -SEVERITY_RANK.get(finding["severity"], 0),
             -int(finding.get("reports", 0)),
             -CONFIDENCE_RANK.get(finding["confidence"], 0),
+            finding["findingId"],
         )
     )
     for index, candidate in enumerate(deduplicated, 1):
@@ -2103,11 +2322,12 @@ def adversarial_plan() -> None:
     emit(**updates)
 
 
-def confidence_sort_key(record: Mapping[str, Any]) -> Tuple[int, int]:
+def confidence_sort_key(record: Mapping[str, Any]) -> Tuple[int, int, str]:
     candidate = record.get("candidate") or {}
     return (
         -SEVERITY_RANK.get(candidate.get("severity"), 0),
         -CONFIDENCE_RANK.get(candidate.get("confidence"), 0),
+        str(candidate.get("findingId") or ""),
     )
 
 
@@ -2248,11 +2468,14 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
         ],
         key=confidence_sort_key,
     )
-    rejected = [
-        record
-        for record in reviewed
-        if isinstance(record, dict) and not record.get("kept")
-    ]
+    rejected = sorted(
+        [
+            record
+            for record in reviewed
+            if isinstance(record, dict) and not record.get("kept")
+        ],
+        key=confidence_sort_key,
+    )
     for index, record in enumerate(kept + rejected, 1):
         record["candidate"]["id"] = f"F{index}"
 
@@ -2267,6 +2490,11 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
     findings = [
         {
             "id": record["candidate"]["id"],
+            "findingId": record["candidate"]["findingId"],
+            "occurrenceId": record["candidate"]["occurrenceId"],
+            "fingerprints": record["candidate"]["fingerprints"],
+            "ruleId": record["candidate"]["ruleId"],
+            "identity": record["candidate"]["identity"],
             "title": record["candidate"]["title"],
             "impact": record["candidate"].get("impact") or "",
             "file": record["candidate"]["file"],
@@ -2412,6 +2640,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--commit", default="")
     prepare_parser.add_argument("--range", default="")
     prepare_parser.add_argument("--focus", default="")
+    prepare_parser.add_argument("--scan-id-stdin", action="store_true")
 
     merge_parser = subparsers.add_parser("merge")
     merge_parser.add_argument(

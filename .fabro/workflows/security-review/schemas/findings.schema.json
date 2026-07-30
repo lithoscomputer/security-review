@@ -9,6 +9,8 @@
         "required": [
           "file",
           "line",
+          "ruleId",
+          "identity",
           "category",
           "severity",
           "confidence",
@@ -25,6 +27,28 @@
         "properties": {
           "file": { "type": "string" },
           "line": { "type": "integer" },
+          "ruleId": {
+            "type": "string",
+            "maxLength": 160,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "identity": {
+            "type": "object",
+            "required": ["anchor"],
+            "additionalProperties": false,
+            "properties": {
+              "anchor": {
+                "type": "string",
+                "maxLength": 160,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "instance": {
+                "type": "string",
+                "maxLength": 160,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            }
+          },
           "category": { "type": "string" },
           "severity": {
             "type": "string",

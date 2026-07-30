@@ -45,6 +45,13 @@ A run writes `CLAUDE-SECURITY-<timestamp>/` holding the human-readable
 at what effort, and how it was verified. The directory carries its own
 `.gitignore`, so nothing in it reaches a commit unless you delete that file.
 
+Each finding has three IDs. `F1`, `F2`, and so on are short display labels for
+one report. `findingId` is derived from the target, rule, and root-control
+identity, so it stays the same when a finding moves to another line or appears
+in a later run. `occurrenceId` combines that stable identity with the Fabro run
+ID, so it names one occurrence in one scan. The JSONL also carries the full
+primary fingerprint used for deterministic deduplication.
+
 Reviews are nondeterministic: running them regularly builds coverage over time.
 This complements SAST, dependency scanning, and code review; it does not
 replace them.
@@ -109,6 +116,12 @@ it. Two must confirm, and all three must return. A 2-of-3 keep is capped at
 `render_report.py` enforces that ceiling regardless of what the report says.
 Verifiers see only what the reporter claimed, never the reporter's own
 confidence, so the panel cannot be anchored by it.
+
+**Finding identity is stable.** Researchers name a rule and a conceptual root
+control. Deterministic code derives the fingerprint, stable `findingId`, and
+per-run `occurrenceId`. Deduplication uses that fingerprint instead of a
+file-and-line tuple. If one identity points at different root controls, the
+workflow stops rather than merging an ambiguous result.
 
 **The repository is data, never instruction.** Everything the review reads —
 source, comments, `CLAUDE.md`, commit messages, fixtures — is evidence under

@@ -14,6 +14,7 @@ Python 3.9-compatible, stdlib only.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -54,6 +55,11 @@ class VerificationSummary(TypedDict, total=False):
 
 REPORT_FIELDS = (
     "id",
+    "findingId",
+    "occurrenceId",
+    "fingerprints",
+    "ruleId",
+    "identity",
     "title",
     "impact",
     "file",
@@ -84,6 +90,17 @@ RUN_DIR_NAME = ".claude-security-run"
 # \Z, not $: `$` also matches before a trailing newline, and this names a file.
 HEX_RE = re.compile(r"^[0-9a-fA-F]{7,64}\Z")
 FINDING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+STABLE_FINDING_ID_RE = re.compile(r"^csf_[0-9a-f]{24}\Z")
+OCCURRENCE_ID_RE = re.compile(r"^occ_[0-9a-f]{24}\Z")
+FINGERPRINT_RE = re.compile(r"^codex-security/v1:sha256:[0-9a-f]{64}\Z")
+TARGET_ID_RE = re.compile(r"^security-review-target/v1:sha256:[0-9a-f]{64}\Z")
+SCAN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+RULE_ID_RE = re.compile(
+    r"^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*\Z"
+)
+IDENTITY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+MAX_IDENTITY_FIELD_LENGTH = 160
+FINGERPRINT_PREFIX = "codex-security/v1:sha256:"
 
 CATEGORY_ALIASES = {
     "sqli": "sql-injection",
@@ -201,7 +218,75 @@ def vote_confidence_ceiling(rounds: object) -> str | None:
     return "high" if panel.get("true", 0) >= PANEL_VOTER_COUNT else "medium"
 
 
-def build_finding(raw: object, index: int, rounds_by_id: JsonMap) -> Finding:
+def sha256_text(value: str) -> str:
+    """Return lowercase SHA-256 hex for UTF-8 text."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def expected_identity_fields(
+    item: JsonMap,
+    target_id: str,
+    scan_id: str,
+    display_id: str,
+) -> dict[str, object]:
+    """Validate authored identity and derive its immutable output fields."""
+    rule_id = item.get("ruleId")
+    if (
+        not isinstance(rule_id, str)
+        or len(rule_id) > MAX_IDENTITY_FIELD_LENGTH
+        or not RULE_ID_RE.fullmatch(rule_id)
+    ):
+        raise RenderError(f"finding {display_id} has an invalid ruleId")
+    raw_identity = as_map(item.get("identity"))
+    if raw_identity is None or set(raw_identity) - {"anchor", "instance"}:
+        raise RenderError(f"finding {display_id} has an invalid identity object")
+    anchor = raw_identity.get("anchor")
+    if (
+        not isinstance(anchor, str)
+        or len(anchor) > MAX_IDENTITY_FIELD_LENGTH
+        or not IDENTITY_SLUG_RE.fullmatch(anchor)
+    ):
+        raise RenderError(f"finding {display_id} has an invalid identity.anchor")
+    instance_raw = raw_identity.get("instance")
+    if instance_raw is not None and (
+        not isinstance(instance_raw, str)
+        or len(instance_raw) > MAX_IDENTITY_FIELD_LENGTH
+        or not IDENTITY_SLUG_RE.fullmatch(instance_raw)
+    ):
+        raise RenderError(f"finding {display_id} has an invalid identity.instance")
+    identity: dict[str, str] = {"anchor": anchor}
+    if isinstance(instance_raw, str):
+        identity["instance"] = instance_raw
+
+    digest = sha256_text(
+        "\0".join(
+            [
+                "codex-security/v1",
+                target_id,
+                rule_id,
+                anchor,
+                instance_raw or "",
+            ]
+        )
+    )
+    fingerprint = FINGERPRINT_PREFIX + digest
+    return {
+        "findingId": "csf_" + sha256_text(fingerprint)[:24],
+        "occurrenceId": "occ_"
+        + sha256_text(scan_id + "\0" + fingerprint)[:24],
+        "fingerprints": {"primary": fingerprint},
+        "ruleId": rule_id,
+        "identity": identity,
+    }
+
+
+def build_finding(
+    raw: object,
+    index: int,
+    rounds_by_id: JsonMap,
+    target_id: str,
+    scan_id: str,
+) -> Finding:
     """Validate one finding into exactly REPORT_FIELDS, in order."""
     item = as_map(raw)
     if item is None:
@@ -211,6 +296,28 @@ def build_finding(raw: object, index: int, rounds_by_id: JsonMap) -> Finding:
     if not FINDING_ID_RE.match(finding_id):
         msg = f"finding id {finding_id!r} is not a valid id"
         raise RenderError(msg)
+    expected_identity = expected_identity_fields(
+        item,
+        target_id,
+        scan_id,
+        finding_id,
+    )
+    for field, expected in expected_identity.items():
+        if item.get(field) != expected:
+            raise RenderError(
+                f"finding {finding_id} has a missing or invalid derived {field}"
+            )
+    if not STABLE_FINDING_ID_RE.fullmatch(str(item.get("findingId") or "")):
+        raise RenderError(f"finding {finding_id} has an invalid findingId")
+    if not OCCURRENCE_ID_RE.fullmatch(str(item.get("occurrenceId") or "")):
+        raise RenderError(f"finding {finding_id} has an invalid occurrenceId")
+    fingerprints = as_map(item.get("fingerprints"))
+    if (
+        fingerprints is None
+        or set(fingerprints) != {"primary"}
+        or not FINGERPRINT_RE.fullmatch(str(fingerprints.get("primary") or ""))
+    ):
+        raise RenderError(f"finding {finding_id} has invalid fingerprints")
 
     for required in ("title", "file", "description", "exploit_scenario"):
         if not item.get(required):
@@ -252,6 +359,7 @@ def build_finding(raw: object, index: int, rounds_by_id: JsonMap) -> Finding:
 
     finding = {
         "id": finding_id,
+        **expected_identity,
         "title": item.get("title"),
         "impact": item.get("impact") or "",
         "file": item.get("file"),
@@ -520,6 +628,15 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
     meta = as_map(meta_raw)
     if meta is None:
         raise RenderError("scan-meta.json must be a JSON object")
+    scan_id = meta.get("scan_id")
+    if not isinstance(scan_id, str) or not SCAN_ID_RE.fullmatch(scan_id):
+        raise RenderError("scan-meta.json has no valid scan_id")
+    target_id = meta.get("target_id")
+    if not isinstance(target_id, str) or not TARGET_ID_RE.fullmatch(target_id):
+        raise RenderError("scan-meta.json has no valid target_id")
+    target_id_source = meta.get("target_id_source")
+    if target_id_source not in ("git-origin", "git-root", "local-path"):
+        raise RenderError("scan-meta.json has no valid target_id_source")
     votes_map = as_map(votes)
     if votes_map is None:
         raise RenderError("votes.json must be a JSON object mapping the vote record")
@@ -530,16 +647,31 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
         msg = f"votes.json 'rounds' must be an object keyed by finding id, not {kind}"
         raise RenderError(msg)
     findings = [
-        build_finding(raw, i, rounds_by_id)
+        build_finding(raw, i, rounds_by_id, target_id, scan_id)
         for i, raw in enumerate(cast("list[object]", findings_raw))
     ]
 
-    seen = {}
+    seen: dict[str, set[object]] = {
+        "id": set(),
+        "findingId": set(),
+        "occurrenceId": set(),
+        "fingerprint": set(),
+    }
     for finding in findings:
-        if finding["id"] in seen:
-            msg = "finding id {!r} appears twice in findings.json".format(finding["id"])
-            raise RenderError(msg)
-        seen[finding["id"]] = True
+        values = {
+            "id": finding["id"],
+            "findingId": finding["findingId"],
+            "occurrenceId": finding["occurrenceId"],
+            "fingerprint": cast("dict[str, object]", finding["fingerprints"])[
+                "primary"
+            ],
+        }
+        for label, value in values.items():
+            if value in seen[label]:
+                raise RenderError(
+                    f"finding {label} {value!r} appears twice in findings.json"
+                )
+            seen[label].add(value)
 
     markdown_path = os.path.join(run_dir, "CLAUDE-SECURITY-RESULTS.md")
     if not os.path.isfile(markdown_path):
@@ -569,6 +701,9 @@ def render(run_dir: str, products_dir: str) -> tuple[list[Finding], Verification
 
     stamp: dict[str, object] = {
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "scan_id": scan_id,
+        "target_id": target_id,
+        "target_id_source": target_id_source,
         "scan_root": meta.get("scan_root"),
         "products_dir": products_dir,
         "mode": meta.get("mode"),

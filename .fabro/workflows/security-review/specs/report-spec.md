@@ -67,6 +67,10 @@ The `F<n>` in each heading is that finding's `id` from `findings.json`, copied e
 
 ### F1 — <title> (HIGH, confidence medium)
 
+**Stable finding ID.** `csf_<24 lowercase hex characters>`
+
+**Occurrence ID.** `occ_<24 lowercase hex characters>`
+
 **Impact.** <what an attacker gets. Lead with this: it is what decides
 priority.>
 
@@ -101,6 +105,10 @@ it -- do not bury it.>
 **Severity is impact, not confidence.** HIGH means system control or broad cross-user data exposure. MEDIUM means real harm with limits. LOW means defense in depth. Uncertainty belongs in `confidence` — a word, `low`, `medium`, or `high` — which the panel's vote clamps: a finding two of three voters confirmed cannot claim `high`, and `render_report.py` will lower it if you try; only a unanimous panel earns `high`.
 
 **Order by severity, then by confidence.** The reader stops partway down; put what matters at the top.
+
+**Copy both durable IDs exactly.** `findingId` identifies the same root
+vulnerability across runs. `occurrenceId` identifies this finding in this one
+scan. Never derive, shorten, or edit either value in the Markdown.
 
 **Every finding cites a real `file:line`.** A finding pointing at the wrong line costs the reader more than a missed finding, because they lose trust in the rest of the report while chasing it.
 

@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -89,6 +90,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         commit: str = "",
         revision_range: str = "",
         focus: str = "",
+        scan_id: str = "test-scan-01",
     ) -> dict:
         self.call(
             DRIVER.prepare,
@@ -100,6 +102,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                 commit=commit,
                 range=revision_range,
                 focus=focus,
+                scan_id=scan_id,
+                scan_id_stdin=False,
             ),
         )
         return DRIVER.load_state()
@@ -141,6 +145,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         return {
             "file": "src/app.py",
             "line": 5,
+            "ruleId": "command-injection.shell-command",
+            "identity": {"anchor": "run-command-dispatch"},
             "category": "command-injection",
             "severity": "HIGH",
             "confidence": "HIGH",
@@ -155,6 +161,13 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "recommendation": "Replace the shell call with a fixed argv.",
             "cweId": "CWE-78",
         }
+
+    def dedup_findings(self, findings: list[dict]) -> dict:
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        self.merge_success("research", [{"findings": findings}])
+        self.call(DRIVER.dedup_rank)
+        return DRIVER.load_state()
 
     def test_full_max_effort_transition_chain_uses_merged_outputs(self) -> None:
         state = self.prepare()
@@ -265,6 +278,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(final["verification"]["status"], "verified")
         self.assertEqual([item["id"] for item in final["findings"]], ["F1"])
         self.assertEqual(final["votes"]["panel_votes"], 7)
+        stable = final["findings"][0]
+        self.assertRegex(stable["findingId"], r"^csf_[0-9a-f]{24}$")
+        self.assertRegex(stable["occurrenceId"], r"^occ_[0-9a-f]{24}$")
+        self.assertRegex(
+            stable["fingerprints"]["primary"],
+            r"^codex-security/v1:sha256:[0-9a-f]{64}$",
+        )
+        self.assertEqual(stable["ruleId"], finding["ruleId"])
+        self.assertEqual(stable["identity"], finding["identity"])
 
         state = DRIVER.load_state()
         run_dir = Path(state["run_dir"])
@@ -281,6 +303,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         stamp = json.loads(Path(state["stamp_path"]).read_text(encoding="utf-8"))
         self.assertEqual(stamp["verification"]["status"], "verified")
         self.assertEqual(stamp["findings"]["total"], 1)
+        self.assertEqual(stamp["scan_id"], "test-scan-01")
+        self.assertEqual(stamp["target_id"], state["target_id"])
+        output_finding = json.loads(
+            (products / "CLAUDE-SECURITY-RESULTS.jsonl").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(output_finding["findingId"], stable["findingId"])
+        self.assertEqual(output_finding["occurrenceId"], stable["occurrenceId"])
 
     def test_merge_leaves_exhausted_native_retry_results_missing(self) -> None:
         self.prepare(effort="low")
@@ -378,6 +409,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                     commit="",
                     range="",
                     focus="",
+                    scan_id="test-scan-01",
+                    scan_id_stdin=False,
                 )
             )
         self.assertEqual(DRIVER.load_state()["effort"], "medium")
@@ -451,6 +484,199 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.assertEqual(job["finding"]["severityAsReported"], "HIGH")
         self.assertEqual(job["finding"]["reports"], 1)
+
+    def test_stable_identity_survives_line_moves_and_scopes_occurrences(self) -> None:
+        state = self.prepare(scan_id="scan-one")
+        finding = DRIVER.normalize_finding(self.finding())
+        self.assertIsNotNone(finding)
+        assert finding is not None
+        first = DRIVER.derive_finding_identity(
+            state["target_id"],
+            "scan-one",
+            finding,
+        )
+        moved = dict(finding)
+        moved["line"] = 500
+        second = DRIVER.derive_finding_identity(
+            state["target_id"],
+            "scan-two",
+            moved,
+        )
+        expected_fingerprint = (
+            "codex-security/v1:sha256:"
+            + hashlib.sha256(
+                "\0".join(
+                    [
+                        "codex-security/v1",
+                        state["target_id"],
+                        finding["ruleId"],
+                        finding["identity"]["anchor"],
+                        "",
+                    ]
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+
+        self.assertEqual(first["findingId"], second["findingId"])
+        self.assertEqual(first["fingerprints"], second["fingerprints"])
+        self.assertNotEqual(first["occurrenceId"], second["occurrenceId"])
+        self.assertEqual(
+            first["fingerprints"]["primary"],
+            expected_fingerprint,
+        )
+        self.assertEqual(
+            first["findingId"],
+            "csf_"
+            + hashlib.sha256(expected_fingerprint.encode("utf-8")).hexdigest()[
+                :24
+            ],
+        )
+
+    def test_prepare_reads_fabro_run_id_from_stdin(self) -> None:
+        input_stream = type(
+            "InputStream",
+            (),
+            {"buffer": io.BytesIO(b"01KYSTABLERUNID1234567890\n")},
+        )()
+        with mock.patch.object(DRIVER.sys, "stdin", input_stream):
+            scan_id = DRIVER.scan_id_from_args(
+                Namespace(scan_id="", scan_id_stdin=True)
+            )
+        self.assertEqual(scan_id, "01KYSTABLERUNID1234567890")
+
+        empty_stream = type(
+            "InputStream",
+            (),
+            {"buffer": io.BytesIO(b"")},
+        )()
+        with mock.patch.object(DRIVER.sys, "stdin", empty_stream):
+            with self.assertRaisesRegex(
+                DRIVER.WorkflowDataError,
+                "did not supply",
+            ):
+                DRIVER.scan_id_from_args(
+                    Namespace(scan_id="", scan_id_stdin=True)
+                )
+
+    def test_sibling_instances_on_one_line_do_not_merge(self) -> None:
+        first = self.finding()
+        first["identity"] = {
+            "anchor": "run-command-dispatch",
+            "instance": "primary",
+        }
+        second = self.finding()
+        second["title"] = "A second untrusted command reaches the shell"
+        second["identity"] = {
+            "anchor": "run-command-dispatch",
+            "instance": "fallback",
+        }
+
+        state = self.dedup_findings([first, second])
+
+        self.assertEqual(len(state["deduplicated_candidates"]), 2)
+        self.assertEqual(
+            len(
+                {
+                    item["findingId"]
+                    for item in state["deduplicated_candidates"]
+                }
+            ),
+            2,
+        )
+
+    def test_ambiguous_identity_across_root_controls_fails_closed(self) -> None:
+        first = self.finding()
+        second = self.finding()
+        second["file"] = "src/other.py"
+        second["symbol"] = "run_other"
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        self.merge_success("research", [{"findings": [first, second]}])
+
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "ambiguous across root controls",
+        ):
+            self.call(DRIVER.dedup_rank)
+
+    def test_invalid_identity_slugs_are_rejected(self) -> None:
+        invalid_rule = self.finding()
+        invalid_rule["ruleId"] = "Command Injection at line 5"
+        self.assertIsNone(DRIVER.normalize_finding(invalid_rule))
+
+        invalid_anchor = self.finding()
+        invalid_anchor["identity"] = {"anchor": "src/app.py:5"}
+        self.assertIsNone(DRIVER.normalize_finding(invalid_anchor))
+
+        extra_field = self.finding()
+        extra_field["identity"] = {
+            "anchor": "run-command-dispatch",
+            "line": "5",
+        }
+        self.assertIsNone(DRIVER.normalize_finding(extra_field))
+
+    def test_target_identity_strips_remote_secrets_and_url_form(self) -> None:
+        secret_remote = (
+            "https://alice:password@example.com/org/repo.git"
+            "?access_token=topsecret#fragment"
+        )
+        run("git", "remote", "add", "origin", secret_remote, cwd=self.root)
+        state = self.prepare()
+        scan_meta = json.loads(
+            (
+                Path(state["run_dir"]) / "scan-meta.json"
+            ).read_text(encoding="utf-8")
+        )
+        persisted = json.dumps({"state": state, "scan_meta": scan_meta})
+        for secret in ("alice", "password", "access_token", "topsecret"):
+            self.assertNotIn(secret, persisted)
+        self.assertEqual(state["target_id_source"], "git-origin")
+
+        run(
+            "git",
+            "remote",
+            "set-url",
+            "origin",
+            "git@example.com:org/repo.git",
+            cwd=self.root,
+        )
+        equivalent_target, source = DRIVER.stable_target_identity()
+        self.assertEqual(equivalent_target, state["target_id"])
+        self.assertEqual(source, "git-origin")
+
+    def test_renderer_rejects_tampered_stable_identity(self) -> None:
+        state = self.dedup_findings([self.finding()])
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "The source reaches the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        state = DRIVER.load_state()
+        run_dir = Path(state["run_dir"])
+        findings_path = run_dir / "findings.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        findings[0]["findingId"] = "csf_" + "0" * 24
+        findings_path.write_text(
+            json.dumps(findings) + "\n",
+            encoding="utf-8",
+        )
+        (run_dir / "CLAUDE-SECURITY-RESULTS.md").write_text(
+            "# Claude Security results\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "invalid derived findingId",
+        ):
+            self.call(DRIVER.render_report)
 
     def test_parallel_job_context_is_an_array_not_a_file_reference(self) -> None:
         jobs = [{"name": "one", "job_id": "research:one"}]
@@ -589,6 +815,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             {
                 "file",
                 "line",
+                "ruleId",
+                "identity",
                 "rationale",
                 "evidence",
                 "snippet",
@@ -611,8 +839,35 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "exploitScenario",
                 "preconditions",
                 "recommendation",
+                "ruleId",
             ):
                 self.assertIn(f"`{field}`", prompt)
+            self.assertIn("`identity.anchor`", prompt)
+
+    def test_stable_identity_contract_is_wired_through_the_graph_and_report(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertIn('stdin_source="context.internal.run_id"', graph)
+        self.assertIn("prepare --scan-id-stdin", graph)
+
+        schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/findings.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        item = schema["properties"]["findings"]["items"]
+        self.assertIn("ruleId", item["required"])
+        self.assertIn("identity", item["required"])
+        self.assertFalse(
+            item["properties"]["identity"]["additionalProperties"]
+        )
+
+        report_prompt = (
+            WORKFLOW_ROOT / "prompts/report.md"
+        ).read_text(encoding="utf-8")
+        report_spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
+        for field in ("findingId", "occurrenceId"):
+            self.assertIn(field, report_prompt)
+            self.assertIn(field, report_spec)
 
     def test_merges_pipe_context_directly_to_deterministic_scripts(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
