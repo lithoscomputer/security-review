@@ -16,9 +16,9 @@ The JSON Schema contracts for these records are in `schemas/`. The deterministic
 
 The renderer creates only these presentation artifacts from the five canonical files:
 
-- `CLAUDE-SECURITY-RESULTS.md` for people.
-- `CLAUDE-SECURITY-RESULTS.jsonl` for finding consumers and CI gates.
-- `CLAUDE-SECURITY-REVISION-<tag>.json` for compatibility with current revision consumers.
+- `SECURITY-REVIEW-RESULTS.md` for people.
+- `SECURITY-REVIEW-RESULTS.jsonl` for finding consumers and CI gates.
+- `SECURITY-REVIEW-REVISION-<tag>.json` for compatibility with current revision consumers.
 
 SARIF is not generated. It can be added later as another deterministic view of the same canonical data.
 

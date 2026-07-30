@@ -165,7 +165,7 @@ VOTE_ROUNDS = ("panel", "repanel", "redteam")
 VOTE_STATUSES = ("completed", "missing")
 VERDICTS = ("TRUE_POSITIVE", "FALSE_POSITIVE")
 
-REVISION_PREFIX = "CLAUDE-SECURITY-REVISION-"
+REVISION_PREFIX = "SECURITY-REVIEW-REVISION-"
 HEX_RE = re.compile(r"^[0-9a-fA-F]{7,64}\Z")
 DISPLAY_ID_RE = re.compile(r"^F[1-9][0-9]{0,8}\Z")
 STABLE_FINDING_ID_RE = re.compile(r"^csf_[0-9a-f]{24}\Z")
@@ -1334,7 +1334,7 @@ def render_markdown(
     else:
         headline += "."
     lines = [
-        "# Claude Security results",
+        "# Security review results",
         "",
         (
             f"Reviewed {code_span(target.get('scanRoot'))} at "
@@ -1497,11 +1497,11 @@ def render(
 
     markdown = render_markdown(manifest, findings, coverage, votes)
     atomic_write(
-        os.path.join(bundle_dir, "CLAUDE-SECURITY-RESULTS.md"),
+        os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.md"),
         markdown,
     )
     atomic_write(
-        os.path.join(bundle_dir, "CLAUDE-SECURITY-RESULTS.jsonl"),
+        os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.jsonl"),
         "".join(jsonl_line(finding) + "\n" for finding in findings),
     )
 
@@ -1559,8 +1559,8 @@ def main(argv: Sequence[str]) -> int:
     except OSError as error:
         die(f"could not read or write the completed bundle: {error}")
     print(
-        f"wrote CLAUDE-SECURITY-RESULTS.md, "
-        f"CLAUDE-SECURITY-RESULTS.jsonl ({len(findings)} finding"
+        f"wrote SECURITY-REVIEW-RESULTS.md, "
+        f"SECURITY-REVIEW-RESULTS.jsonl ({len(findings)} finding"
         f"{'' if len(findings) == 1 else 's'}), and "
         f"{REVISION_PREFIX}{tag}.json into {bundle_dir}"
     )

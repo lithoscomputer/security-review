@@ -40,7 +40,7 @@ permissions = "full"
 
 [run.checkpoint]
 exclude_globs = [
-  "CLAUDE-SECURITY-*/**",
+  "SECURITY-REVIEW-*/**",
   ".fabro/blobs/**",
   ".fabro/workflows/security-review/runtime",
   ".fabro/workflows/security-review/runtime/**",
@@ -49,16 +49,16 @@ exclude_globs = [
 [run.artifacts]
 include = [
   ".fabro/workflows/security-review/runtime/**",
-  "CLAUDE-SECURITY-*/.gitignore",
-  "CLAUDE-SECURITY-*/.claude-security-run/**",
-  "CLAUDE-SECURITY-*/scan-manifest.json",
-  "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
-  "CLAUDE-SECURITY-*/findings.json",
-  "CLAUDE-SECURITY-*/coverage.json",
-  "CLAUDE-SECURITY-*/panel-votes.jsonl",
-  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
-  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
-  "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
+  "SECURITY-REVIEW-*/.gitignore",
+  "SECURITY-REVIEW-*/.security-review-run/**",
+  "SECURITY-REVIEW-*/scan-manifest.json",
+  "SECURITY-REVIEW-*/candidate-ledger.jsonl",
+  "SECURITY-REVIEW-*/findings.json",
+  "SECURITY-REVIEW-*/coverage.json",
+  "SECURITY-REVIEW-*/panel-votes.jsonl",
+  "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.md",
+  "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.jsonl",
+  "SECURITY-REVIEW-*/SECURITY-REVIEW-REVISION-*.json",
 ]
 
 [environments.security-review]

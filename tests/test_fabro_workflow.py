@@ -358,10 +358,10 @@ class FabroWorkflowDriverTest(unittest.TestCase):
 
         self.call(DRIVER.render_report)
         state = DRIVER.load_state()
-        self.assertTrue((products / "CLAUDE-SECURITY-RESULTS.md").is_file())
-        self.assertTrue((products / "CLAUDE-SECURITY-RESULTS.jsonl").is_file())
+        self.assertTrue((products / "SECURITY-REVIEW-RESULTS.md").is_file())
+        self.assertTrue((products / "SECURITY-REVIEW-RESULTS.jsonl").is_file())
         self.assertTrue(run_dir.is_dir(), "cloud scratch must be retained")
-        markdown = (products / "CLAUDE-SECURITY-RESULTS.md").read_text(
+        markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
             encoding="utf-8"
         )
         self.assertIn(stable["findingId"], markdown)
@@ -374,7 +374,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(stamp["scan_id"], "test-scan-01")
         self.assertEqual(stamp["target_id"], state["target_id"])
         output_finding = read_jsonl(
-            products / "CLAUDE-SECURITY-RESULTS.jsonl"
+            products / "SECURITY-REVIEW-RESULTS.jsonl"
         )[0]
         self.assertEqual([output_finding], canonical_findings)
         self.assertEqual(output_finding["findingId"], stable["findingId"])
@@ -383,8 +383,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         derived_before = {
             name: (products / name).read_bytes()
             for name in (
-                "CLAUDE-SECURITY-RESULTS.md",
-                "CLAUDE-SECURITY-RESULTS.jsonl",
+                "SECURITY-REVIEW-RESULTS.md",
+                "SECURITY-REVIEW-RESULTS.jsonl",
                 Path(state["stamp_path"]).name,
             )
         }
@@ -819,7 +819,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.final_tally)
         self.call(DRIVER.render_report)
         products = Path(DRIVER.load_state()["products_dir"])
-        markdown = (products / "CLAUDE-SECURITY-RESULTS.md").read_text(
+        markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("<script>", markdown)
@@ -914,7 +914,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.call(DRIVER.render_report)
         self.assertEqual(
-            read_jsonl(products / "CLAUDE-SECURITY-RESULTS.jsonl"),
+            read_jsonl(products / "SECURITY-REVIEW-RESULTS.jsonl"),
             [],
         )
 
@@ -953,7 +953,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.call(DRIVER.render_report)
         self.assertEqual(
-            read_jsonl(products / "CLAUDE-SECURITY-RESULTS.jsonl"),
+            read_jsonl(products / "SECURITY-REVIEW-RESULTS.jsonl"),
             [],
         )
 
@@ -983,7 +983,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = self.prepare(effort="medium", scope="does-not-exist")
         self.assertTrue(state["empty_scope"])
         self.assertIsNone(state["products_dir"])
-        self.assertEqual(list(self.root.glob("CLAUDE-SECURITY-*")), [])
+        self.assertEqual(list(self.root.glob("SECURITY-REVIEW-*")), [])
 
     def test_scoped_and_change_full_scans_still_inventory(self) -> None:
         scoped = self.prepare(effort="high", scope="src")
@@ -1315,8 +1315,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertIn("dispatch one read-only explorer", text, name)
             self.assertNotIn("spawn subagents", text, name)
-            # The Claude 5 profile exposes Agent/TaskOutput, the Fabro
-            # vocabulary spawn_agent/wait. Naming either misleads the other.
+            # One provider profile exposes Agent/TaskOutput, while Fabro uses
+            # the spawn_agent/wait vocabulary. Naming either misleads the other.
             for vocabulary_name in ("spawn_agent", "`wait`", "TaskOutput"):
                 self.assertNotIn(vocabulary_name, text, name)
         inventory = (WORKFLOW_ROOT / "prompts/inventory.md").read_text(
@@ -1334,16 +1334,16 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )[1].split("\n[", 1)[0]
             for artifact in (
                 ".fabro/workflows/security-review/runtime/**",
-                "CLAUDE-SECURITY-*/.gitignore",
-                "CLAUDE-SECURITY-*/.claude-security-run/**",
-                "CLAUDE-SECURITY-*/scan-manifest.json",
-                "CLAUDE-SECURITY-*/candidate-ledger.jsonl",
-                "CLAUDE-SECURITY-*/findings.json",
-                "CLAUDE-SECURITY-*/coverage.json",
-                "CLAUDE-SECURITY-*/panel-votes.jsonl",
-                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.md",
-                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl",
-                "CLAUDE-SECURITY-*/CLAUDE-SECURITY-REVISION-*.json",
+                "SECURITY-REVIEW-*/.gitignore",
+                "SECURITY-REVIEW-*/.security-review-run/**",
+                "SECURITY-REVIEW-*/scan-manifest.json",
+                "SECURITY-REVIEW-*/candidate-ledger.jsonl",
+                "SECURITY-REVIEW-*/findings.json",
+                "SECURITY-REVIEW-*/coverage.json",
+                "SECURITY-REVIEW-*/panel-votes.jsonl",
+                "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.md",
+                "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.jsonl",
+                "SECURITY-REVIEW-*/SECURITY-REVIEW-REVISION-*.json",
             ):
                 self.assertIn(artifact, artifact_sections[config_name])
             self.assertNotIn("reports/**", artifact_sections[config_name])
@@ -1352,6 +1352,27 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             artifact_sections["workflow.toml"],
             artifact_sections["verify.toml"],
         )
+
+    def test_workflow_uses_only_generic_security_review_naming(self) -> None:
+        legacy_name = "clau" + "de"
+        paths = [
+            REPOSITORY_ROOT / "README.md",
+            Path(__file__).resolve(),
+            *(
+                path
+                for path in WORKFLOW_ROOT.rglob("*")
+                if path.is_file()
+                and "__pycache__" not in path.parts
+                and "runtime" not in path.parts
+            ),
+        ]
+        for path in paths:
+            self.assertNotIn(legacy_name, path.as_posix().lower(), path)
+            self.assertNotIn(
+                legacy_name,
+                path.read_text(encoding="utf-8").lower(),
+                path,
+            )
 
     def test_canonical_bundle_schemas_are_versioned_contracts(self) -> None:
         expected = {

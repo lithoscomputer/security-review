@@ -585,7 +585,7 @@ def is_generated_path(path: str) -> bool:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     top = normalized.split("/", 1)[0]
-    if top.startswith("CLAUDE-SECURITY-"):
+    if top.startswith("SECURITY-REVIEW-"):
         return True
     generated = (
         ".fabro/blobs",
@@ -621,7 +621,7 @@ def repo_files() -> List[str]:
             name
             for name in directories
             if name not in skipped_directories
-            and not name.startswith("CLAUDE-SECURITY-")
+            and not name.startswith("SECURITY-REVIEW-")
         ]
         for name in files:
             relative = (Path(current) / name).relative_to(root()).as_posix()
@@ -776,7 +776,7 @@ def top_level_directories() -> Optional[List[str]]:
                 # (submodule) lists this way in git ls-files.
                 names.add(path)
         return sorted(
-            name for name in names if not name.startswith("CLAUDE-SECURITY-")
+            name for name in names if not name.startswith("SECURITY-REVIEW-")
         )
     try:
         return sorted(
@@ -784,7 +784,7 @@ def top_level_directories() -> Optional[List[str]]:
             for entry in os.scandir(root())
             if entry.is_dir(follow_symlinks=False)
             and entry.name != ".git"
-            and not entry.name.startswith("CLAUDE-SECURITY-")
+            and not entry.name.startswith("SECURITY-REVIEW-")
         )
     except OSError:
         return None
@@ -792,11 +792,11 @@ def top_level_directories() -> Optional[List[str]]:
 
 def unique_report_dir() -> Tuple[Path, str]:
     stem = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    name = f"CLAUDE-SECURITY-{stem}"
+    name = f"SECURITY-REVIEW-{stem}"
     candidate = root() / name
     suffix = 1
     while candidate.exists():
-        name = f"CLAUDE-SECURITY-{stem}-{suffix}"
+        name = f"SECURITY-REVIEW-{stem}-{suffix}"
         candidate = root() / name
         suffix += 1
     candidate.mkdir(parents=False)
@@ -1072,7 +1072,7 @@ def prepare(args: argparse.Namespace) -> None:
         return
 
     products_dir, products_rel = unique_report_dir()
-    run_dir = products_dir / ".claude-security-run"
+    run_dir = products_dir / ".security-review-run"
     run_dir.mkdir()
     (products_dir / ".gitignore").write_text("*\n", encoding="utf-8")
     (run_dir / ".gitignore").write_text("*\n", encoding="utf-8")
@@ -2903,7 +2903,7 @@ def load_renderer() -> Any:
             f"the original deterministic renderer is missing: {RENDERER_PATH}"
         )
     spec = importlib.util.spec_from_file_location(
-        "claude_security_render_report",
+        "security_review_render_report",
         path,
     )
     if spec is None or spec.loader is None:
@@ -2924,18 +2924,18 @@ def render_report() -> None:
         raise WorkflowDataError(
             f"the original report renderer refused the report: {error}"
         ) from error
-    stamp_name = f"CLAUDE-SECURITY-REVISION-{tag}.json"
+    stamp_name = f"SECURITY-REVIEW-REVISION-{tag}.json"
     state["stamp_path"] = f"{products_rel}/{stamp_name}"
     state["verification_status"] = verification.get("status")
     state["finding_count"] = len(findings)
     save_state(state)
     print(
-        f"Wrote {products_rel}/CLAUDE-SECURITY-RESULTS.md, "
-        f"CLAUDE-SECURITY-RESULTS.jsonl, and {stamp_name}; "
+        f"Wrote {products_rel}/SECURITY-REVIEW-RESULTS.md, "
+        f"SECURITY-REVIEW-RESULTS.jsonl, and {stamp_name}; "
         "canonical bundle and scratch records retained in the cloud sandbox"
     )
     emit(
-        report_path=f"{products_rel}/CLAUDE-SECURITY-RESULTS.md",
+        report_path=f"{products_rel}/SECURITY-REVIEW-RESULTS.md",
         stamp_path=state["stamp_path"],
         verification_status=verification.get("status"),
         finding_count=len(findings),
