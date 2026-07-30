@@ -16,16 +16,16 @@ fabro run .fabro/workflows/security-review/workflow.toml
 
 Inputs (`-I name=value`, all optional):
 
-| Input | Values | Meaning |
-| --- | --- | --- |
-| `mode` | `scan` (default), `changes`, `commit` | Review the tree, a branch's diff, or one commit. |
-| `effort` | `low`, `medium` (default), `high`, `max` | How much work the run does. See below. |
-| `ensemble` | `true` (default), `false` | Use neutral A/B/C/D slots backed by different models. Set this to `false` to use the standard Sonnet/Opus routing. |
-| `scope` | comma-separated paths | Limit the review to these directories or files. |
-| `base` | a Git revision | `changes` mode: what to diff against. Defaults to the upstream, then `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`. |
-| `range` | `base..HEAD` | `changes` mode: an explicit two-sided range instead of `base`. |
-| `commit` | a Git revision | `commit` mode: the commit to review against its parent. |
-| `focus` | `attack-surface`, `none` | Spend the effort on production code an attacker can reach, treating tests, fixtures, generated code, and vendored trees as background. Chosen by repository size when unset. |
+| Input | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `mode` | `scan`, `changes`, `commit` | `scan` | Review the tree, a branch's diff, or one commit. |
+| `effort` | `low`, `medium`, `high`, `max` | `medium` | How much work the run does. See below. |
+| `ensemble` | `true`, `false` | `true` | Use neutral A/B/C/D slots backed by different models. Set this to `false` to use the standard Sonnet/Opus routing. |
+| `scope` | comma-separated paths | Empty (whole target) | Limit the review to these directories or files. |
+| `base` | a Git revision | Empty (auto-detect) | `changes` mode: what to diff against. Auto-detection tries the upstream, then `origin/HEAD`, `origin/main`, `origin/master`, `main`, and `master`. |
+| `range` | `base..HEAD` | Empty (use `base`) | `changes` mode: an explicit two-sided range instead of `base`. |
+| `commit` | a Git revision | Empty | `commit` mode: the required commit to review against its parent. |
+| `focus` | `attack-surface`, `none` | Empty (automatic) | Spend the effort on production code an attacker can reach, treating tests, fixtures, generated code, and vendored trees as background. Automatic selection uses repository size. |
 
 Effort sets how much work happens, not how carefully any one agent thinks. The
 verification panel is three voters at every tier — that is what the report's
