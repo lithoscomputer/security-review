@@ -1154,6 +1154,18 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
             self.assertRegex(config, r"(?m)^ensemble = true$")
 
+    def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            self.assertIn(
+                '".fabro/workflows/security-review/runtime",',
+                config,
+            )
+            self.assertIn(
+                '".fabro/workflows/security-review/runtime/**",',
+                config,
+            )
+
     def test_phase_barriers_use_fabro_native_agent_retries(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         # The sandbox clones the repository itself, so prepare starts with the

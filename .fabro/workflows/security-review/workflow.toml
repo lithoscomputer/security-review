@@ -45,6 +45,7 @@ permissions = "full"
 exclude_globs = [
   "CLAUDE-SECURITY-*/**",
   ".fabro/blobs/**",
+  ".fabro/workflows/security-review/runtime",
   ".fabro/workflows/security-review/runtime/**",
 ]
 
