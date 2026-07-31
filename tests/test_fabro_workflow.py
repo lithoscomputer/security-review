@@ -1200,6 +1200,51 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             markdown,
         )
 
+    def test_renderer_rejects_confidence_a_split_panel_did_not_earn(
+        self,
+    ) -> None:
+        state = self.dedup_findings([self.finding()])
+        # A 2-of-3 keep earns medium confidence at most.
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": verdict,
+                    "reasoning": "The source reaches the shell."
+                    if verdict == "TRUE_POSITIVE"
+                    else "This lens found a guard.",
+                }
+                for verdict in (
+                    "TRUE_POSITIVE",
+                    "TRUE_POSITIVE",
+                    "FALSE_POSITIVE",
+                )
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        products = Path(DRIVER.load_state()["products_dir"])
+        findings_path = products / "findings.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        # The engine already capped it. Prove the renderer independently
+        # refuses a bundle edited afterwards to claim more -- consistently, so
+        # the ledger-equality check cannot be what catches it.
+        self.assertEqual(findings[0]["confidence"], "medium")
+        findings[0]["confidence"] = "high"
+        findings_path.write_text(json.dumps(findings) + "\n", encoding="utf-8")
+        ledger_path = products / "candidate-ledger.jsonl"
+        ledger = read_jsonl(ledger_path)
+        ledger[0]["candidate"]["confidence"] = "high"
+        ledger_path.write_text(
+            "".join(json.dumps(entry) + "\n" for entry in ledger),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "which earns at most medium",
+        ):
+            self.call(DRIVER.render_report)
+
     def test_renderer_rejects_an_excerpt_that_highlights_another_line(
         self,
     ) -> None:

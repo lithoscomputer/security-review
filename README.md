@@ -91,9 +91,9 @@ Everything the workflow runs lives under
 | `specs/report-spec.md` | The canonical bundle relationships and deterministic rendering rules. |
 | `fixtures/` | A deliberate command-injection fixture the smoke run expects to find. |
 
-`tests/test_fabro_workflow.py` holds the workflow's tests. The `workflows/`,
-`agents/`, `skills/`, `hooks/`, and `scripts/` directories at the repository
-root are reference material and are not part of the workflow.
+`tests/` holds the workflow's tests and two developer tools:
+`build_sample_report.py`, which regenerates `sample.html`, and
+`repin_support_files.py`, which updates the graph's support-file hashes.
 
 ## Testing
 
@@ -129,10 +129,12 @@ survive the panel, what the report may claim — is computed in
 **A finding earns its place.** Researchers propose; three verifiers each take a
 different refutation lens (reachability, impact, defenses) and try to disprove
 it. Two must confirm, and all three must return. A 2-of-3 keep is capped at
-`medium` confidence in the report, and only a unanimous panel earns `high` —
-`render_report.py` enforces that ceiling regardless of what the report says.
-Verifiers see only what the reporter claimed, never the reporter's own
-confidence, so the panel cannot be anchored by it.
+`medium` confidence in the report, and only a unanimous panel earns `high`.
+`security_review.py` computes that ceiling and `render_report.py` re-checks it
+against the recorded votes, so a bundle edited after the fact cannot publish a
+stronger claim than its panel earned. Verifiers see only what the reporter
+claimed, never the reporter's own confidence, so the panel cannot be anchored
+by it.
 
 **Finding identity is stable.** Researchers name a rule and a conceptual root
 control. Deterministic code derives the fingerprint, stable `findingId`, and

@@ -158,6 +158,7 @@ COVERAGE_FIELDS = (
 SEVERITIES = ("HIGH", "MEDIUM", "LOW")
 DIFFICULTIES = ("LOW", "MEDIUM", "HIGH")
 CONFIDENCES = ("low", "medium", "high")
+CONFIDENCE_ORDER = {name: rank for rank, name in enumerate(CONFIDENCES, 1)}
 DISPOSITIONS = (
     "reportable",
     "rejected",
@@ -1288,6 +1289,16 @@ def validate_relationships(
         if len(panel) != 3 or true_votes < 2:
             raise RenderError(
                 f"finding {finding['id']} lacks a complete keep-quorum panel"
+            )
+        # Only a unanimous panel earns high confidence. The engine computes
+        # this, and it is re-checked here against the votes themselves so a
+        # bundle edited after the fact cannot publish a stronger claim.
+        ceiling = "high" if true_votes == 3 else "medium"
+        if CONFIDENCE_ORDER[str(finding["confidence"])] > CONFIDENCE_ORDER[ceiling]:
+            raise RenderError(
+                f"finding {finding['id']} claims {finding['confidence']} "
+                f"confidence, but {true_votes} of {len(panel)} panel voters "
+                f"confirmed it, which earns at most {ceiling}"
             )
 
     completion = as_map(manifest["completion"]) or {}
