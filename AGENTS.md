@@ -10,7 +10,7 @@ Treat a workflow change as incomplete until every affected file is updated.
 
 - Update `README.md` and the workflow guide when behavior, phases, inputs,
   outputs, report fields, or artifact names change. The current workflow guide
-  is `workflow.html`. If a `workflow.md` guide is added, keep it in sync too.
+  is `index.html`. If a `workflow.md` guide is added, keep it in sync too.
 - Keep `sample.html` current when the report template, renderer, schema, or
   sample data changes. Do not edit `sample.html` by hand. Regenerate it with:
 

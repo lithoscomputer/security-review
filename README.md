@@ -1,172 +1,165 @@
-# security-review
+# Security Review
 
-A Fabro workflow that puts a team of agents to work as security researchers on
-a repository: partition it into components, threat-model each one, hunt for
-vulnerabilities across a component × category matrix, sweep the gaps, and then
-try hard to disprove every candidate. Only findings that survive an adversarial
-panel are reported.
+Security Review runs an adversarial, read-only security review of a Git
+repository. A team of agents maps the target, looks for vulnerabilities, and
+tries to disprove each candidate. Only findings that pass a three-voter
+verification panel reach the report.
 
-The review is read-only. It produces a completed scan bundle and deterministic
-reports, never a code change.
+This project is a workflow for [Fabro](https://fabro.sh/). Fabro is required to
+run it.
 
-## Running a review
+## Before you run
+
+The included run configuration uses a Daytona cloud sandbox. Before your first
+review:
+
+1. Install and configure Fabro with the
+   [Fabro Quick Start](https://docs.fabro.sh/getting-started/quick-start).
+2. Configure the
+   [Fabro Daytona integration](https://docs.fabro.sh/integrations/daytona).
+3. Configure GitHub access in Fabro. It is required for private repository
+   cloning and checkpoint storage.
+4. Run `fabro doctor` and fix any reported configuration errors.
+
+Copy the complete
+[`.fabro/workflows/security-review/`](.fabro/workflows/security-review/)
+directory into the repository that you want to review. Keep the same path. If
+you are using this repository as the target, the files are already in place.
+
+Commit and push the workflow files and the code that you want to review. The
+sandbox clones the current repository and branch. It cannot see uncommitted
+work.
+
+## Run your first review
+
+Run these commands from the root of the target repository:
 
 ```bash
+fabro preflight .fabro/workflows/security-review/workflow.toml
 fabro run .fabro/workflows/security-review/workflow.toml
 ```
 
-Inputs (`-I name=value`, all optional):
+The default run reviews the full pushed tree at `medium` effort.
 
-| Input | Values | Default | Meaning |
+For a smaller first run, choose one path and use `low` effort:
+
+```bash
+fabro run \
+  -I effort=low \
+  -I scope=src/auth \
+  .fabro/workflows/security-review/workflow.toml
+```
+
+## Choose what to review
+
+Pass inputs with `-I name=value`. You can repeat `-I`.
+
+| Input | Values | Default | Purpose |
 | --- | --- | --- | --- |
-| `mode` | `scan`, `changes`, `commit` | `scan` | Review the tree, a branch's diff, or one commit. |
-| `effort` | `low`, `medium`, `high`, `max` | `medium` | How much work the run does. See below. |
-| `scope` | comma-separated paths | Empty (whole target) | Limit the review to these directories or files. |
-| `base` | a Git revision | Empty (auto-detect) | `changes` mode: what to diff against. Auto-detection tries the upstream, then `origin/HEAD`, `origin/main`, `origin/master`, `main`, and `master`. |
-| `range` | `base..HEAD` | Empty (use `base`) | `changes` mode: an explicit two-sided range instead of `base`. |
-| `commit` | a Git revision | Empty | `commit` mode: the required commit to review against its parent. |
-| `focus` | `attack-surface`, `none` | Empty (automatic) | Spend the effort on production code an attacker can reach, treating tests, fixtures, generated code, and vendored trees as background. Automatic selection uses repository size. |
+| `mode` | `scan`, `changes`, `commit` | `scan` | Review the pushed tree, a set of changes, or one commit. |
+| `effort` | `low`, `medium`, `high`, `max` | `medium` | Set how much research the workflow performs. |
+| `scope` | comma-separated paths | Whole target | Limit the review to named files or directories. |
+| `base` | Git revision | Auto-detected | In `changes` mode, compare the current revision with this revision. |
+| `range` | `base..HEAD` | Empty | In `changes` mode, review an explicit two-sided revision range. |
+| `commit` | Git revision | Empty | In `commit` mode, review this commit against its parent. |
+| `focus` | `attack-surface`, `none` | Automatic | Focus on reachable production code, or turn that focus off. |
 
-Effort sets how much work happens, not how carefully any one agent thinks. The
-verification panel is three voters at every tier — that is what the report's
-confidence figures are calibrated against. Agent roles use fixed Sonnet/Opus
-routing; the effort tier changes the amount of work.
+For example:
 
-| Tier | Shape |
+```bash
+# Review changes since origin/main.
+fabro run \
+  -I mode=changes \
+  -I base=origin/main \
+  .fabro/workflows/security-review/workflow.toml
+
+# Review one commit.
+fabro run \
+  -I mode=commit \
+  -I commit=abc1234 \
+  .fabro/workflows/security-review/workflow.toml
+
+# Review two directories at high effort.
+fabro run \
+  -I effort=high \
+  -I scope=src/auth,src/session \
+  .fabro/workflows/security-review/workflow.toml
+```
+
+When `base` is empty, the workflow tries the branch upstream, then
+`origin/HEAD`, `origin/main`, `origin/master`, `main`, and `master`.
+
+## Choose an effort level
+
+Effort changes the amount of work. It does not change how carefully one agent
+reasons. Every level uses three verification voters.
+
+| Level | Work performed |
 | --- | --- |
-| `low` | One researcher over the whole target, then the panel. No inventory, threat model, or sweep. |
-| `medium` | Inventory, a threat model per component, one researcher per component × category, one sweep, the panel. A diff of at most 5 files and 300 changed lines, or a scope of at most 5 files, collapses to the single-researcher shape instead. |
-| `high` | As `medium` with a wider inventory (24 components), two researchers per cell, and two sweeps. |
-| `max` | As `high`, plus an adversarial round: marginal 2-of-3 keeps are repanelled and every survivor faces a red-team refuter. |
+| `low` | One researcher reviews the whole target, followed by the verification panel. |
+| `medium` | The default. The workflow builds an inventory and threat models, assigns research by component and category, performs a gap sweep, and runs the panel. Small diffs and scopes use the `low` shape. |
+| `high` | Expands the inventory, uses two researchers for each component and category, and performs two gap sweeps. |
+| `max` | Adds a second panel for marginal findings and a red-team refuter for every survivor. |
 
-A run writes `SECURITY-REVIEW-<timestamp>/` with five canonical files:
+Use `low` for a quick or narrow check. Use `medium` for a routine repository
+review. Use `high` or `max` when you want more independent coverage and accept
+the added time and model use.
+
+## Read the results
+
+A completed run writes a `SECURITY-REVIEW-<timestamp>/` directory. Start with
+`SECURITY-REVIEW-RESULTS.html`. It is a self-contained report that you can open
+locally. See [`sample.html`](sample.html) for an example built from fictional
+findings.
+
+| File | Purpose |
+| --- | --- |
+| `SECURITY-REVIEW-RESULTS.html` | Self-contained report for people. |
+| `SECURITY-REVIEW-RESULTS.md` | Plain-text report for terminals and code review. |
+| `SECURITY-REVIEW-RESULTS.jsonl` | One finding per line for scripts and CI. |
+| `SECURITY-REVIEW-REVISION-<tag>.json` | Records the reviewed revision and run settings. |
+
+The same directory includes the canonical evidence bundle:
 `scan-manifest.json`, `candidate-ledger.jsonl`, `findings.json`,
-`coverage.json`, and `panel-votes.jsonl`. Deterministic code derives
-`SECURITY-REVIEW-RESULTS.md`, `SECURITY-REVIEW-RESULTS.html`,
-`SECURITY-REVIEW-RESULTS.jsonl`, and `SECURITY-REVIEW-REVISION-<tag>.json` from
-those files. No model authors the final report. SARIF is not generated. The
-directory carries its own `.gitignore`, so nothing in it reaches a commit unless
-you delete that file.
+`coverage.json`, and `panel-votes.jsonl`. Deterministic code validates that
+bundle and derives every report. No model writes the final report. SARIF is not
+generated.
 
-`sample.html` at the repository root is an example of the HTML report, built
-from fictional findings. It is generated, not written by hand:
+The result directory contains its own `.gitignore`. Results do not enter a
+commit unless you remove that file.
 
-```bash
-python3 tests/build_sample_report.py --write
-```
+### Ratings and finding IDs
 
-Each finding carries a severity and a difficulty. Severity describes impact.
-Difficulty describes the access, knowledge, and effort exploitation takes, so
-`LOW` difficulty is the worse case. The excerpt shown with a finding is read
-from the reviewed tree by deterministic code rather than transcribed by an
-agent, so its line numbers are the tree's own.
+- Severity describes the impact if an attacker exploits a finding.
+- Difficulty describes the access, knowledge, and effort needed for
+  exploitation. `LOW` difficulty is the worse case.
+- A finding confirmed by two of three voters has at most `medium` confidence.
+  Only unanimous confirmation can produce `high` confidence.
+- `F1`, `F2`, and similar labels identify findings within one report.
+  `findingId` stays stable across runs when the same root issue moves.
+  `occurrenceId` identifies one appearance in one run.
 
-Each finding has three IDs. `F1`, `F2`, and so on are short display labels for
-one report. `findingId` is derived from the target, rule, and root-control
-identity, so it stays the same when a finding moves to another line or appears
-in a later run. `occurrenceId` combines that stable identity with the Fabro run
-ID, so it names one occurrence in one scan. The JSONL also carries the full
-primary fingerprint used for deterministic deduplication.
+## Limits and safety
 
-Reviews are nondeterministic: running them regularly builds coverage over time.
-This complements SAST, dependency scanning, and code review; it does not
-replace them.
+The workflow does not edit the reviewed files or apply fixes. Reports can
+include remediation recommendations. Fabro can create its normal run and
+metadata branches to store checkpoints.
 
-## Layout
+Repository content is untrusted evidence. The agents are told to read it, not
+to follow instructions found in it. They are also told not to build, test, or
+execute the target. That instruction is not an enforcement boundary, so the
+review runs in a disposable cloud sandbox.
 
-Everything the workflow runs lives under
-`.fabro/workflows/security-review/`:
+Reviews are nondeterministic. A later run can find something that an earlier
+run missed. An empty report means that the run found no panel-verified finding;
+it does not prove that the target has no vulnerabilities. Use this workflow
+with SAST, dependency scanning, and code review.
 
-| Path | Contents |
-| --- | --- |
-| `security-review.fabro` | The graph: the phases, their gates, and the deterministic steps between them. |
-| `workflow.toml` | Run configuration: inputs, environment, artifacts. |
-| `verify.toml` | A `low`-effort run against the fixture, for smoke-testing the workflow. |
-| `scripts/security_review.py` | The deterministic engine. Every state transition, cap, deduplication, and vote tally lives here, outside the agents. |
-| `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown report, HTML report, findings JSONL, and revision stamp. |
-| `templates/report.html` | The HTML report: one self-contained page whose script renders the payload the renderer embeds. |
-| `scripts/git_readonly.py` | A read-only Git entry point with external diff and textconv drivers disabled. |
-| `prompts/` | One prompt per agent role: inventory, threat model, research, sweep, verify, and redteam. |
-| `schemas/` | The model response schemas and the versioned canonical bundle contracts. |
-| `specs/report-spec.md` | The canonical bundle relationships and deterministic rendering rules. |
-| `fixtures/` | A deliberate command-injection fixture the smoke run expects to find. |
+## More documentation
 
-`tests/` holds the workflow's tests and two developer tools:
-`build_sample_report.py`, which regenerates `sample.html`, and
-`repin_support_files.py`, which updates the graph's support-file hashes.
-
-## Testing
-
-```bash
-python3 tests/test_fabro_workflow.py
-```
-
-The tests drive the deterministic engine directly with fabricated agent output,
-so a full run is never needed to check the arithmetic. They also pin static
-contracts a run would only reveal expensively: the graph's routing and its
-support-file hashes, the concurrency caps, and what each prompt must and must
-not say.
-
-For an end-to-end check, `verify.toml` reviews the command-injection fixture at
-`low` effort and should report exactly one verified finding:
-
-```bash
-fabro run .fabro/workflows/security-review/verify.toml
-```
-
-Push first. The sandbox clones the repository, so a run reviews the pushed
-branch — not your working tree. Uncommitted prompt or engine changes are
-invisible to it, and an unpushed change to a pinned support file fails
-`prepare` on its hash.
-
-## How it holds together
-
-**Agents judge; code decides.** Agents read code and return structured
-findings or verdicts. Every consequence — which candidates merge, which
-survive the panel, what the report may claim — is computed in
-`security_review.py`, where it can be tested and cannot be talked out of.
-
-**A finding earns its place.** Researchers propose; three verifiers each take a
-different refutation lens (reachability, impact, defenses) and try to disprove
-it. Two must confirm, and all three must return. A 2-of-3 keep is capped at
-`medium` confidence in the report, and only a unanimous panel earns `high`.
-`security_review.py` computes that ceiling and `render_report.py` re-checks it
-against the recorded votes, so a bundle edited after the fact cannot publish a
-stronger claim than its panel earned. Verifiers see only what the reporter
-claimed, never the reporter's own confidence, so the panel cannot be anchored
-by it.
-
-**Finding identity is stable.** Researchers name a rule and a conceptual root
-control. Deterministic code derives the fingerprint, stable `findingId`, and
-per-run `occurrenceId`. Deduplication uses that fingerprint instead of a
-file-and-line tuple. If one identity points at different root controls, the
-workflow stops rather than merging an ambiguous result.
-
-**The repository is data, never instruction.** Everything the review reads —
-source, comments, agent instruction files, commit messages, and fixtures — is
-evidence under examination. Text that addresses an agent is a finding to report
-(`prompt-injection`), not a direction to follow.
-
-**Each phase finishes before the next begins**, with a concurrency cap per
-phase. A phase's agent outputs are merged by a deterministic step that
-normalizes them and records what failed to return, so a missing agent degrades
-the run's coverage instead of corrupting its arithmetic.
-
-**Support files are pinned.** Before anything runs, `prepare` verifies the
-SHA-256 of the engine, the Git wrapper, the renderer, the report spec, and the
-report template against hashes recorded in the graph. Editing one of those files
-means updating its pin in `security-review.fabro`; a test enforces that they
-match. `python3 tests/repin_support_files.py --write` does the update.
-
-**Nothing tampered gets published.** `prepare` records a digest of the whole
-tree, and the publication steps re-verify it. A source tree that changed
-mid-review is refused rather than reported on.
-
-**The sandbox is the boundary.** Agents are instructed to read rather than
-build, test, or execute, and nothing enforces that instruction, so a review
-runs in a disposable cloud sandbox with the repository cloned into it. The
-report says as much rather than claiming that nothing ran.
-
-**Sub-agents inherit no instructions.** An agent that dispatches a read-only
-explorer must state the explorer's rules inside the dispatched question
-itself.
+- [`index.html`](index.html) explains each workflow phase and shows the
+  agent prompts.
+- [`sample.html`](sample.html) shows the generated HTML report with fictional
+  data.
+- [`DEVELOPING.md`](DEVELOPING.md) covers repository structure, design rules,
+  tests, and release checks.
