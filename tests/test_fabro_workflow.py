@@ -1660,9 +1660,12 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         # The chain is keyed by the model a node requests, which the graph's
         # stylesheet decides. A key no stylesheet asks for never fires, so the
         # key and the routing have to be read together.
+        # Ordered: the fastest endpoint first, then the model's own provider,
+        # then another host for it, then a different model as the last resort.
         chain = (
             '[run.model.fallbacks]\n'
-            '"kimi-k3" = ["openrouter:kimi-k3", "' + "clau" + 'de-opus-5"]\n'
+            '"kimi-k3" = ["kimi:kimi-k3", "openrouter:kimi-k3", '
+            '"' + "clau" + 'de-opus-5"]\n'
         )
         for config_name in ("workflow.toml", "verify.toml"):
             config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
