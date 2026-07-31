@@ -125,8 +125,9 @@ the added time and model use.
 
 A completed run writes a `SECURITY-REVIEW-<timestamp>/` directory. Start with
 `SECURITY-REVIEW-RESULTS.html`. It is a self-contained report that you can open
-locally. See [`sample.html`](sample.html) for an example built from fictional
-findings.
+locally. You can search its findings and filter them by component, severity,
+and difficulty. See [`sample.html`](sample.html) for an example built from
+fictional findings.
 
 | File | Purpose |
 | --- | --- |

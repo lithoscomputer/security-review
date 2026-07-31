@@ -465,7 +465,7 @@ pre {
 
 .finding-filters {
 	display: grid;
-	grid-template-columns: minmax(15rem, 1.6fr) repeat(2, minmax(9rem, 0.7fr)) auto;
+	grid-template-columns: minmax(15rem, 1.6fr) repeat(3, minmax(9rem, 0.7fr)) auto;
 	gap: 0.85rem;
 	align-items: end;
 	padding-top: 2.75rem;
@@ -1419,6 +1419,12 @@ td {
 							/>
 						</label>
 						<label>
+							<span>Component</span>
+							<select id="component-filter" name="component">
+								<option value="">All components</option>
+							</select>
+						</label>
+						<label>
 							<span>Severity</span>
 							<select id="severity-filter" name="severity">
 								<option value="">All severities</option>
@@ -1866,6 +1872,17 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 	}
 
 	function renderFilterOptions() {
+		const components = [
+			...new Set(findings.map((finding) => finding.target).filter(Boolean)),
+		].sort((left, right) => left.localeCompare(right));
+		for (const component of components) {
+			byId("component-filter").append(
+				element("option", {
+					text: component,
+					attributes: { value: component },
+				}),
+			);
+		}
 		for (const severity of data.severityOrder) {
 			byId("severity-filter").append(
 				element("option", {
@@ -1898,6 +1915,7 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 			]
 				.join(" ")
 				.toLowerCase();
+			row.dataset.component = finding.target || "";
 			row.dataset.severity = finding.severity;
 			row.dataset.difficulty = finding.difficulty;
 
@@ -2165,6 +2183,7 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 
 	function setupFilters() {
 		const search = byId("finding-search");
+		const component = byId("component-filter");
 		const severity = byId("severity-filter");
 		const difficulty = byId("difficulty-filter");
 		const reset = byId("clear-filters");
@@ -2178,6 +2197,7 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 			for (const row of rows) {
 				const matches =
 					(!query || row.dataset.search.includes(query)) &&
+					(!component.value || row.dataset.component === component.value) &&
 					(!severity.value || row.dataset.severity === severity.value) &&
 					(!difficulty.value || row.dataset.difficulty === difficulty.value);
 				row.dataset.hidden = matches ? "false" : "true";
@@ -2191,10 +2211,12 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		};
 
 		search.addEventListener("input", apply);
+		component.addEventListener("change", apply);
 		severity.addEventListener("change", apply);
 		difficulty.addEventListener("change", apply);
 		reset.addEventListener("click", () => {
 			search.value = "";
+			component.value = "";
 			severity.value = "";
 			difficulty.value = "";
 			apply();

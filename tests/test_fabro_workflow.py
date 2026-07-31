@@ -1421,6 +1421,26 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         ):
             self.assertEqual(renderer.repository_name(scan_root), expected)
 
+    def test_html_filter_uses_the_derived_finding_component(self) -> None:
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        search_position = template.index('id="finding-search"')
+        component_position = template.index('id="component-filter"')
+        severity_position = template.index('id="severity-filter"')
+        self.assertLess(search_position, component_position)
+        self.assertLess(component_position, severity_position)
+        self.assertIn('<option value="">All components</option>', template)
+        self.assertIn(
+            "new Set(findings.map((finding) => finding.target).filter(Boolean))",
+            template,
+        )
+        self.assertIn('row.dataset.component = finding.target || "";', template)
+        self.assertIn(
+            "(!component.value || row.dataset.component === component.value)",
+            template,
+        )
+        self.assertIn('component.addEventListener("change", apply);', template)
+        self.assertIn('component.value = "";', template)
+
     def test_markdown_lists_the_exploit_steps_and_recommendations(self) -> None:
         finding = self.finding()
         finding["exploitScenarios"] = ["First step.", "Second step."]
