@@ -384,12 +384,20 @@ def as_map(value: object) -> Optional[JsonMap]:
     return value if isinstance(value, dict) else None
 
 
-def exact_keys(value: JsonMap, expected: Iterable[str], label: str) -> None:
+def exact_keys(
+    value: JsonMap,
+    expected: Iterable[str],
+    label: str,
+    optional: Iterable[str] = (),
+) -> None:
     expected_set = set(expected)
+    allowed_set = expected_set | set(optional)
     actual_set = set(value)
-    if actual_set != expected_set:
+    if not expected_set.issubset(actual_set) or not actual_set.issubset(
+        allowed_set
+    ):
         missing = sorted(expected_set - actual_set)
-        extra = sorted(actual_set - expected_set)
+        extra = sorted(actual_set - allowed_set)
         detail = []
         if missing:
             detail.append("missing " + ", ".join(missing))
@@ -511,6 +519,7 @@ def validate_manifest(value: object) -> JsonMap:
         request,
         ("mode", "scope", "range", "base", "commit", "effort", "focus"),
         "manifest request",
+        optional=("componentGuidance", "researchGuidance"),
     )
     exact_keys(workflow, ("name", "stateVersion"), "manifest workflow")
     exact_keys(
@@ -537,12 +546,24 @@ def validate_manifest(value: object) -> JsonMap:
     if request.get("effort") not in ("low", "medium", "high", "max"):
         raise RenderError("scan-manifest.json request.effort is invalid")
     string_list(request.get("scope"), "manifest request.scope")
-    for optional_field in ("range", "base", "commit", "focus"):
+    for optional_field in (
+        "range",
+        "base",
+        "commit",
+        "focus",
+    ):
         optional_value = request.get(optional_field)
         if optional_value is not None:
             safe_text(
                 optional_value,
                 f"manifest request.{optional_field}",
+                False,
+            )
+    for guidance_field in ("componentGuidance", "researchGuidance"):
+        if guidance_field in request:
+            safe_text(
+                request[guidance_field],
+                f"manifest request.{guidance_field}",
                 False,
             )
     if completion.get("status") not in ("complete", "partial"):

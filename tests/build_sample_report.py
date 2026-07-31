@@ -224,7 +224,7 @@ def build_manifest(
         },
         "startedAt": SOURCE.STARTED_AT,
         "completedAt": SOURCE.COMPLETED_AT,
-        "workflow": {"name": "security-review", "stateVersion": 6},
+        "workflow": {"name": "security-review", "stateVersion": 7},
         "request": dict(SOURCE.REQUEST),
         "revision": dict(SOURCE.REVISION),
         "completion": {
