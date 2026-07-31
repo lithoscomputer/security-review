@@ -40,11 +40,12 @@ Every finding must:
   control, such as `report-command-dispatch`;
 - set `identity.instance` only when two distinct vulnerable controls share the
   same rule and anchor; use a stable lowercase slug that distinguishes them;
-- use `HIGH`, `MEDIUM`, or `LOW` for severity and confidence;
+- use `HIGH`, `MEDIUM`, or `LOW` for severity, difficulty, and confidence;
 - put the concrete impact in `impact`;
-- put the exploit scenario in `exploitScenario`;
+- list the exploit steps in order in `exploitScenarios`, one step per item;
 - put every required condition for exploitation in `preconditions`;
-- put the root-cause fix in `recommendation`.
+- put the root-cause fix first in `recommendations`, then any hardening step
+  and the regression test that would catch the issue again.
 
 Stable identity describes the vulnerable control, not its current location.
 Do not put a file name, line number, scan ID, display ID such as `F1`, or other
@@ -74,6 +75,14 @@ Severity measures impact, not certainty. `HIGH` means system control or broad
 cross-user data exposure. `MEDIUM` means real but bounded harm, such as a
 non-default precondition, authenticated access, or victim interaction. `LOW`
 means a real defense-in-depth issue. Put uncertainty in confidence.
+
+Difficulty measures the access, knowledge, and effort exploitation takes, not
+impact. `LOW` means a common technique, public tooling, or a short script, with
+little special access or knowledge. `MEDIUM` means a custom exploit, product
+knowledge, favorable timing, or access not open to every user. `HIGH` means
+privileged access, detailed internal knowledge, a long exploit chain, or narrow
+operating conditions. A severe issue can be easy to exploit and a minor one
+hard; rate the two independently.
 
 Read and search with whatever read-only commands suit the question, history
 included. Never build, test, execute, install, fetch, use the network, or

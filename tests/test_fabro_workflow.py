@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ DRIVER_PATH = WORKFLOW_ROOT / "scripts/security_review.py"
 GIT_WRAPPER_PATH = WORKFLOW_ROOT / "scripts/git_readonly.py"
 RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
 REPORT_SPEC_PATH = WORKFLOW_ROOT / "specs/report-spec.md"
+TEMPLATE_PATH = WORKFLOW_ROOT / "templates/report.html"
 GRAPH_PATH = WORKFLOW_ROOT / "security-review.fabro"
 
 
@@ -48,6 +50,17 @@ def run(*args: str, cwd: Path) -> subprocess.CompletedProcess:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+
+def html_payload(html: str) -> dict:
+    """The report data an HTML page embeds for its own script."""
+    match = re.search(
+        r"window\.securityReportData = Object\.freeze\((\{.*?^\})\);",
+        html,
+        re.S | re.M,
+    )
+    assert match, "the HTML report embeds no report data"
+    return json.loads(match.group(1))
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -79,6 +92,10 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             RENDERER_PATH,
             renderer,
         )
+        # The renderer reads its HTML template relative to its own location.
+        template = renderer.parent.parent / "templates/report.html"
+        template.parent.mkdir(parents=True)
+        shutil.copy(TEMPLATE_PATH, template)
         self.previous_cwd = Path.cwd()
         os.chdir(self.root)
 
@@ -159,6 +176,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "identity": {"anchor": "run-command-dispatch"},
             "category": "command-injection",
             "severity": "HIGH",
+            "difficulty": "LOW",
             "confidence": "HIGH",
             "title": "Untrusted command reaches the shell",
             "rationale": "The caller supplies value and os.system executes it.",
@@ -166,9 +184,9 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             "snippet": "os.system(value)",
             "symbol": "run",
             "impact": "Arbitrary command execution.",
-            "exploitScenario": "An attacker supplies a shell command.",
+            "exploitScenarios": ["An attacker supplies a shell command."],
             "preconditions": [],
-            "recommendation": "Replace the shell call with a fixed argv.",
+            "recommendations": ["Replace the shell call with a fixed argv."],
             "cweId": "CWE-78",
         }
 
@@ -1038,6 +1056,166 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         with self.assertRaisesRegex(DRIVER.WorkflowDataError, "source tree changed"):
             self.call(DRIVER.final_tally)
 
+    def verified_bundle(self, findings: list[dict]) -> Path:
+        state = self.dedup_findings(findings)
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "The source reaches the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        return Path(DRIVER.load_state()["products_dir"])
+
+    def test_difficulty_is_required_and_keeps_the_easier_report(self) -> None:
+        missing = self.finding()
+        del missing["difficulty"]
+        self.assertIsNone(DRIVER.normalize_finding(missing))
+        unknown = self.finding()
+        unknown["difficulty"] = "TRIVIAL"
+        self.assertIsNone(DRIVER.normalize_finding(unknown))
+
+        hard = self.finding()
+        hard["difficulty"] = "HIGH"
+        easy = self.finding()
+        easy["difficulty"] = "MEDIUM"
+        state = self.dedup_findings([hard, easy])
+        candidates = state["deduplicated_candidates"]
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["difficulty"], "MEDIUM")
+
+    def test_excerpt_is_read_from_the_tree_not_from_the_agent(self) -> None:
+        products = self.verified_bundle([self.finding()])
+        finding = json.loads(
+            (products / "findings.json").read_text(encoding="utf-8")
+        )[0]
+        code = finding["code"]
+        self.assertEqual(code["language"], "Python")
+        self.assertEqual(code["label"], "src/app.py:1-5")
+        self.assertEqual(
+            [line["number"] for line in code["lines"]],
+            [1, 2, 3, 4, 5],
+        )
+        highlighted = [line for line in code["lines"] if line.get("highlight")]
+        self.assertEqual(len(highlighted), 1)
+        self.assertEqual(highlighted[0]["number"], finding["line"])
+        self.assertEqual(highlighted[0]["text"], "    os.system(value)")
+        # The excerpt is presentation only: the judged candidate has none.
+        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        self.assertNotIn("code", ledger[0]["candidate"])
+
+    def test_an_unconfirmed_quoted_line_yields_no_excerpt(self) -> None:
+        moved = self.finding()
+        moved["line"] = 1
+        products = self.verified_bundle([moved])
+        finding = json.loads(
+            (products / "findings.json").read_text(encoding="utf-8")
+        )[0]
+        self.assertEqual(finding["code"]["lines"], [])
+        self.assertEqual(finding["code"]["label"], "src/app.py:1")
+
+    def test_excerpt_text_is_reduced_to_displayable_characters(self) -> None:
+        (self.root / "src/app.py").write_text(
+            "import os\n\n\ndef run(value):\n"
+            "    os.system(value)\t# ‮trailing\n",
+            encoding="utf-8",
+        )
+        run("git", "add", "src/app.py", cwd=self.root)
+        run("git", "commit", "-qm", "control characters", cwd=self.root)
+        products = self.verified_bundle([self.finding()])
+        finding = json.loads(
+            (products / "findings.json").read_text(encoding="utf-8")
+        )[0]
+        text = [
+            line["text"]
+            for line in finding["code"]["lines"]
+            if line.get("highlight")
+        ][0]
+        self.assertNotIn("‮", text)
+        self.assertNotIn("", text)
+        self.assertNotIn("\t", text)
+        self.assertIn("os.system(value)", text)
+        # The renderer would refuse either character, so it must be gone.
+        self.call(DRIVER.render_report)
+
+    def test_html_report_carries_a_mapped_and_escaped_payload(self) -> None:
+        finding = self.finding()
+        finding["title"] = "Shell bug <script>alert(1)</script>"
+        finding["recommendations"] = [
+            "Use an argument array.",
+            "Add a regression test.",
+        ]
+        finding["exploitScenarios"] = [
+            "An attacker submits a shell command.",
+            "The worker runs it.",
+        ]
+        products = self.verified_bundle([finding])
+        self.call(DRIVER.render_report)
+        html = (products / "SECURITY-REVIEW-RESULTS.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("\\u003cscript\\u003ealert(1)", html)
+        self.assertNotIn("__REPORT_DATA__", html)
+
+        payload = html_payload(html)
+        self.assertEqual(payload["severityOrder"], ["High", "Medium", "Low"])
+        self.assertEqual(payload["difficultyOrder"], ["Low", "Medium", "High"])
+        self.assertEqual(payload["scan"]["modeLabel"], "Whole repository")
+        entry = payload["findings"][0]
+        self.assertEqual(entry["id"], "F-001")
+        self.assertEqual(entry["severity"], "High")
+        self.assertEqual(entry["difficulty"], "Low")
+        self.assertEqual(entry["category"], "Data Validation")
+        self.assertEqual(entry["target"], "repository")
+        self.assertEqual(entry["verification"], "3/3 review lenses confirmed.")
+        self.assertEqual(len(entry["exploitScenarios"]), 2)
+        self.assertEqual(len(entry["recommendations"]), 2)
+        # Every non-ASCII codepoint is escaped, so no separator can end a
+        # JavaScript statement inside the data block.
+        block = html.split("window.securityReportData", 1)[1].split(
+            "</script>",
+            1,
+        )[0]
+        self.assertFalse([character for character in block if ord(character) > 127])
+
+    def test_markdown_lists_the_exploit_steps_and_recommendations(self) -> None:
+        finding = self.finding()
+        finding["exploitScenarios"] = ["First step.", "Second step."]
+        finding["recommendations"] = ["Root fix.", "Hardening.", "Regression."]
+        products = self.verified_bundle([finding])
+        self.call(DRIVER.render_report)
+        markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("(HIGH, difficulty LOW, confidence high)", markdown)
+        self.assertIn("**Exploit scenario.**\n\n1. First step.\n2. Second step.", markdown)
+        self.assertIn(
+            "**Fix.**\n\n1. Root fix.\n2. Hardening.\n3. Regression.",
+            markdown,
+        )
+
+    def test_renderer_rejects_an_excerpt_that_highlights_another_line(
+        self,
+    ) -> None:
+        products = self.verified_bundle([self.finding()])
+        findings_path = products / "findings.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        for line in findings[0]["code"]["lines"]:
+            line.pop("highlight", None)
+        findings[0]["code"]["lines"][0]["highlight"] = True
+        findings_path.write_text(json.dumps(findings) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "highlights a line other than the finding line",
+        ):
+            self.call(DRIVER.render_report)
+
     def test_source_change_after_final_tally_blocks_rendering(self) -> None:
         self.prepare(effort="low")
         self.call(DRIVER.plan_matrix)
@@ -1057,6 +1235,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             GIT_WRAPPER_PATH,
             RENDERER_PATH,
             REPORT_SPEC_PATH,
+            TEMPLATE_PATH,
         ):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertEqual(graph.count(digest), 1, path.name)
@@ -1103,11 +1282,20 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "snippet",
                 "symbol",
                 "impact",
-                "exploitScenario",
+                "exploitScenarios",
                 "preconditions",
-                "recommendation",
+                "recommendations",
+                "difficulty",
             }.issubset(required)
         )
+        properties = schema["properties"]["findings"]["items"]["properties"]
+        self.assertEqual(
+            properties["difficulty"]["enum"],
+            ["LOW", "MEDIUM", "HIGH"],
+        )
+        for field in ("exploitScenarios", "recommendations"):
+            self.assertEqual(properties[field]["type"], "array")
+            self.assertEqual(properties[field]["minItems"], 1)
         for name in ("research.md", "sweep.md"):
             prompt = (
                 WORKFLOW_ROOT / "prompts" / name
@@ -1117,13 +1305,17 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "snippet",
                 "symbol",
                 "impact",
-                "exploitScenario",
+                "exploitScenarios",
                 "preconditions",
-                "recommendation",
+                "recommendations",
                 "ruleId",
             ):
                 self.assertIn(f"`{field}`", prompt)
             self.assertIn("`identity.anchor`", prompt)
+            # Difficulty must be defined where it is asked for, or researchers
+            # rate exploitability on their own private scale.
+            self.assertIn("difficulty", prompt)
+            self.assertIn("access, knowledge, and effort", prompt)
 
     def test_stable_identity_contract_is_wired_through_the_graph_and_report(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1353,6 +1545,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "SECURITY-REVIEW-*/coverage.json",
                 "SECURITY-REVIEW-*/panel-votes.jsonl",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.md",
+                "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.html",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.jsonl",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-REVISION-*.json",
             ):
@@ -1384,6 +1577,70 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 path.read_text(encoding="utf-8").lower(),
                 path,
             )
+
+    def test_template_builds_its_page_from_data_not_from_markup(self) -> None:
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(template.count("__REPORT_DATA__"), 1)
+        # Model-authored text must never become markup.
+        self.assertNotIn("innerHTML", template)
+        self.assertNotIn("insertAdjacentHTML", template)
+        self.assertNotIn("document.write", template)
+        # The page is self-contained: a report is read from a file, offline.
+        self.assertNotIn("src=\"http", template)
+        self.assertNotIn("href=\"http", template)
+        self.assertNotIn("fetch(", template)
+        for element_id in (
+            "report-title",
+            "report-target",
+            "report-summary",
+            "report-date",
+            "scan-revision",
+            "scan-mode",
+            "scan-effort",
+            "footer-title",
+            "footer-date",
+        ):
+            self.assertIn(f'id="{element_id}"', template)
+            self.assertIn(f'"{element_id}"', template)
+
+    def test_report_spec_records_the_html_view_and_its_rules(self) -> None:
+        spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
+        self.assertIn("SECURITY-REVIEW-RESULTS.html", spec)
+        self.assertIn("templates/report.html", spec)
+        for rule in (
+            "`LOW` difficulty is the worse case",
+            "part of `ruleId`",
+            "no agent transcribes them",
+        ):
+            self.assertIn(rule, spec)
+
+    def test_sample_report_is_rendered_from_the_template(self) -> None:
+        builder = load_module(
+            "sample_report_builder",
+            Path(__file__).resolve().parent / "build_sample_report.py",
+        )
+        expected = builder.render_sample()
+        actual = (REPOSITORY_ROOT / "sample.html").read_text(encoding="utf-8")
+        self.assertEqual(
+            actual,
+            expected,
+            "sample.html is stale; run tests/build_sample_report.py --write",
+        )
+        payload = html_payload(actual)
+        # The example must exercise every rating the report can show.
+        self.assertEqual(
+            {finding["severity"] for finding in payload["findings"]},
+            {"High", "Medium", "Low"},
+        )
+        self.assertEqual(
+            {finding["difficulty"] for finding in payload["findings"]},
+            {"Low", "Medium", "High"},
+        )
+        self.assertTrue(
+            all(finding["code"]["lines"] for finding in payload["findings"])
+        )
+        self.assertNotIn("project", payload["report"])
+        self.assertNotIn("classification", payload["report"])
 
     def test_canonical_bundle_schemas_are_versioned_contracts(self) -> None:
         expected = {

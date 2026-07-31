@@ -10,8 +10,8 @@ The canonical inputs are:
 - panel-votes.jsonl
 
 This program validates their relationships, then writes the Markdown report,
-the findings JSONL, and the revision stamp. It never asks a model to interpret
-or rewrite canonical scan decisions.
+the HTML report, the findings JSONL, and the revision stamp. It never asks a
+model to interpret or rewrite canonical scan decisions.
 
 Usage: render_report.py <bundle-dir>
 Python 3.9-compatible. Standard library only.
@@ -45,8 +45,7 @@ CANONICAL_FILES = (
     "coverage.json",
     "panel-votes.jsonl",
 )
-REPORT_FIELDS = (
-    "id",
+CANDIDATE_FIELDS = (
     "findingId",
     "occurrenceId",
     "fingerprints",
@@ -58,17 +57,20 @@ REPORT_FIELDS = (
     "line",
     "description",
     "evidence",
-    "exploit_scenario",
+    "exploit_scenarios",
     "preconditions",
     "category",
     "severity",
+    "difficulty",
     "confidence",
-    "recommendation",
+    "recommendations",
     "cwe_id",
     "snippet",
     "symbol",
 )
-CANDIDATE_FIELDS = REPORT_FIELDS[1:]
+# `code` is a presentation excerpt read from the reviewed tree at bundle time.
+# It belongs to a reportable finding only; the ledger keeps the judged claim.
+REPORT_FIELDS = ("id", *CANDIDATE_FIELDS, "code")
 MANIFEST_FIELDS = (
     "schemaVersion",
     "kind",
@@ -154,6 +156,7 @@ COVERAGE_FIELDS = (
 )
 
 SEVERITIES = ("HIGH", "MEDIUM", "LOW")
+DIFFICULTIES = ("LOW", "MEDIUM", "HIGH")
 CONFIDENCES = ("low", "medium", "high")
 DISPOSITIONS = (
     "reportable",
@@ -166,6 +169,181 @@ VOTE_STATUSES = ("completed", "missing")
 VERDICTS = ("TRUE_POSITIVE", "FALSE_POSITIVE")
 
 REVISION_PREFIX = "SECURITY-REVIEW-REVISION-"
+TEMPLATE_RELATIVE_PATH = ("..", "templates", "report.html")
+REPORT_DATA_MARKER = "__REPORT_DATA__"
+HTML_REPORT_NAME = "SECURITY-REVIEW-RESULTS.html"
+HTML_REPORT_TITLE = "Security review results"
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+MODE_LABELS = {
+    "scan": "Whole repository",
+    "changes": "Branch changes",
+    "commit": "One commit",
+}
+# Canonical category slugs name the vulnerability class a researcher hunted.
+# They are part of `ruleId`, and therefore of a finding's stable identity, so
+# the report maps them to display names here instead of renaming them upstream.
+CATEGORY_DISPLAY = {
+    "auth-bypass": "Authentication",
+    "buffer-overflow": "Undefined Behavior",
+    "cleartext-transmission": "Cryptography",
+    "code-injection": "Data Validation",
+    "command-injection": "Data Validation",
+    "credential-exposure": "Data Exposure",
+    "csrf": "Access Controls",
+    "dos": "Denial of Service",
+    "double-free": "Undefined Behavior",
+    "error-message-disclosure": "Error Reporting",
+    "format-string": "Data Validation",
+    "hardcoded-secret": "Data Exposure",
+    "header-injection": "Data Validation",
+    "idor": "Access Controls",
+    "improper-authorization": "Access Controls",
+    "improper-input-validation": "Data Validation",
+    "info-disclosure": "Data Exposure",
+    "insecure-deserialization": "Data Validation",
+    "insecure-file-permissions": "Data Exposure",
+    "insufficient-logging": "Auditing and Logging",
+    "integer-overflow": "Undefined Behavior",
+    "key-nonce-reuse": "Cryptography",
+    "log-injection": "Data Validation",
+    "missing-authentication": "Authentication",
+    "null-dereference": "Undefined Behavior",
+    "open-redirect": "Data Validation",
+    "out-of-bounds-read": "Undefined Behavior",
+    "out-of-bounds-write": "Undefined Behavior",
+    "path-traversal": "Data Validation",
+    "privilege-escalation": "Access Controls",
+    "prompt-injection": "Data Validation",
+    "prototype-pollution": "Data Validation",
+    "race-condition": "Timing",
+    "redos": "Denial of Service",
+    "session-fixation": "Session Management",
+    "session-management": "Session Management",
+    "sql-injection": "Data Validation",
+    "ssrf": "Data Validation",
+    "template-injection": "Data Validation",
+    "timing-side-channel": "Timing",
+    "type-confusion": "Undefined Behavior",
+    "unpinned-dependency": "Configuration",
+    "unsafe-configuration": "Configuration",
+    "unsafe-ffi": "Undefined Behavior",
+    "uninitialized-memory": "Undefined Behavior",
+    "use-after-free": "Undefined Behavior",
+    "user-enumeration": "Data Exposure",
+    "weak-crypto": "Cryptography",
+    "weak-randomness": "Cryptography",
+    "xss": "Data Validation",
+    "xxe": "Data Validation",
+}
+CATEGORY_DEFINITIONS = (
+    (
+        "Access Controls",
+        "Authorization, ownership, and privilege boundaries that limit what an "
+        "identity can read, change, or execute.",
+    ),
+    (
+        "Auditing and Logging",
+        "Security event records, traceability, log integrity, monitoring "
+        "signals, and support for incident response.",
+    ),
+    (
+        "Authentication",
+        "Identity verification, credentials, account recovery, multi-factor "
+        "controls, and login protections.",
+    ),
+    (
+        "Configuration",
+        "Security-sensitive defaults, deployment settings, dependency "
+        "controls, and operational hardening.",
+    ),
+    (
+        "Cryptography",
+        "Encryption, hashing, random values, key handling, certificate "
+        "validation, and protected transport.",
+    ),
+    (
+        "Data Exposure",
+        "Unintended disclosure through storage, logs, interfaces, metadata, "
+        "temporary files, or error responses.",
+    ),
+    (
+        "Data Validation",
+        "Checks and transformations applied before untrusted data reaches "
+        "commands, queries, files, URLs, or templates.",
+    ),
+    (
+        "Denial of Service",
+        "Conditions that can exhaust resources, block useful work, or reduce "
+        "service availability.",
+    ),
+    (
+        "Error Reporting",
+        "Failure handling and messages that can expose internal details or "
+        "prevent safe diagnosis.",
+    ),
+    (
+        "Session Management",
+        "Session creation, storage, rotation, expiration, revocation, and "
+        "binding to an authenticated identity.",
+    ),
+    (
+        "Timing",
+        "Race conditions, time-of-check/time-of-use gaps, and observable "
+        "timing differences.",
+    ),
+    (
+        "Undefined Behavior",
+        "Memory, language, or runtime behavior that can produce unsafe "
+        "results outside intended program rules.",
+    ),
+)
+SEVERITY_DEFINITIONS = (
+    (
+        "High",
+        "Can cause broad compromise, bypass a core security control, or "
+        "create serious harm across users or tenants.",
+    ),
+    (
+        "Medium",
+        "Can cause material harm, but practical limits reduce the affected "
+        "scope, access, or attacker options.",
+    ),
+    (
+        "Low",
+        "Has limited direct impact or weakens defense in depth without "
+        "creating a complete attack path by itself.",
+    ),
+)
+DIFFICULTY_DEFINITIONS = (
+    (
+        "Low",
+        "Uses a common technique, public tooling, or a short script. It "
+        "requires little specialized access or knowledge.",
+    ),
+    (
+        "Medium",
+        "Requires a custom exploit, product knowledge, favorable timing, or "
+        "access that is not available to every user.",
+    ),
+    (
+        "High",
+        "Requires privileged access, detailed internal knowledge, a complex "
+        "exploit chain, or narrow operating conditions.",
+    ),
+)
 HEX_RE = re.compile(r"^[0-9a-fA-F]{7,64}\Z")
 DISPLAY_ID_RE = re.compile(r"^F[1-9][0-9]{0,8}\Z")
 STABLE_FINDING_ID_RE = re.compile(r"^csf_[0-9a-f]{24}\Z")
@@ -481,6 +659,63 @@ def string_list(value: object, field: str) -> List[str]:
     ]
 
 
+def non_empty_string_list(value: object, field: str) -> List[str]:
+    items = string_list(value, field)
+    if not items or any(not item.strip() for item in items):
+        raise RenderError(f"{field} must list at least one non-empty entry")
+    return items
+
+
+def canonical_code(value: object, line: int, label: str) -> Dict[str, object]:
+    code = as_map(value)
+    if code is None:
+        raise RenderError(f"{label} must be an object")
+    exact_keys(code, ("language", "label", "lines"), label)
+    raw_lines = code.get("lines")
+    if not isinstance(raw_lines, list):
+        raise RenderError(f"{label}.lines must be an array")
+    lines: List[Dict[str, object]] = []
+    previous: Optional[int] = None
+    highlighted = 0
+    for index, raw_line in enumerate(raw_lines):
+        item = as_map(raw_line)
+        if item is None:
+            raise RenderError(f"{label}.lines[{index}] must be an object")
+        if set(item) - {"number", "text", "highlight"} or "number" not in item:
+            raise RenderError(f"{label}.lines[{index}] fields are invalid")
+        number = positive_int(item.get("number"), f"{label}.lines[{index}].number")
+        if previous is not None and number != previous + 1:
+            raise RenderError(f"{label}.lines must be consecutive")
+        previous = number
+        entry: Dict[str, object] = {
+            "number": number,
+            "text": safe_text(item.get("text"), f"{label}.lines[{index}].text"),
+        }
+        highlight = item.get("highlight")
+        if highlight is not None:
+            if not isinstance(highlight, bool):
+                raise RenderError(
+                    f"{label}.lines[{index}].highlight must be boolean"
+                )
+            if highlight:
+                highlighted += 1
+                if number != line:
+                    raise RenderError(
+                        f"{label} highlights a line other than the finding line"
+                    )
+                entry["highlight"] = True
+        lines.append(entry)
+    if lines and highlighted != 1:
+        raise RenderError(f"{label} must highlight the finding line exactly once")
+    if lines and not lines[0]["number"] <= line <= lines[-1]["number"]:
+        raise RenderError(f"{label} does not cover the finding line")
+    return {
+        "language": safe_text(code.get("language"), f"{label}.language", False),
+        "label": safe_text(code.get("label"), f"{label}.label", False),
+        "lines": lines,
+    }
+
+
 def canonical_finding(
     value: object,
     target_id: str,
@@ -522,9 +757,12 @@ def canonical_finding(
         raise RenderError(f"{label} has invalid fingerprints")
 
     severity = item.get("severity")
+    difficulty = item.get("difficulty")
     confidence = item.get("confidence")
     if severity not in SEVERITIES:
         raise RenderError(f"{label} severity is invalid")
+    if difficulty not in DIFFICULTIES:
+        raise RenderError(f"{label} difficulty is invalid")
     if confidence not in CONFIDENCES:
         raise RenderError(f"{label} confidence is invalid")
     line = positive_int(item.get("line"), f"{label}.line")
@@ -546,10 +784,9 @@ def canonical_finding(
             False,
         ),
         "evidence": safe_text(item.get("evidence"), f"{label}.evidence"),
-        "exploit_scenario": safe_text(
-            item.get("exploit_scenario"),
-            f"{label}.exploit_scenario",
-            False,
+        "exploit_scenarios": non_empty_string_list(
+            item.get("exploit_scenarios"),
+            f"{label}.exploit_scenarios",
         ),
         "preconditions": string_list(
             item.get("preconditions"),
@@ -561,17 +798,22 @@ def canonical_finding(
             False,
         ),
         "severity": severity,
+        "difficulty": difficulty,
         "confidence": confidence,
-        "recommendation": safe_text(
-            item.get("recommendation"),
-            f"{label}.recommendation",
+        "recommendations": string_list(
+            item.get("recommendations"),
+            f"{label}.recommendations",
         ),
         "cwe_id": cwe or None,
         "snippet": safe_text(item.get("snippet"), f"{label}.snippet"),
         "symbol": safe_text(item.get("symbol"), f"{label}.symbol"),
     }
     if display_id is not None:
-        finding = {"id": display_id, **finding}
+        finding = {
+            "id": display_id,
+            **finding,
+            "code": canonical_code(item.get("code"), line, f"{label}.code"),
+        }
         return {field: finding[field] for field in REPORT_FIELDS}
     return {field: finding[field] for field in CANDIDATE_FIELDS}
 
@@ -1002,7 +1244,9 @@ def validate_relationships(
         if entry.get("displayId") != finding.get("id"):
             raise RenderError("a reportable ledger displayId does not match findings")
         if {
-            key: value for key, value in finding.items() if key != "id"
+            key: value
+            for key, value in finding.items()
+            if key not in ("id", "code")
         } != dict(candidate):
             raise RenderError(
                 "a reportable ledger candidate differs from findings.json"
@@ -1256,7 +1500,8 @@ def finding_markdown(
     lines = [
         (
             f"### {finding['id']} — {title} "
-            f"({finding['severity']}, confidence {finding['confidence']})"
+            f"({finding['severity']}, difficulty {finding['difficulty']}, "
+            f"confidence {finding['confidence']})"
         ),
         "",
         f"**Stable finding ID.** {code_span(finding['findingId'])}",
@@ -1278,12 +1523,18 @@ def finding_markdown(
         "",
         "**Evidence.** " + escape_markdown(finding["evidence"]),
         "",
-        "**Exploit scenario.** "
-        + escape_markdown(finding["exploit_scenario"]),
-        "",
-        "**Preconditions.**",
+        "**Exploit scenario.**",
         "",
     ]
+    scenarios = finding["exploit_scenarios"]
+    if isinstance(scenarios, list) and scenarios:
+        lines.extend(
+            f"{position}. " + escape_markdown(item)
+            for position, item in enumerate(scenarios, 1)
+        )
+    else:
+        lines.append("1. None recorded.")
+    lines.extend(["", "**Preconditions.**", ""])
     preconditions = finding["preconditions"]
     if isinstance(preconditions, list) and preconditions:
         lines.extend("- " + escape_markdown(item) for item in preconditions)
@@ -1296,7 +1547,20 @@ def finding_markdown(
             "",
             indented_code(finding["snippet"]),
             "",
-            "**Fix.** " + escape_markdown(finding["recommendation"]),
+            "**Fix.**",
+            "",
+        ]
+    )
+    recommendations = finding["recommendations"]
+    if isinstance(recommendations, list) and recommendations:
+        lines.extend(
+            f"{position}. " + escape_markdown(item)
+            for position, item in enumerate(recommendations, 1)
+        )
+    else:
+        lines.append("1. None recorded.")
+    lines.extend(
+        [
             "",
             (
                 f"**Verification.** {true_votes}/{len(finding_votes)} initial "
@@ -1434,6 +1698,245 @@ def verification_summary(
     }
 
 
+def display_date(value: object) -> str:
+    text = str(value or "")
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", text)
+    if not match:
+        return text
+    year, month, day = (int(part) for part in match.groups())
+    if not 1 <= month <= 12:
+        return text
+    return f"{day} {MONTH_NAMES[month - 1]} {year}"
+
+
+def title_word(value: object) -> str:
+    text = str(value or "")
+    return text[:1].upper() + text[1:].lower()
+
+
+def display_category(slug: object) -> str:
+    text = str(slug or "")
+    mapped = CATEGORY_DISPLAY.get(text)
+    if mapped:
+        return mapped
+    words = [word for word in text.replace("_", "-").split("-") if word]
+    return " ".join(word[:1].upper() + word[1:] for word in words) or "Other"
+
+
+def display_id(value: object) -> str:
+    text = str(value or "")
+    match = re.fullmatch(r"F([1-9][0-9]*)", text)
+    if not match:
+        return text
+    return f"F-{int(match.group(1)):03d}"
+
+
+def component_for_file(
+    path: str,
+    components: Sequence[Mapping[str, object]],
+) -> Optional[str]:
+    """Name the examined component a finding's file belongs to."""
+    best_name: Optional[str] = None
+    best_length = -1
+    for component in components:
+        name = component.get("name")
+        raw_paths = component.get("paths")
+        if not isinstance(name, str) or not isinstance(raw_paths, list):
+            continue
+        for raw_path in raw_paths:
+            if not isinstance(raw_path, str):
+                continue
+            prefix = raw_path.rstrip("/")
+            if prefix in ("", "."):
+                length = 0
+            elif path == prefix or path.startswith(prefix + "/"):
+                length = len(prefix)
+            else:
+                continue
+            if length > best_length:
+                best_name = name
+                best_length = length
+    return best_name
+
+
+def panel_confirmations(
+    finding: Finding,
+    votes: Sequence[Mapping[str, object]],
+) -> Tuple[int, int]:
+    panel = [
+        vote
+        for vote in votes
+        if vote["findingId"] == finding["findingId"]
+        and vote["round"] == "panel"
+        and vote["status"] == "completed"
+    ]
+    true_votes = sum(vote["verdict"] == "TRUE_POSITIVE" for vote in panel)
+    return true_votes, len(panel)
+
+
+def html_finding(
+    finding: Finding,
+    components: Sequence[Mapping[str, object]],
+    votes: Sequence[Mapping[str, object]],
+) -> Dict[str, object]:
+    true_votes, panel_size = panel_confirmations(finding, votes)
+    recommendations = string_list(
+        finding["recommendations"],
+        "finding recommendations",
+    )
+    payload: Dict[str, object] = {
+        "id": display_id(finding["id"]),
+        "title": finding["title"],
+        "severity": title_word(finding["severity"]),
+        "difficulty": title_word(finding["difficulty"]),
+        "confidence": title_word(finding["confidence"]),
+        "category": display_category(finding["category"]),
+        "file": finding["file"],
+        "line": finding["line"],
+        "symbol": finding["symbol"],
+        # The excerpt read from the tree is preferred. This is the reporter's
+        # quoted line, which the page falls back to when there is no excerpt.
+        "snippet": finding["snippet"],
+        "summary": finding["description"],
+        # The canonical description is the claim; the cited source-to-sink
+        # proof is what a reader needs next, so it becomes the body text.
+        "description": [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n", str(finding["evidence"]))
+            if paragraph.strip()
+        ],
+        "impact": finding["impact"],
+        "exploitScenarios": string_list(
+            finding["exploit_scenarios"],
+            "finding exploit_scenarios",
+        ),
+        "preconditions": string_list(
+            finding["preconditions"],
+            "finding preconditions",
+        ),
+        "recommendations": recommendations or ["None recorded."],
+        "verification": (
+            f"{true_votes}/{panel_size} review lenses confirmed."
+            if panel_size
+            else "No completed panel vote was recorded."
+        ),
+        "cwe": finding["cwe_id"] or "",
+        "code": finding["code"],
+    }
+    component = component_for_file(str(finding["file"]), components)
+    if component:
+        payload["target"] = component
+    return payload
+
+
+def report_payload(
+    manifest: JsonMap,
+    findings: Sequence[Finding],
+    coverage: Mapping[str, object],
+    votes: Sequence[Mapping[str, object]],
+) -> Dict[str, object]:
+    request = as_map(manifest["request"]) or {}
+    target = as_map(manifest["target"]) or {}
+    raw_components = coverage.get("components")
+    components = [
+        component
+        for component in (
+            raw_components if isinstance(raw_components, list) else []
+        )
+        if isinstance(component, dict)
+    ]
+    mode = str(request.get("mode") or "")
+    return {
+        "report": {
+            "title": HTML_REPORT_TITLE,
+            "date": display_date(manifest["completedAt"]),
+        },
+        "scan": {
+            "root": target.get("scanRoot"),
+            "revision": revision_tag(manifest["revision"]),
+            "mode": mode,
+            "modeLabel": MODE_LABELS.get(mode, mode or "Unknown"),
+            "scope": list(request.get("scope") or []),
+            "effort": request.get("effort"),
+            "generatedAt": manifest["completedAt"],
+        },
+        "coverage": {
+            "completeness": coverage.get("completenessCheckOutcome"),
+            "researchersDispatched": coverage.get("researchersDispatched"),
+            "researchersReturned": coverage.get("researchersReturned"),
+            "components": components,
+            "skippedComponents": coverage.get("skippedComponents") or [],
+            "unaccountedTopLevelDirs": (
+                coverage.get("unaccountedTopLevelDirs") or []
+            ),
+        },
+        "severityOrder": [name for name, _ in SEVERITY_DEFINITIONS],
+        "difficultyOrder": [name for name, _ in DIFFICULTY_DEFINITIONS],
+        "severityDefinitions": [
+            {"name": name, "description": description}
+            for name, description in SEVERITY_DEFINITIONS
+        ],
+        "difficultyDefinitions": [
+            {"name": name, "description": description}
+            for name, description in DIFFICULTY_DEFINITIONS
+        ],
+        "categories": [
+            {"name": name, "description": description}
+            for name, description in CATEGORY_DEFINITIONS
+        ],
+        "findings": [
+            html_finding(finding, components, votes) for finding in findings
+        ],
+    }
+
+
+def embed_json(value: object) -> str:
+    """Serialize report data for a <script> block.
+
+    `ensure_ascii` escapes every non-ASCII codepoint, which covers the line and
+    paragraph separators that would otherwise end a JavaScript statement. The
+    angle brackets and ampersand are escaped so no string can close the script
+    element or open an HTML comment.
+    """
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True)
+    return (
+        text.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
+def read_template() -> str:
+    path = os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            *TEMPLATE_RELATIVE_PATH,
+        )
+    )
+    try:
+        with open(path, encoding="utf-8") as handle:
+            template = handle.read()
+    except OSError as error:
+        raise RenderError(
+            f"the report template is missing or unreadable: {error}"
+        ) from error
+    if template.count(REPORT_DATA_MARKER) != 1:
+        raise RenderError(
+            "the report template must name the data marker exactly once"
+        )
+    return template
+
+
+def render_html(
+    manifest: JsonMap,
+    findings: Sequence[Finding],
+    coverage: Mapping[str, object],
+    votes: Sequence[Mapping[str, object]],
+) -> str:
+    payload = report_payload(manifest, findings, coverage, votes)
+    return read_template().replace(REPORT_DATA_MARKER, embed_json(payload))
+
+
 def revision_tag(revision: object) -> str:
     value = as_map(revision) or {}
     commit = value.get("commit") or value.get("head")
@@ -1501,6 +2004,10 @@ def render(
         markdown,
     )
     atomic_write(
+        os.path.join(bundle_dir, HTML_REPORT_NAME),
+        render_html(manifest, findings, coverage, votes),
+    )
+    atomic_write(
         os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.jsonl"),
         "".join(jsonl_line(finding) + "\n" for finding in findings),
     )
@@ -1559,7 +2066,7 @@ def main(argv: Sequence[str]) -> int:
     except OSError as error:
         die(f"could not read or write the completed bundle: {error}")
     print(
-        f"wrote SECURITY-REVIEW-RESULTS.md, "
+        f"wrote SECURITY-REVIEW-RESULTS.md, {HTML_REPORT_NAME}, "
         f"SECURITY-REVIEW-RESULTS.jsonl ({len(findings)} finding"
         f"{'' if len(findings) == 1 else 's'}), and "
         f"{REVISION_PREFIX}{tag}.json into {bundle_dir}"

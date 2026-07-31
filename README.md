@@ -42,10 +42,24 @@ routing; the effort tier changes the amount of work.
 A run writes `SECURITY-REVIEW-<timestamp>/` with five canonical files:
 `scan-manifest.json`, `candidate-ledger.jsonl`, `findings.json`,
 `coverage.json`, and `panel-votes.jsonl`. Deterministic code derives
-`SECURITY-REVIEW-RESULTS.md`, `SECURITY-REVIEW-RESULTS.jsonl`, and
-`SECURITY-REVIEW-REVISION-<tag>.json` from those files. No model authors the
-final report. SARIF is not generated. The directory carries its own
-`.gitignore`, so nothing in it reaches a commit unless you delete that file.
+`SECURITY-REVIEW-RESULTS.md`, `SECURITY-REVIEW-RESULTS.html`,
+`SECURITY-REVIEW-RESULTS.jsonl`, and `SECURITY-REVIEW-REVISION-<tag>.json` from
+those files. No model authors the final report. SARIF is not generated. The
+directory carries its own `.gitignore`, so nothing in it reaches a commit unless
+you delete that file.
+
+`sample.html` at the repository root is an example of the HTML report, built
+from fictional findings. It is generated, not written by hand:
+
+```bash
+python3 tests/build_sample_report.py --write
+```
+
+Each finding carries a severity and a difficulty. Severity describes impact.
+Difficulty describes the access, knowledge, and effort exploitation takes, so
+`LOW` difficulty is the worse case. The excerpt shown with a finding is read
+from the reviewed tree by deterministic code rather than transcribed by an
+agent, so its line numbers are the tree's own.
 
 Each finding has three IDs. `F1`, `F2`, and so on are short display labels for
 one report. `findingId` is derived from the target, rule, and root-control
@@ -69,7 +83,8 @@ Everything the workflow runs lives under
 | `workflow.toml` | Run configuration: inputs, environment, artifacts. |
 | `verify.toml` | A `low`-effort run against the fixture, for smoke-testing the workflow. |
 | `scripts/security_review.py` | The deterministic engine. Every state transition, cap, deduplication, and vote tally lives here, outside the agents. |
-| `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown report, findings JSONL, and revision stamp. |
+| `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown report, HTML report, findings JSONL, and revision stamp. |
+| `templates/report.html` | The HTML report: one self-contained page whose script renders the payload the renderer embeds. |
 | `scripts/git_readonly.py` | A read-only Git entry point with external diff and textconv drivers disabled. |
 | `prompts/` | One prompt per agent role: inventory, threat model, research, sweep, verify, and redteam. |
 | `schemas/` | The model response schemas and the versioned canonical bundle contracts. |
@@ -136,9 +151,10 @@ normalizes them and records what failed to return, so a missing agent degrades
 the run's coverage instead of corrupting its arithmetic.
 
 **Support files are pinned.** Before anything runs, `prepare` verifies the
-SHA-256 of the engine, the Git wrapper, the renderer, and the report spec
-against hashes recorded in the graph. Editing one of those files means
-updating its pin in `security-review.fabro`; a test enforces that they match.
+SHA-256 of the engine, the Git wrapper, the renderer, the report spec, and the
+report template against hashes recorded in the graph. Editing one of those files
+means updating its pin in `security-review.fabro`; a test enforces that they
+match. `python3 tests/repin_support_files.py --write` does the update.
 
 **Nothing tampered gets published.** `prepare` records a digest of the whole
 tree, and the publication steps re-verify it. A source tree that changed

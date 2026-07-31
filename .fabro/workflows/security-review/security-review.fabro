@@ -29,7 +29,7 @@ digraph SecurityReview {
         timeout="180s",
         output_schema="routing",
         stdin_source="context.internal.run_id",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 51637f45b13489309bcc0c1c05b6d87e1181038e44ab7617b9eb86bb3ee5271d .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 7cfe3bddc613051e658e34489da71491a8a8ef4dcec5507b79c3987229aa0d72 .fabro/workflows/security-review/specs/report-spec.md a2525009582e5dffecb98d4c46aa33b87d2667ca278b3d803d5bff202082629d && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 4905ba7d097f5dc736fc652a3874897d6dd019f4e367800189ca07d351519fe2 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py bebe4392f1ec67e48b3696470b79413a9b1dfb63eaaa89629df41fe79c8610dd .fabro/workflows/security-review/specs/report-spec.md 7a62c6ccab557b79691735d92c4247802903b967417511e2febdc9de98aff755 .fabro/workflows/security-review/templates/report.html 001a8421f2bf83634121811d8965939bc723895e13c89a00a83cb6f20bcbd0e2 && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
     target_gate [shape=diamond, label="Target has work?"]
 
@@ -287,7 +287,7 @@ digraph SecurityReview {
     ]
     render_report [
         shape=parallelogram,
-        label="Derive Markdown, JSONL, and revision stamp",
+        label="Derive Markdown, HTML, JSONL, and revision stamp",
         timeout="180s",
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py render-report"

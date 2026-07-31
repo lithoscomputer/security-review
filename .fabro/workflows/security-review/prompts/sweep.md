@@ -11,8 +11,16 @@ from attacker-controlled input to a dangerous sink without an effective
 defense. For every finding, name the exact repository-relative sink line, quote
 it in `snippet`, and name the enclosing function in `symbol`. Put the complete
 source-to-sink proof in `evidence`. Put the concrete impact in `impact`, the
-attack in `exploitScenario`, every required condition in `preconditions`, and
-the root-cause fix in `recommendation`.
+attack steps in order in `exploitScenarios`, every required condition in
+`preconditions`, and the root-cause fix first in `recommendations`, followed by
+any hardening step and the regression test that would catch the issue again.
+
+Use `HIGH`, `MEDIUM`, or `LOW` for severity, difficulty, and confidence.
+Severity measures impact. Difficulty measures the access, knowledge, and effort
+exploitation takes: `LOW` for a common technique with little special access,
+`MEDIUM` for a custom exploit or non-public access, `HIGH` for privileged
+access, deep internal knowledge, or narrow conditions. Put certainty in
+confidence, not in either rating.
 
 The reported `file`, `line`, and `symbol` must identify the root vulnerable
 control. Give it a stable `ruleId` in the form `<category>.<control-family>`,

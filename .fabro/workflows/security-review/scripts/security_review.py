@@ -102,6 +102,46 @@ SCP_REMOTE_RE = re.compile(
 )
 SEVERITY_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
 CONFIDENCE_RANK = SEVERITY_RANK
+# Difficulty runs the other way: LOW difficulty is the worse case, because the
+# attack takes less access, knowledge, and effort.
+DIFFICULTY_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
+# Lines of context kept on each side of a finding's root-control line.
+CODE_FRAME_CONTEXT = 4
+CODE_FRAME_MAX_LINE_LENGTH = 400
+CODE_FRAME_MAX_BYTES = 2 * 1024 * 1024
+CODE_FRAME_LANGUAGES = {
+    "c": "C",
+    "cc": "C++",
+    "cpp": "C++",
+    "cs": "C#",
+    "css": "CSS",
+    "ex": "Elixir",
+    "exs": "Elixir",
+    "go": "Go",
+    "h": "C",
+    "hpp": "C++",
+    "html": "HTML",
+    "java": "Java",
+    "js": "JavaScript",
+    "json": "JSON",
+    "jsx": "JavaScript",
+    "kt": "Kotlin",
+    "lua": "Lua",
+    "php": "PHP",
+    "pl": "Perl",
+    "py": "Python",
+    "rb": "Ruby",
+    "rs": "Rust",
+    "scala": "Scala",
+    "sh": "Shell",
+    "sql": "SQL",
+    "swift": "Swift",
+    "toml": "TOML",
+    "ts": "TypeScript",
+    "tsx": "TypeScript",
+    "yaml": "YAML",
+    "yml": "YAML",
+}
 FINGERPRINT_PREFIX = "codex-security/v1:sha256:"
 TARGET_ID_PREFIX = "security-review-target/v1:sha256:"
 CANONICAL_SCHEMA_VERSION = 1
@@ -115,8 +155,8 @@ CANONICAL_FILES = (
 MERGEABLE_FINDING_FIELDS = (
     "evidence",
     "impact",
-    "exploitScenario",
-    "recommendation",
+    "exploitScenarios",
+    "recommendations",
     "snippet",
     "symbol",
     "cweId",
@@ -1803,6 +1843,7 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
     path = normalize_repo_path(value.get("file"))
     line = value.get("line")
     severity = one_line(value.get("severity"), 20).upper()
+    difficulty = one_line(value.get("difficulty"), 20).upper()
     confidence = one_line(value.get("confidence"), 20).upper()
     category = normalize_category(value.get("category"))
     title = one_line(value.get("title"), 300).strip()
@@ -1816,6 +1857,7 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
         or not isinstance(line, int)
         or line < 1
         or severity not in SEVERITY_RANK
+        or difficulty not in DIFFICULTY_RANK
         or confidence not in CONFIDENCE_RANK
         or not category
         or not title
@@ -1829,6 +1871,16 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
         cap=50,
         item_cap=1000,
     )
+    scenarios = string_list(
+        value.get("exploitScenarios", []),
+        cap=20,
+        item_cap=2000,
+    )
+    recommendations = string_list(
+        value.get("recommendations", []),
+        cap=20,
+        item_cap=2000,
+    )
     return {
         "file": path,
         "line": line,
@@ -1836,6 +1888,7 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
         "identity": identity,
         "category": category,
         "severity": severity,
+        "difficulty": difficulty,
         "confidence": confidence,
         "title": title,
         "rationale": rationale,
@@ -1843,9 +1896,11 @@ def normalize_finding(value: Any) -> Optional[Dict[str, Any]]:
         "snippet": clean_text(value.get("snippet"), 2000),
         "symbol": one_line(value.get("symbol"), 500),
         "impact": clean_text(value.get("impact"), 4000),
-        "exploitScenario": clean_text(value.get("exploitScenario"), 4000),
+        "exploitScenarios": [item for item in (scenarios or []) if item.strip()],
         "preconditions": preconditions or [],
-        "recommendation": clean_text(value.get("recommendation"), 4000),
+        "recommendations": [
+            item for item in (recommendations or []) if item.strip()
+        ],
         "cweId": one_line(value.get("cweId"), 50),
     }
 
@@ -2109,6 +2164,13 @@ def dedup_rank() -> None:
             > CONFIDENCE_RANK[existing["confidence"]]
         ):
             existing["confidence"] = report["confidence"]
+        # Reporters that disagree on exploitability keep the easier rating:
+        # one researcher finding a cheaper path is evidence the path exists.
+        if (
+            DIFFICULTY_RANK[report["difficulty"]]
+            < DIFFICULTY_RANK[existing["difficulty"]]
+        ):
+            existing["difficulty"] = report["difficulty"]
         for field in MERGEABLE_FINDING_FIELDS:
             if not existing.get(field) and report.get(field):
                 existing[field] = report[field]
@@ -2467,6 +2529,102 @@ def confidence_word(value: Any) -> str:
     return text if text in {"high", "medium", "low"} else "low"
 
 
+def safe_code_text(value: str) -> str:
+    """Reduce a source line to text the renderer accepts and a page can show.
+
+    `str.isprintable` is false for exactly the classes the renderer rejects --
+    control characters, the bidirectional overrides, and the line and paragraph
+    separators -- so this needs no copy of the renderer's codepoint set.
+    """
+    text = "".join(
+        "    "
+        if character == "\t"
+        else (character if character.isprintable() else " ")
+        for character in value
+    )
+    if len(text) > CODE_FRAME_MAX_LINE_LENGTH:
+        return text[:CODE_FRAME_MAX_LINE_LENGTH] + " ..."
+    return text
+
+
+def collapsed_code(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def quoted_line_matches(snippet: str, source_line: str) -> bool:
+    """Whether the reporter's quoted sink line is the line that was read.
+
+    A reporter can paraphrase whitespace, and a commit-mode review can cite a
+    revision that is not the checked-out tree. Both make an extracted excerpt
+    the wrong excerpt, so an unconfirmed line yields no frame at all and the
+    report falls back to the quoted snippet.
+    """
+    quoted = collapsed_code(snippet)
+    if not quoted:
+        return True
+    read = collapsed_code(source_line)
+    if not read:
+        return False
+    return quoted in read or read in quoted
+
+
+def code_frame_language(file_path: str) -> str:
+    suffix = PurePosixPath(file_path).suffix.lstrip(".").lower()
+    return CODE_FRAME_LANGUAGES.get(suffix, "Source")
+
+
+def code_frame(file_path: str, line: int, snippet: str) -> Dict[str, Any]:
+    """Read the lines around a finding's root control from the reviewed tree.
+
+    Agents report one quoted line. The excerpt shown in the report is read here
+    instead, so its line numbers are the tree's own and no agent transcribes
+    them. An unreadable, binary, oversized, or unconfirmed target yields an
+    empty excerpt, which the renderer replaces with the quoted snippet.
+    """
+    language = code_frame_language(file_path)
+    empty: Dict[str, Any] = {
+        "language": language,
+        "label": f"{file_path}:{line}",
+        "lines": [],
+    }
+    target = root() / file_path
+    try:
+        if target.is_symlink() or not target.is_file():
+            return empty
+        if target.stat().st_size > CODE_FRAME_MAX_BYTES:
+            return empty
+        raw = target.read_bytes()
+    except OSError:
+        return empty
+    if b"\0" in raw:
+        return empty
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeError:
+        return empty
+    source_lines = text.splitlines()
+    if line > len(source_lines):
+        return empty
+    if not quoted_line_matches(snippet, source_lines[line - 1]):
+        return empty
+    start = max(1, line - CODE_FRAME_CONTEXT)
+    end = min(len(source_lines), line + CODE_FRAME_CONTEXT)
+    lines: List[Dict[str, Any]] = []
+    for number in range(start, end + 1):
+        entry: Dict[str, Any] = {
+            "number": number,
+            "text": safe_code_text(source_lines[number - 1]),
+        }
+        if number == line:
+            entry["highlight"] = True
+        lines.append(entry)
+    return {
+        "language": language,
+        "label": f"{file_path}:{start}-{end}",
+        "lines": lines,
+    }
+
+
 def canonical_candidate(
     candidate: Mapping[str, Any],
     confidence: Optional[str] = None,
@@ -2487,17 +2645,18 @@ def canonical_candidate(
         "line": int(candidate["line"]),
         "description": candidate["rationale"],
         "evidence": candidate.get("evidence") or "",
-        "exploit_scenario": (
-            candidate.get("exploitScenario")
-            or candidate["rationale"]
+        "exploit_scenarios": (
+            list(candidate.get("exploitScenarios") or [])
+            or [candidate["rationale"]]
         ),
         "preconditions": candidate.get("preconditions") or [],
         "category": candidate["category"],
         "severity": candidate["severity"],
+        "difficulty": candidate["difficulty"],
         "confidence": confidence or confidence_word(
             candidate.get("confidence")
         ),
-        "recommendation": candidate.get("recommendation") or "",
+        "recommendations": list(candidate.get("recommendations") or []),
         "cwe_id": cwe_id,
         "snippet": candidate.get("snippet") or "",
         "symbol": candidate.get("symbol") or "",
@@ -2625,10 +2784,12 @@ def candidate_ledger(
                     "reportable ledger candidate is absent from findings"
                 )
             display_id = str(reportable["id"])
+            # The excerpt is a presentation field read from the tree, not part
+            # of the candidate a verifier judged, so the ledger omits it.
             canonical = {
                 key: value
                 for key, value in reportable.items()
-                if key != "id"
+                if key not in ("id", "code")
             }
         ledger.append(
             {
@@ -2796,16 +2957,24 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
             round_record["adversarial"] = record["adversarial"]
         rounds[candidate_id] = round_record
 
-    findings = [
-        {
-            "id": record["candidate"]["id"],
-            **canonical_candidate(
-                record["candidate"],
-                reportable_confidence(record),
-            ),
-        }
-        for record in kept
-    ]
+    findings = []
+    for record in kept:
+        candidate = record["candidate"]
+        canonical = canonical_candidate(
+            candidate,
+            reportable_confidence(record),
+        )
+        findings.append(
+            {
+                "id": candidate["id"],
+                **canonical,
+                "code": code_frame(
+                    str(canonical["file"]),
+                    int(canonical["line"]),
+                    str(canonical["snippet"]),
+                ),
+            }
+        )
     votes = {
         "candidates": int(state.get("raw_candidate_count", 0)),
         "candidates_deduped": len(

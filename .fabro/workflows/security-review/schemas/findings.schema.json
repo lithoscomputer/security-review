@@ -13,6 +13,7 @@
           "identity",
           "category",
           "severity",
+          "difficulty",
           "confidence",
           "title",
           "rationale",
@@ -20,9 +21,9 @@
           "snippet",
           "symbol",
           "impact",
-          "exploitScenario",
+          "exploitScenarios",
           "preconditions",
-          "recommendation"
+          "recommendations"
         ],
         "properties": {
           "file": { "type": "string" },
@@ -54,6 +55,10 @@
             "type": "string",
             "enum": ["HIGH", "MEDIUM", "LOW"]
           },
+          "difficulty": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH"]
+          },
           "confidence": {
             "type": "string",
             "enum": ["HIGH", "MEDIUM", "LOW"]
@@ -64,12 +69,20 @@
           "snippet": { "type": "string" },
           "symbol": { "type": "string" },
           "impact": { "type": "string" },
-          "exploitScenario": { "type": "string" },
+          "exploitScenarios": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
           "preconditions": {
             "type": "array",
             "items": { "type": "string" }
           },
-          "recommendation": { "type": "string" },
+          "recommendations": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
           "cweId": { "type": "string" }
         }
       }
