@@ -437,6 +437,32 @@ pre {
 	text-wrap: pretty;
 }
 
+.completion-note {
+	max-width: var(--reading-width);
+	padding: 1rem 1.1rem;
+	margin: 1rem 0 0;
+	border-left: 0.25rem solid var(--medium);
+	background: var(--medium-soft);
+	color: var(--ink-soft);
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.completion-note strong {
+	color: var(--ink);
+	font-weight: 680;
+}
+
+.completion-note ul {
+	padding-left: 1.15rem;
+	margin: 0.45rem 0 0;
+}
+
+.completion-note[hidden] {
+	display: none;
+}
+
 .finding-filters {
 	display: grid;
 	grid-template-columns: minmax(15rem, 1.6fr) repeat(2, minmax(9rem, 0.7fr)) auto;
@@ -1293,6 +1319,7 @@ td {
 					</div>
 
 					<p class="coverage-note" id="coverage-note"></p>
+					<div class="completion-note" id="completion-note" hidden></div>
 				</div>
 			</section>
 
@@ -1481,6 +1508,10 @@ window.securityReportData = Object.freeze({
       "name": "Undefined Behavior"
     }
   ],
+  "completion": {
+    "reasons": [],
+    "status": "complete"
+  },
   "coverage": {
     "completeness": "checked",
     "components": [
@@ -2698,6 +2729,21 @@ window.securityReportData = Object.freeze({
 					}),
 				);
 				skips.append(item);
+			}
+		}
+
+		const completion = data.completion || {};
+		if (completion.status && completion.status !== "complete") {
+			const banner = byId("completion-note");
+			banner.hidden = false;
+			banner.append(
+				element("strong", {
+					text: `This review is ${completion.status}.`,
+				}),
+			);
+			const reasons = completion.reasons || [];
+			if (reasons.length > 0) {
+				appendList(banner, reasons);
 			}
 		}
 

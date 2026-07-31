@@ -204,6 +204,7 @@ def build_coverage() -> Dict[str, Any]:
         "candidatesDroppedByCap": 0,
         "unverifiedByCap": 0,
         "invalidResearchResults": [],
+        "rejectedFindingReports": [],
     }
 
 

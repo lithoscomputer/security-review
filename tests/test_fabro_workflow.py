@@ -1072,6 +1072,76 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.final_tally)
         return Path(DRIVER.load_state()["products_dir"])
 
+    def test_a_dropped_finding_is_recorded_rather_than_lost(self) -> None:
+        # The failure this guards: a researcher reports real findings, every
+        # one fails the contract, and the report says nothing was found.
+        missing_difficulty = self.finding()
+        del missing_difficulty["difficulty"]
+        bad_rule = self.finding()
+        bad_rule["identity"] = {"anchor": "second-control"}
+        bad_rule["ruleId"] = "Command Injection"
+        self.prepare(effort="low")
+        self.call(DRIVER.plan_matrix)
+        self.merge_success(
+            "research",
+            [{"findings": [self.finding(), missing_difficulty, bad_rule]}],
+        )
+        self.call(DRIVER.dedup_rank)
+        state = DRIVER.load_state()
+        self.assertEqual(len(state["deduplicated_candidates"]), 1)
+        reports = DRIVER.rejected_finding_reports(state)
+        self.assertEqual(len(reports), 2)
+        self.assertTrue(
+            any("difficulty is not LOW, MEDIUM, or HIGH" in r for r in reports),
+            reports,
+        )
+        self.assertTrue(
+            any("ruleId is not" in r for r in reports),
+            reports,
+        )
+        # The reason names the researcher and the position, never the model's
+        # own text.
+        for report in reports:
+            self.assertIn("repository:all", report)
+            self.assertNotIn("os.system", report)
+
+        self.merge_success(
+            "panel",
+            [
+                {
+                    "verdict": "TRUE_POSITIVE",
+                    "reasoning": "The source reaches the shell.",
+                }
+                for _ in state["phase_jobs"]["panel"]
+            ],
+        )
+        self.call(DRIVER.tally)
+        self.call(DRIVER.final_tally)
+        self.call(DRIVER.render_report)
+        products = Path(DRIVER.load_state()["products_dir"])
+        coverage = json.loads(
+            (products / "coverage.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(coverage["rejectedFindingReports"]), 2)
+        manifest = json.loads(
+            (products / "scan-manifest.json").read_text(encoding="utf-8")
+        )
+        # A dropped finding is incomplete coverage, like an agent that never
+        # returned, so the scan cannot call itself complete.
+        self.assertEqual(manifest["completion"]["status"], "partial")
+        self.assertTrue(
+            any(
+                "failed the finding contract" in reason
+                for reason in manifest["completion"]["reasons"]
+            ),
+            manifest["completion"]["reasons"],
+        )
+        markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Reported findings dropped for failing the contract: 2", markdown)
+        self.assertIn("difficulty is not LOW, MEDIUM, or HIGH", markdown)
+
     def test_difficulty_is_required_and_keeps_the_easier_report(self) -> None:
         missing = self.finding()
         del missing["difficulty"]

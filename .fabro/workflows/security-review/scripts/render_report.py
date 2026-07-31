@@ -152,6 +152,7 @@ COVERAGE_FIELDS = (
     "candidatesDroppedByCap",
     "unverifiedByCap",
     "invalidResearchResults",
+    "rejectedFindingReports",
 )
 
 SEVERITIES = ("HIGH", "MEDIUM", "LOW")
@@ -1069,6 +1070,7 @@ def validate_coverage(value: object) -> Dict[str, object]:
         "prunedBuckets",
         "adversarialCasualties",
         "invalidResearchResults",
+        "rejectedFindingReports",
     )
     normalized: Dict[str, object] = {
         field: string_list(coverage.get(field), f"coverage.{field}")
@@ -1361,6 +1363,7 @@ def validate_relationships(
             disposition_counts(ledger).get("verification-incomplete")
         )
         or bool(coverage.get("invalidResearchResults"))
+        or bool(coverage.get("rejectedFindingReports"))
         or any(vote["status"] == "missing" for vote in votes)
         or completion.get("verificationStatus") != "verified"
     )
@@ -1486,6 +1489,14 @@ def coverage_markdown(coverage: JsonMap) -> List[str]:
     invalid = coverage.get("invalidResearchResults")
     if isinstance(invalid, list) and invalid:
         lines.append(f"- Unusable research results: {len(invalid)}")
+    rejected = coverage.get("rejectedFindingReports")
+    if isinstance(rejected, list) and rejected:
+        lines.append(
+            f"- Reported findings dropped for failing the contract: "
+            f"{len(rejected)}"
+        )
+        for reason in rejected:
+            lines.append(f"  - {escape_markdown(reason)}")
     lines.append("")
     return lines
 
@@ -1854,10 +1865,20 @@ def report_payload(
         if isinstance(component, dict)
     ]
     mode = str(request.get("mode") or "")
+    completion = as_map(manifest["completion"]) or {}
     return {
         "report": {
             "title": HTML_REPORT_TITLE,
             "date": display_date(manifest["completedAt"]),
+        },
+        # A partial scan must say so where the findings are read, or a reader
+        # takes an incomplete review for a clean one.
+        "completion": {
+            "status": completion.get("status"),
+            "reasons": string_list(
+                completion.get("reasons"),
+                "manifest completion.reasons",
+            ),
         },
         "scan": {
             "root": target.get("scanRoot"),

@@ -45,7 +45,9 @@ A reportable ledger record must match one entry in `findings.json`. Every report
 
 Severity describes impact. Confidence describes certainty. A two-of-three panel limits confidence to `medium`. Only a unanimous panel can produce `high` confidence.
 
-A scan is `partial` when work was deferred, verification was incomplete, a research result was unusable, or verification status is `unverified`. The report must show this status and its reasons.
+A scan is `partial` when work was deferred, verification was incomplete, a research result was unusable, a reported finding was dropped for failing the finding contract, or verification status is `unverified`. The report must show this status and its reasons, and the HTML report says so above its findings.
+
+`coverage.rejectedFindingReports` names every finding an agent reported that failed the contract, with the reason and the researcher that sent it. A dropped finding never becomes a candidate, so without this record a scan that discarded everything it was given would be indistinguishable from one that found nothing. The reasons are fixed strings naming the field at fault; they never quote the model's own text.
 
 ## Rendering safety
 
