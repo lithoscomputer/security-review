@@ -31,18 +31,18 @@ exclude_globs = [
 
 [run.artifacts]
 include = [
-  ".fabro/workflows/security-review/runtime/**",
   "SECURITY-REVIEW-*/.gitignore",
-  "SECURITY-REVIEW-*/.security-review-run/**",
-  "SECURITY-REVIEW-*/scan-manifest.json",
-  "SECURITY-REVIEW-*/candidate-ledger.jsonl",
-  "SECURITY-REVIEW-*/findings.json",
-  "SECURITY-REVIEW-*/coverage.json",
-  "SECURITY-REVIEW-*/panel-votes.jsonl",
   "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.md",
   "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.html",
   "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.jsonl",
-  "SECURITY-REVIEW-*/SECURITY-REVIEW-REVISION-*.json",
+  "SECURITY-REVIEW-*/evidence/scan-manifest.json",
+  "SECURITY-REVIEW-*/evidence/candidate-ledger.jsonl",
+  "SECURITY-REVIEW-*/evidence/findings.json",
+  "SECURITY-REVIEW-*/evidence/coverage.json",
+  "SECURITY-REVIEW-*/evidence/panel-votes.jsonl",
+  "SECURITY-REVIEW-*/metadata/revision.json",
+  "SECURITY-REVIEW-*/metadata/state.json",
+  "SECURITY-REVIEW-*/metadata/scan-meta.json",
 ]
 
 [environments.security-review]

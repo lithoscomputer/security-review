@@ -257,12 +257,28 @@ def load_state() -> Dict[str, Any]:
     return value
 
 
+def point_state_locator_at(path: Path) -> None:
+    """Make the fixed runtime path locate the published canonical state."""
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = STATE_PATH.with_name(STATE_PATH.name + ".link.tmp")
+    try:
+        temporary.unlink(missing_ok=True)
+        target = os.path.relpath(path, start=STATE_PATH.parent)
+        temporary.symlink_to(target)
+        os.replace(temporary, STATE_PATH)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def save_state(state: Mapping[str, Any]) -> None:
     copy = dict(state)
-    write_json(STATE_PATH, copy)
-    run_dir = copy.get("run_dir")
-    if isinstance(run_dir, str) and run_dir:
-        write_json(Path(run_dir) / "state.json", copy)
+    state_path = copy.get("state_path")
+    if isinstance(state_path, str) and state_path:
+        canonical_path = Path(state_path)
+        write_json(canonical_path, copy)
+        point_state_locator_at(canonical_path)
+    else:
+        write_json(STATE_PATH, copy)
 
 
 def emit(**updates: Any) -> None:
@@ -1033,7 +1049,7 @@ def prepare(args: argparse.Namespace) -> None:
     empty_target = empty_diff or empty_scope
 
     state: Dict[str, Any] = {
-        "version": 5,
+        "version": 6,
         "root": str(root()),
         "started_at": started_at,
         "scan_id": scan_id,
@@ -1041,7 +1057,11 @@ def prepare(args: argparse.Namespace) -> None:
         "target_id_source": target_id_source,
         "products_dir": None,
         "products_rel": None,
-        "run_dir": None,
+        "evidence_dir": None,
+        "evidence_rel": None,
+        "metadata_dir": None,
+        "metadata_rel": None,
+        "state_path": None,
         "mode": mode,
         "effort": effort,
         "focus": focus,
@@ -1112,13 +1132,18 @@ def prepare(args: argparse.Namespace) -> None:
         return
 
     products_dir, products_rel = unique_report_dir()
-    run_dir = products_dir / ".security-review-run"
-    run_dir.mkdir()
+    evidence_dir = products_dir / "evidence"
+    metadata_dir = products_dir / "metadata"
+    evidence_dir.mkdir()
+    metadata_dir.mkdir()
     (products_dir / ".gitignore").write_text("*\n", encoding="utf-8")
-    (run_dir / ".gitignore").write_text("*\n", encoding="utf-8")
     state["products_dir"] = products_dir.as_posix()
     state["products_rel"] = products_rel
-    state["run_dir"] = run_dir.as_posix()
+    state["evidence_dir"] = evidence_dir.as_posix()
+    state["evidence_rel"] = f"{products_rel}/evidence"
+    state["metadata_dir"] = metadata_dir.as_posix()
+    state["metadata_rel"] = f"{products_rel}/metadata"
+    state["state_path"] = (metadata_dir / "state.json").as_posix()
 
     revision = revision_record(
         mode,
@@ -1136,7 +1161,7 @@ def prepare(args: argparse.Namespace) -> None:
         "target_id": target_id,
         "target_id_source": target_id_source,
         "scan_root": str(root()),
-        "run_dir": run_dir.as_posix(),
+        "metadata_dir": metadata_dir.as_posix(),
         "flow": "scan" if mode == "scan" else "changes",
         "agent": "fabro:security-review",
         "mode": mode,
@@ -1147,7 +1172,7 @@ def prepare(args: argparse.Namespace) -> None:
         "top_level_dirs": top_level_dirs,
         "range": revision_range,
     }
-    write_json(run_dir / "scan-meta.json", scan_meta)
+    write_json(metadata_dir / "scan-meta.json", scan_meta)
     state["workspace_digest"] = workspace_digest()
     save_state(state)
 
@@ -3082,12 +3107,12 @@ def write_canonical_bundle(
     ledger: Sequence[Mapping[str, Any]],
     panel_votes: Sequence[Mapping[str, Any]],
 ) -> None:
-    products_dir = Path(str(state["products_dir"]))
-    write_json(products_dir / "scan-manifest.json", manifest)
-    write_jsonl(products_dir / "candidate-ledger.jsonl", ledger)
-    write_json(products_dir / "findings.json", result["findings"])
-    write_json(products_dir / "coverage.json", result["coverage"])
-    write_jsonl(products_dir / "panel-votes.jsonl", panel_votes)
+    evidence_dir = Path(str(state["evidence_dir"]))
+    write_json(evidence_dir / "scan-manifest.json", manifest)
+    write_jsonl(evidence_dir / "candidate-ledger.jsonl", ledger)
+    write_json(evidence_dir / "findings.json", result["findings"])
+    write_json(evidence_dir / "coverage.json", result["coverage"])
+    write_jsonl(evidence_dir / "panel-votes.jsonl", panel_votes)
 
 
 def final_tally() -> None:
@@ -3132,8 +3157,9 @@ def final_tally() -> None:
     emit(
         kept_count=len(result["findings"]),
         provisional_verification_status=result["verification"]["status"],
-        report_run_dir=state["run_dir"],
+        metadata_dir=state["metadata_rel"],
         products_dir=state["products_rel"],
+        evidence_dir=state["evidence_rel"],
         canonical_bundle_written=True,
     )
 
@@ -3159,26 +3185,31 @@ def render_report() -> None:
     state = load_state()
     assert_workspace_unchanged(state)
     products_rel = str(state["products_rel"])
+    evidence_rel = str(state["evidence_rel"])
+    metadata_rel = str(state["metadata_rel"])
     renderer = load_renderer()
     try:
-        findings, verification, tag = renderer.render(products_rel)
+        findings, verification = renderer.render(
+            evidence_rel,
+            products_rel,
+            metadata_rel,
+        )
     except Exception as error:
         raise WorkflowDataError(
             f"the original report renderer refused the report: {error}"
         ) from error
-    stamp_name = f"SECURITY-REVIEW-REVISION-{tag}.json"
-    state["stamp_path"] = f"{products_rel}/{stamp_name}"
+    state["revision_path"] = f"{metadata_rel}/revision.json"
     state["verification_status"] = verification.get("status")
     state["finding_count"] = len(findings)
     save_state(state)
     print(
         f"Wrote {products_rel}/SECURITY-REVIEW-RESULTS.md, "
-        f"SECURITY-REVIEW-RESULTS.jsonl, and {stamp_name}; "
-        "canonical bundle and scratch records retained in the cloud sandbox"
+        "SECURITY-REVIEW-RESULTS.jsonl, and metadata/revision.json; "
+        "canonical evidence and run metadata retained with the reports"
     )
     emit(
         report_path=f"{products_rel}/SECURITY-REVIEW-RESULTS.md",
-        stamp_path=state["stamp_path"],
+        revision_path=state["revision_path"],
         verification_status=verification.get("status"),
         finding_count=len(findings),
     )

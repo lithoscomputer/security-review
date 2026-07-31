@@ -1,6 +1,6 @@
 # Deterministic security report and canonical bundle
 
-The completed canonical bundle is the source of truth for one security scan. `render_report.py` validates that bundle and derives every presentation artifact from it. No model writes or rewrites the final report.
+The completed `evidence/` directory is the canonical bundle and the source of truth for one security scan. `render_report.py` validates that bundle and derives every presentation artifact from it. No model writes or rewrites the final report.
 
 ## Canonical files
 
@@ -14,12 +14,13 @@ The JSON Schema contracts for these records are in `schemas/`. The deterministic
 
 ## Derived files
 
-The renderer creates only these presentation artifacts from the five canonical files:
+The renderer creates these presentation artifacts at the root of the timestamped result directory from the five canonical files:
 
 - `SECURITY-REVIEW-RESULTS.md` for people.
 - `SECURITY-REVIEW-RESULTS.html` for people, from `templates/report.html`.
 - `SECURITY-REVIEW-RESULTS.jsonl` for finding consumers and CI gates.
-- `SECURITY-REVIEW-REVISION-<tag>.json` for compatibility with current revision consumers.
+
+It also writes `metadata/revision.json`. That file records the full reviewed revision, run settings, finding counts, verification status, and canonical bundle location. The result directory also contains `metadata/state.json` and `metadata/scan-meta.json`, which preserve the deterministic workflow state and scan setup.
 
 SARIF is not generated. It can be added later as another deterministic view of the same canonical data.
 

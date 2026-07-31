@@ -224,7 +224,7 @@ def build_manifest(
         },
         "startedAt": SOURCE.STARTED_AT,
         "completedAt": SOURCE.COMPLETED_AT,
-        "workflow": {"name": "security-review", "stateVersion": 5},
+        "workflow": {"name": "security-review", "stateVersion": 6},
         "request": dict(SOURCE.REQUEST),
         "revision": dict(SOURCE.REVISION),
         "completion": {
@@ -260,7 +260,11 @@ def render_sample() -> str:
     ledger = build_ledger(findings)
     votes = build_votes(findings, ledger)
     with tempfile.TemporaryDirectory() as directory:
-        bundle = Path(directory)
+        products = Path(directory)
+        bundle = products / "evidence"
+        metadata = products / "metadata"
+        bundle.mkdir()
+        metadata.mkdir()
         (bundle / "scan-manifest.json").write_text(
             json.dumps(build_manifest(findings, ledger, votes), indent=2) + "\n",
             encoding="utf-8",
@@ -281,8 +285,8 @@ def render_sample() -> str:
             "".join(json.dumps(vote) + "\n" for vote in votes),
             encoding="utf-8",
         )
-        renderer.render(str(bundle))
-        return (bundle / renderer.HTML_REPORT_NAME).read_text(encoding="utf-8")
+        renderer.render(str(bundle), str(products), str(metadata))
+        return (products / renderer.HTML_REPORT_NAME).read_text(encoding="utf-8")
 
 
 def main(argv) -> int:

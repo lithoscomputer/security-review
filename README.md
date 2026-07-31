@@ -117,16 +117,35 @@ findings.
 | `SECURITY-REVIEW-RESULTS.html` | Self-contained report for people. |
 | `SECURITY-REVIEW-RESULTS.md` | Plain-text report for terminals and code review. |
 | `SECURITY-REVIEW-RESULTS.jsonl` | One finding per line for scripts and CI. |
-| `SECURITY-REVIEW-REVISION-<tag>.json` | Records the reviewed revision and run settings. |
 
-The same directory includes the canonical evidence bundle:
-`scan-manifest.json`, `candidate-ledger.jsonl`, `findings.json`,
-`coverage.json`, and `panel-votes.jsonl`. Deterministic code validates that
-bundle and derives every report. No model writes the final report. SARIF is not
-generated.
+The complete published layout is:
+
+```text
+SECURITY-REVIEW-<timestamp>/
+├── .gitignore
+├── SECURITY-REVIEW-RESULTS.html
+├── SECURITY-REVIEW-RESULTS.md
+├── SECURITY-REVIEW-RESULTS.jsonl
+├── evidence/
+│   ├── scan-manifest.json
+│   ├── candidate-ledger.jsonl
+│   ├── findings.json
+│   ├── coverage.json
+│   └── panel-votes.jsonl
+└── metadata/
+    ├── revision.json
+    ├── state.json
+    └── scan-meta.json
+```
+
+`evidence/` is the canonical evidence bundle. Deterministic code validates it
+and derives every report. `metadata/` records the reviewed revision and the
+workflow state used to produce the reports. No model writes the final report.
+SARIF is not generated.
 
 The result directory contains its own `.gitignore`. Results do not enter a
-commit unless you remove that file.
+commit unless you remove that file. Fabro publishes all security-review
+artifacts under this one result directory.
 
 ### Ratings and finding IDs
 

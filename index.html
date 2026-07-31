@@ -1160,18 +1160,28 @@ result file and do not add narration.</pre>
               human-readable report:
             </p>
             <pre class="filetree">SECURITY-REVIEW-&lt;timestamp&gt;/
-├── SECURITY-REVIEW-RESULTS.md      <span class="c"># the report — panel-verified findings only</span>
-├── SECURITY-REVIEW-RESULTS.html    <span class="c"># the same report as one self-contained page</span>
-├── SECURITY-REVIEW-RESULTS.jsonl   <span class="c"># the same findings, machine-readable</span>
-├── SECURITY-REVIEW-REVISION-*.json <span class="c"># revision stamp for the reviewed tree</span>
-├── scan-manifest.json              <span class="c"># run identity, request, completion status</span>
-├── findings.json                   <span class="c"># kept findings, canonical form</span>
-├── candidate-ledger.jsonl          <span class="c"># EVERY candidate + disposition (kept, rejected, deferred)</span>
-├── coverage.json                   <span class="c"># what was scanned, skipped, pruned, capped, and why</span>
-└── panel-votes.jsonl               <span class="c"># every vote, lens, verdict, and reasoning</span></pre>
+├── .gitignore
+├── SECURITY-REVIEW-RESULTS.md       <span class="c"># the report — panel-verified findings only</span>
+├── SECURITY-REVIEW-RESULTS.html     <span class="c"># the same report as one self-contained page</span>
+├── SECURITY-REVIEW-RESULTS.jsonl    <span class="c"># the same findings, machine-readable</span>
+├── evidence/
+│   ├── scan-manifest.json           <span class="c"># run identity, request, completion status</span>
+│   ├── findings.json                <span class="c"># kept findings, canonical form</span>
+│   ├── candidate-ledger.jsonl       <span class="c"># every candidate and disposition</span>
+│   ├── coverage.json                <span class="c"># what was scanned, skipped, pruned, capped, and why</span>
+│   └── panel-votes.jsonl            <span class="c"># every vote, lens, verdict, and reasoning</span>
+└── metadata/
+    ├── revision.json                <span class="c"># reviewed revision and run settings</span>
+    ├── state.json                   <span class="c"># deterministic workflow state</span>
+    └── scan-meta.json               <span class="c"># scan setup and target identity</span></pre>
             <p>
               <a class="sample-link" href="sample.html">See an example of that HTML report &rarr;</a>
               &mdash; built from fictional findings.
+            </p>
+            <p>
+              Fabro publishes every security-review artifact under this one result directory.
+              The reports stay at the root. Canonical evidence and run metadata use their own
+              directories.
             </p>
             <p>
               Reported confidence is capped by the vote: a unanimous 3-of-3 keep may report up to

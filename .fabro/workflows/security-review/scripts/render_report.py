@@ -10,10 +10,11 @@ The canonical inputs are:
 - panel-votes.jsonl
 
 This program validates their relationships, then writes the Markdown report,
-the HTML report, the findings JSONL, and the revision stamp. It never asks a
-model to interpret or rewrite canonical scan decisions.
+the HTML report, and the findings JSONL to the result directory. It writes
+revision.json to the metadata directory. It never asks a model to interpret or
+rewrite canonical scan decisions.
 
-Usage: render_report.py <bundle-dir>
+Usage: render_report.py <evidence-dir> <result-dir> <metadata-dir>
 Python 3.9-compatible. Standard library only.
 """
 
@@ -169,7 +170,7 @@ VOTE_ROUNDS = ("panel", "repanel", "redteam")
 VOTE_STATUSES = ("completed", "missing")
 VERDICTS = ("TRUE_POSITIVE", "FALSE_POSITIVE")
 
-REVISION_PREFIX = "SECURITY-REVIEW-REVISION-"
+REVISION_NAME = "revision.json"
 TEMPLATE_RELATIVE_PATH = ("..", "templates", "report.html")
 REPORT_DATA_MARKER = "__REPORT_DATA__"
 HTML_REPORT_NAME = "SECURITY-REVIEW-RESULTS.html"
@@ -2007,7 +2008,7 @@ def revision_tag(revision: object) -> str:
     if not commit:
         return "UNVERSIONED"
     if not isinstance(commit, str) or not HEX_RE.fullmatch(commit):
-        raise RenderError("manifest revision cannot name the revision stamp")
+        raise RenderError("manifest revision cannot produce a display tag")
     return commit[:12] + ("" if value.get("dirty") is False else "-dirty")
 
 
@@ -2036,7 +2037,9 @@ def jsonl_line(finding: Finding) -> str:
 
 def render(
     bundle_dir: str,
-) -> Tuple[List[Finding], Dict[str, object], str]:
+    report_dir: str,
+    metadata_dir: str,
+) -> Tuple[List[Finding], Dict[str, object]]:
     manifest = validate_manifest(read_json(bundle_dir, "scan-manifest.json"))
     target = as_map(manifest["target"]) or {}
     target_id = str(target["id"])
@@ -2064,15 +2067,15 @@ def render(
 
     markdown = render_markdown(manifest, findings, coverage, votes)
     atomic_write(
-        os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.md"),
+        os.path.join(report_dir, "SECURITY-REVIEW-RESULTS.md"),
         markdown,
     )
     atomic_write(
-        os.path.join(bundle_dir, HTML_REPORT_NAME),
+        os.path.join(report_dir, HTML_REPORT_NAME),
         render_html(manifest, findings, coverage, votes),
     )
     atomic_write(
-        os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.jsonl"),
+        os.path.join(report_dir, "SECURITY-REVIEW-RESULTS.jsonl"),
         "".join(jsonl_line(finding) + "\n" for finding in findings),
     )
 
@@ -2081,14 +2084,14 @@ def render(
         counts[str(finding["severity"])] += 1
     verification = verification_summary(manifest, findings, votes)
     revision = manifest["revision"]
-    tag = revision_tag(revision)
-    stamp = {
+    revision_metadata = {
         "generated_at": manifest["completedAt"],
         "scan_id": scan_id,
         "target_id": target_id,
         "target_id_source": target["idSource"],
         "scan_root": target["scanRoot"],
-        "products_dir": bundle_dir,
+        "products_dir": report_dir,
+        "metadata_dir": metadata_dir,
         "mode": (as_map(manifest["request"]) or {}).get("mode"),
         "scope": (as_map(manifest["request"]) or {}).get("scope") or [],
         "revision": revision,
@@ -2103,27 +2106,37 @@ def render(
         "verification": verification,
         "canonical_bundle": {
             "schema_version": SCHEMA_VERSION,
+            "directory": bundle_dir,
             "files": list(CANONICAL_FILES),
         },
     }
-    for name in os.listdir(bundle_dir):
-        if name.startswith(REVISION_PREFIX) and name.endswith(".json"):
-            os.unlink(os.path.join(bundle_dir, name))
     atomic_write(
-        os.path.join(bundle_dir, f"{REVISION_PREFIX}{tag}.json"),
-        json.dumps(stamp, ensure_ascii=False, indent=2) + "\n",
+        os.path.join(metadata_dir, REVISION_NAME),
+        json.dumps(revision_metadata, ensure_ascii=False, indent=2) + "\n",
     )
-    return findings, verification, tag
+    return findings, verification
 
 
 def main(argv: Sequence[str]) -> int:
-    if len(argv) != 1:
-        die("usage: render_report.py <bundle-dir>")
-    bundle_dir = argv[0]
-    if not os.path.isdir(bundle_dir):
-        die(f"not a directory: {bundle_dir}")
+    if len(argv) != 3:
+        die(
+            "usage: render_report.py "
+            "<evidence-dir> <result-dir> <metadata-dir>"
+        )
+    bundle_dir, report_dir, metadata_dir = argv
+    for label, directory in (
+        ("evidence", bundle_dir),
+        ("result", report_dir),
+        ("metadata", metadata_dir),
+    ):
+        if not os.path.isdir(directory):
+            die(f"{label} directory does not exist: {directory}")
     try:
-        findings, verification, tag = render(bundle_dir)
+        findings, verification = render(
+            bundle_dir,
+            report_dir,
+            metadata_dir,
+        )
     except RenderError as error:
         die(str(error))
     except OSError as error:
@@ -2131,8 +2144,8 @@ def main(argv: Sequence[str]) -> int:
     print(
         f"wrote SECURITY-REVIEW-RESULTS.md, {HTML_REPORT_NAME}, "
         f"SECURITY-REVIEW-RESULTS.jsonl ({len(findings)} finding"
-        f"{'' if len(findings) == 1 else 's'}), and "
-        f"{REVISION_PREFIX}{tag}.json into {bundle_dir}"
+        f"{'' if len(findings) == 1 else 's'}) into {report_dir}, and "
+        f"{REVISION_NAME} into {metadata_dir}"
     )
     print(f"verification.status: {verification.get('status')}")
     print(f"completion.status: {verification.get('completion_status')}")

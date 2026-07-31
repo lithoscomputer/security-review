@@ -317,22 +317,23 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(stable["identity"], finding["identity"])
 
         state = DRIVER.load_state()
-        run_dir = Path(state["run_dir"])
         products = Path(state["products_dir"])
+        evidence = Path(state["evidence_dir"])
+        metadata = Path(state["metadata_dir"])
         manifest = json.loads(
-            (products / "scan-manifest.json").read_text(encoding="utf-8")
+            (evidence / "scan-manifest.json").read_text(encoding="utf-8")
         )
-        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        ledger = read_jsonl(evidence / "candidate-ledger.jsonl")
         canonical_findings = json.loads(
-            (products / "findings.json").read_text(encoding="utf-8")
+            (evidence / "findings.json").read_text(encoding="utf-8")
         )
         coverage = json.loads(
-            (products / "coverage.json").read_text(encoding="utf-8")
+            (evidence / "coverage.json").read_text(encoding="utf-8")
         )
-        panel_votes = read_jsonl(products / "panel-votes.jsonl")
+        panel_votes = read_jsonl(evidence / "panel-votes.jsonl")
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(manifest["scanId"], "test-scan-01")
-        self.assertEqual(manifest["workflow"]["stateVersion"], 5)
+        self.assertEqual(manifest["workflow"]["stateVersion"], 6)
         self.assertEqual(manifest["completion"]["status"], "complete")
         self.assertEqual(
             manifest["completion"]["dispositions"],
@@ -380,35 +381,75 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = DRIVER.load_state()
         self.assertTrue((products / "SECURITY-REVIEW-RESULTS.md").is_file())
         self.assertTrue((products / "SECURITY-REVIEW-RESULTS.jsonl").is_file())
-        self.assertTrue(run_dir.is_dir(), "cloud scratch must be retained")
+        self.assertTrue(metadata.is_dir(), "run metadata must be retained")
+        self.assertTrue(DRIVER.STATE_PATH.is_symlink())
+        self.assertEqual(
+            DRIVER.STATE_PATH.resolve(),
+            (metadata / "state.json").resolve(),
+        )
         markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
             encoding="utf-8"
         )
         self.assertIn(stable["findingId"], markdown)
         self.assertIn(stable["occurrenceId"], markdown)
         self.assertIn("7 dispatched verification votes", markdown)
-        stamp = json.loads(Path(state["stamp_path"]).read_text(encoding="utf-8"))
-        self.assertEqual(stamp["verification"]["status"], "verified")
-        self.assertEqual(stamp["verification"]["completion_status"], "complete")
-        self.assertEqual(stamp["findings"]["total"], 1)
-        self.assertEqual(stamp["scan_id"], "test-scan-01")
-        self.assertEqual(stamp["target_id"], state["target_id"])
+        revision = json.loads(
+            Path(state["revision_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(revision["verification"]["status"], "verified")
+        self.assertEqual(
+            revision["verification"]["completion_status"],
+            "complete",
+        )
+        self.assertEqual(revision["findings"]["total"], 1)
+        self.assertEqual(revision["scan_id"], "test-scan-01")
+        self.assertEqual(revision["target_id"], state["target_id"])
+        self.assertEqual(
+            Path(state["revision_path"]).resolve(),
+            (metadata / "revision.json").resolve(),
+        )
+        self.assertEqual(revision["products_dir"], state["products_rel"])
+        self.assertEqual(
+            revision["canonical_bundle"]["directory"],
+            state["evidence_rel"],
+        )
         output_finding = read_jsonl(
             products / "SECURITY-REVIEW-RESULTS.jsonl"
         )[0]
         self.assertEqual([output_finding], canonical_findings)
         self.assertEqual(output_finding["findingId"], stable["findingId"])
         self.assertEqual(output_finding["occurrenceId"], stable["occurrenceId"])
-
-        derived_before = {
-            name: (products / name).read_bytes()
-            for name in (
-                "SECURITY-REVIEW-RESULTS.md",
+        self.assertEqual(
+            {
+                path.relative_to(products).as_posix()
+                for path in products.rglob("*")
+                if path.is_file()
+            },
+            {
+                ".gitignore",
+                "SECURITY-REVIEW-RESULTS.html",
                 "SECURITY-REVIEW-RESULTS.jsonl",
-                Path(state["stamp_path"]).name,
-            )
+                "SECURITY-REVIEW-RESULTS.md",
+                "evidence/candidate-ledger.jsonl",
+                "evidence/coverage.json",
+                "evidence/findings.json",
+                "evidence/panel-votes.jsonl",
+                "evidence/scan-manifest.json",
+                "metadata/revision.json",
+                "metadata/scan-meta.json",
+                "metadata/state.json",
+            },
+        )
+
+        derived_paths = (
+            products / "SECURITY-REVIEW-RESULTS.md",
+            products / "SECURITY-REVIEW-RESULTS.jsonl",
+            Path(state["revision_path"]),
+        )
+        derived_before = {
+            path: path.read_bytes() for path in derived_paths
         }
-        (run_dir / "findings.json").write_text(
+        (metadata / "findings.json").write_text(
             json.dumps([{"id": "scratch-data-must-not-be-read"}]) + "\n",
             encoding="utf-8",
         )
@@ -417,10 +458,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.render_report)
         self.assertEqual(
             derived_before,
-            {
-                name: (products / name).read_bytes()
-                for name in derived_before
-            },
+            {path: path.read_bytes() for path in derived_paths},
         )
 
     def test_merge_leaves_exhausted_native_retry_results_missing(self) -> None:
@@ -734,7 +772,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = self.prepare()
         scan_meta = json.loads(
             (
-                Path(state["run_dir"]) / "scan-meta.json"
+                Path(state["metadata_dir"]) / "scan-meta.json"
             ).read_text(encoding="utf-8")
         )
         persisted = json.dumps({"state": state, "scan_meta": scan_meta})
@@ -769,7 +807,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.tally)
         self.call(DRIVER.final_tally)
         state = DRIVER.load_state()
-        findings_path = Path(state["products_dir"]) / "findings.json"
+        findings_path = Path(state["evidence_dir"]) / "findings.json"
         findings = json.loads(findings_path.read_text(encoding="utf-8"))
         findings[0]["findingId"] = "csf_" + "0" * 24
         findings_path.write_text(
@@ -798,8 +836,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.call(DRIVER.tally)
         self.call(DRIVER.final_tally)
-        products = Path(DRIVER.load_state()["products_dir"])
-        votes_path = products / "panel-votes.jsonl"
+        evidence = Path(DRIVER.load_state()["evidence_dir"])
+        votes_path = evidence / "panel-votes.jsonl"
         votes = read_jsonl(votes_path)
         votes[0]["claim"]["evidenceAsCited"] = "different evidence"
         votes_path.write_text(
@@ -886,10 +924,11 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.final_tally)
         state = DRIVER.load_state()
         products = Path(state["products_dir"])
-        ledger = read_jsonl(products / "candidate-ledger.jsonl")
-        votes = read_jsonl(products / "panel-votes.jsonl")
+        evidence = Path(state["evidence_dir"])
+        ledger = read_jsonl(evidence / "candidate-ledger.jsonl")
+        votes = read_jsonl(evidence / "panel-votes.jsonl")
         manifest = json.loads(
-            (products / "scan-manifest.json").read_text(encoding="utf-8")
+            (evidence / "scan-manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(len(ledger), DRIVER.CANDIDATE_CAP + 1)
         self.assertEqual(
@@ -954,12 +993,13 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.final_tally)
         state = DRIVER.load_state()
         products = Path(state["products_dir"])
-        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        evidence = Path(state["evidence_dir"])
+        ledger = read_jsonl(evidence / "candidate-ledger.jsonl")
         findings = json.loads(
-            (products / "findings.json").read_text(encoding="utf-8")
+            (evidence / "findings.json").read_text(encoding="utf-8")
         )
         manifest = json.loads(
-            (products / "scan-manifest.json").read_text(encoding="utf-8")
+            (evidence / "scan-manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(len(ledger), 1)
         self.assertEqual(ledger[0]["disposition"], "rejected")
@@ -1118,13 +1158,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.tally)
         self.call(DRIVER.final_tally)
         self.call(DRIVER.render_report)
-        products = Path(DRIVER.load_state()["products_dir"])
+        state = DRIVER.load_state()
+        products = Path(state["products_dir"])
+        evidence = Path(state["evidence_dir"])
         coverage = json.loads(
-            (products / "coverage.json").read_text(encoding="utf-8")
+            (evidence / "coverage.json").read_text(encoding="utf-8")
         )
         self.assertEqual(len(coverage["rejectedFindingReports"]), 2)
         manifest = json.loads(
-            (products / "scan-manifest.json").read_text(encoding="utf-8")
+            (evidence / "scan-manifest.json").read_text(encoding="utf-8")
         )
         # A dropped finding is incomplete coverage, like an agent that never
         # returned, so the scan cannot call itself complete.
@@ -1161,8 +1203,9 @@ class FabroWorkflowDriverTest(unittest.TestCase):
 
     def test_excerpt_is_read_from_the_tree_not_from_the_agent(self) -> None:
         products = self.verified_bundle([self.finding()])
+        evidence = products / "evidence"
         finding = json.loads(
-            (products / "findings.json").read_text(encoding="utf-8")
+            (evidence / "findings.json").read_text(encoding="utf-8")
         )[0]
         code = finding["code"]
         self.assertEqual(code["language"], "Python")
@@ -1176,15 +1219,16 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(highlighted[0]["number"], finding["line"])
         self.assertEqual(highlighted[0]["text"], "    os.system(value)")
         # The excerpt is presentation only: the judged candidate has none.
-        ledger = read_jsonl(products / "candidate-ledger.jsonl")
+        ledger = read_jsonl(evidence / "candidate-ledger.jsonl")
         self.assertNotIn("code", ledger[0]["candidate"])
 
     def test_an_unconfirmed_quoted_line_yields_no_excerpt(self) -> None:
         moved = self.finding()
         moved["line"] = 1
         products = self.verified_bundle([moved])
+        evidence = products / "evidence"
         finding = json.loads(
-            (products / "findings.json").read_text(encoding="utf-8")
+            (evidence / "findings.json").read_text(encoding="utf-8")
         )[0]
         self.assertEqual(finding["code"]["lines"], [])
         self.assertEqual(finding["code"]["label"], "src/app.py:1")
@@ -1198,8 +1242,9 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         run("git", "add", "src/app.py", cwd=self.root)
         run("git", "commit", "-qm", "control characters", cwd=self.root)
         products = self.verified_bundle([self.finding()])
+        evidence = products / "evidence"
         finding = json.loads(
-            (products / "findings.json").read_text(encoding="utf-8")
+            (evidence / "findings.json").read_text(encoding="utf-8")
         )[0]
         text = [
             line["text"]
@@ -1415,8 +1460,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )
         self.call(DRIVER.tally)
         self.call(DRIVER.final_tally)
-        products = Path(DRIVER.load_state()["products_dir"])
-        findings_path = products / "findings.json"
+        evidence = Path(DRIVER.load_state()["evidence_dir"])
+        findings_path = evidence / "findings.json"
         findings = json.loads(findings_path.read_text(encoding="utf-8"))
         # The engine already capped it. Prove the renderer independently
         # refuses a bundle edited afterwards to claim more -- consistently, so
@@ -1424,7 +1469,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(findings[0]["confidence"], "medium")
         findings[0]["confidence"] = "high"
         findings_path.write_text(json.dumps(findings) + "\n", encoding="utf-8")
-        ledger_path = products / "candidate-ledger.jsonl"
+        ledger_path = evidence / "candidate-ledger.jsonl"
         ledger = read_jsonl(ledger_path)
         ledger[0]["candidate"]["confidence"] = "high"
         ledger_path.write_text(
@@ -1441,7 +1486,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self,
     ) -> None:
         products = self.verified_bundle([self.finding()])
-        findings_path = products / "findings.json"
+        findings_path = products / "evidence/findings.json"
         findings = json.loads(findings_path.read_text(encoding="utf-8"))
         for line in findings[0]["code"]["lines"]:
             line.pop("highlight", None)
@@ -1796,22 +1841,48 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "[run.artifacts]\n",
                 1,
             )[1].split("\n[", 1)[0]
-            for artifact in (
-                ".fabro/workflows/security-review/runtime/**",
+            expected_artifacts = {
                 "SECURITY-REVIEW-*/.gitignore",
-                "SECURITY-REVIEW-*/.security-review-run/**",
-                "SECURITY-REVIEW-*/scan-manifest.json",
-                "SECURITY-REVIEW-*/candidate-ledger.jsonl",
-                "SECURITY-REVIEW-*/findings.json",
-                "SECURITY-REVIEW-*/coverage.json",
-                "SECURITY-REVIEW-*/panel-votes.jsonl",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.md",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.html",
                 "SECURITY-REVIEW-*/SECURITY-REVIEW-RESULTS.jsonl",
-                "SECURITY-REVIEW-*/SECURITY-REVIEW-REVISION-*.json",
-            ):
+                "SECURITY-REVIEW-*/evidence/scan-manifest.json",
+                "SECURITY-REVIEW-*/evidence/candidate-ledger.jsonl",
+                "SECURITY-REVIEW-*/evidence/findings.json",
+                "SECURITY-REVIEW-*/evidence/coverage.json",
+                "SECURITY-REVIEW-*/evidence/panel-votes.jsonl",
+                "SECURITY-REVIEW-*/metadata/revision.json",
+                "SECURITY-REVIEW-*/metadata/state.json",
+                "SECURITY-REVIEW-*/metadata/scan-meta.json",
+            }
+            for artifact in expected_artifacts:
                 self.assertIn(artifact, artifact_sections[config_name])
+            self.assertNotIn(
+                ".fabro/workflows/security-review/runtime",
+                artifact_sections[config_name],
+            )
+            include_lines = [
+                line.strip().strip('",')
+                for line in artifact_sections[config_name].splitlines()
+                if line.strip().startswith('"')
+            ]
+            self.assertTrue(include_lines)
+            self.assertEqual(set(include_lines), expected_artifacts)
+            self.assertTrue(
+                all(
+                    artifact.startswith("SECURITY-REVIEW-*/")
+                    for artifact in include_lines
+                )
+            )
             self.assertNotIn("reports/**", artifact_sections[config_name])
+            self.assertNotIn(
+                ".security-review-run",
+                artifact_sections[config_name],
+            )
+            self.assertNotIn(
+                "SECURITY-REVIEW-REVISION-",
+                artifact_sections[config_name],
+            )
             self.assertNotIn("SARIF", artifact_sections[config_name].upper())
         self.assertEqual(
             artifact_sections["workflow.toml"],
@@ -1881,8 +1952,13 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "findings.json",
             "coverage.json",
             "panel-votes.jsonl",
+            "revision.json",
+            "state.json",
+            "scan-meta.json",
         ):
             self.assertIn(artifact, guide, artifact)
+        self.assertIn("evidence/", guide)
+        self.assertIn("metadata/", guide)
         # The guide quotes the researcher prompts verbatim. Any field name it
         # shows must still be one the schema asks for -- these went stale once.
         schema = json.loads(
