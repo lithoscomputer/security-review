@@ -281,7 +281,14 @@ def render_sample() -> str:
             "".join(json.dumps(vote) + "\n" for vote in votes),
             encoding="utf-8",
         )
-        renderer.render(str(bundle))
+        # The published example sits beside the guide, so it links back.
+        renderer.render(
+            str(bundle),
+            html_backlink={
+                "text": "\u2190 How the security review works",
+                "href": "index.html",
+            },
+        )
         return (bundle / renderer.HTML_REPORT_NAME).read_text(encoding="utf-8")
 
 

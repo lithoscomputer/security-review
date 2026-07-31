@@ -1821,7 +1821,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             REPOSITORY_ROOT / "README.md",
             # The guide and the example report went stale on the rename once
             # because nothing checked them.
-            REPOSITORY_ROOT / "workflow.html",
+            REPOSITORY_ROOT / "index.html",
             REPOSITORY_ROOT / "sample.html",
             Path(__file__).resolve(),
             *(
@@ -1868,7 +1868,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn(f'"{element_id}"', template)
 
     def test_guide_describes_the_artifacts_the_workflow_writes(self) -> None:
-        guide = (REPOSITORY_ROOT / "workflow.html").read_text(encoding="utf-8")
+        guide = (REPOSITORY_ROOT / "index.html").read_text(encoding="utf-8")
         for artifact in (
             "SECURITY-REVIEW-RESULTS.md",
             "SECURITY-REVIEW-RESULTS.html",

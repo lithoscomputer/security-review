@@ -362,6 +362,24 @@
     .ph-note { margin-left: 0; text-align: left; width: 100%; }
     .ph-body { padding-left: 18px; }
   }
+  .header-links {
+    margin: 1.1rem 0 0;
+  }
+  .sample-link {
+    display: inline-block;
+    padding: 0.5rem 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .sample-link:hover {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
 </style>
 </head>
 <body>
@@ -373,6 +391,9 @@
       An adversarial, read-only security review of a repository. Agent teams map the code,
       hunt for vulnerabilities, and then try to destroy each other's findings.
       Only findings that survive a three-voter panel reach the report.
+    </p>
+    <p class="header-links">
+      <a class="sample-link" href="sample.html">See an example report &rarr;</a>
     </p>
   </header>
 
@@ -1148,6 +1169,10 @@ result file and do not add narration.</pre>
 ├── candidate-ledger.jsonl          <span class="c"># EVERY candidate + disposition (kept, rejected, deferred)</span>
 ├── coverage.json                   <span class="c"># what was scanned, skipped, pruned, capped, and why</span>
 └── panel-votes.jsonl               <span class="c"># every vote, lens, verdict, and reasoning</span></pre>
+            <p>
+              <a class="sample-link" href="sample.html">See an example of that HTML report &rarr;</a>
+              &mdash; built from fictional findings.
+            </p>
             <p>
               Reported confidence is capped by the vote: a unanimous 3-of-3 keep may report up to
               <b>high</b> confidence; a 2-of-3 keep is capped at <b>medium</b>. The renderer

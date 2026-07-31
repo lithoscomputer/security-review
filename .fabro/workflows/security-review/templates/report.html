@@ -1301,6 +1301,7 @@ td {
 				<div class="page-container">
 					<div class="report-hero__topline">
 						<p class="eyebrow">Security review</p>
+						<p id="report-backlink" hidden></p>
 					</div>
 					<h1 id="report-title"></h1>
 					<p class="report-hero__summary" id="report-summary"></p>
@@ -1679,6 +1680,19 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		byId("scan-effort").textContent = labelize(data.scan.effort);
 		byId("footer-title").textContent = data.report.title;
 		byId("footer-date").textContent = data.report.date;
+
+		// A published example links back to the guide. A report written by
+		// a run has no backlink, so it stays a self-contained file.
+		if (data.report.backlink) {
+			const backlink = byId("report-backlink");
+			backlink.hidden = false;
+			backlink.append(
+				element("a", {
+					text: data.report.backlink.text,
+					attributes: { href: data.report.backlink.href },
+				}),
+			);
+		}
 
 		for (const node of document.querySelectorAll("[data-total-findings]")) {
 			node.textContent = String(findings.length);
