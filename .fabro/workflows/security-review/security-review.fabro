@@ -3,7 +3,7 @@ digraph SecurityReview {
         goal="Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
         default_max_retries=0,
         default_fidelity="compact",
-        stall_timeout="3600s",
+        stall_timeout="14400s",
         model_stylesheet="
             * { model: sonnet; reasoning_effort: low; }
             .inventory { model: sonnet; reasoning_effort: medium; }
@@ -41,7 +41,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1200s",
+        timeout="3600s",
         fidelity="compact",
         project_memory=false,
         max_visits=2
@@ -81,7 +81,7 @@ digraph SecurityReview {
         shape=component,
         label="Threat models",
         for_each="context.threat_jobs",
-        max_parallel=4,
+        max_parallel=12,
         auto_status=true
     ]
     threat_model [
@@ -92,7 +92,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1200s",
+        timeout="7200s",
         project_memory=false
     ]
     threat_join [shape=tripleoctagon, label="Gather threat-model outputs"]
@@ -117,7 +117,7 @@ digraph SecurityReview {
         shape=component,
         label="Research",
         for_each="context.research_jobs",
-        max_parallel=8,
+        max_parallel=24,
         auto_status=true
     ]
     researcher [
@@ -128,7 +128,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1800s",
+        timeout="10800s",
         project_memory=false
     ]
     research_join [shape=tripleoctagon, label="Gather research outputs"]
@@ -145,7 +145,7 @@ digraph SecurityReview {
         shape=component,
         label="Gap-fill sweeps",
         for_each="context.sweep_jobs",
-        max_parallel=3,
+        max_parallel=12,
         auto_status=true
     ]
     sweeper [
@@ -156,7 +156,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1800s",
+        timeout="10800s",
         project_memory=false
     ]
     sweep_join [shape=tripleoctagon, label="Gather sweep outputs"]
@@ -181,7 +181,7 @@ digraph SecurityReview {
         shape=component,
         label="Three-lens panel",
         for_each="context.verification_jobs",
-        max_parallel=12,
+        max_parallel=24,
         auto_status=true
     ]
     panel_verifier [
@@ -192,7 +192,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1200s",
+        timeout="7200s",
         project_memory=false
     ]
     panel_join [shape=tripleoctagon, label="Gather panel votes"]
@@ -218,7 +218,7 @@ digraph SecurityReview {
         shape=component,
         label="Repanel marginal keeps",
         for_each="context.repanel_jobs",
-        max_parallel=12,
+        max_parallel=24,
         auto_status=true
     ]
     repanel_verifier [
@@ -229,7 +229,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1200s",
+        timeout="7200s",
         project_memory=false
     ]
     repanel_join [shape=tripleoctagon, label="Gather repanel votes"]
@@ -254,7 +254,7 @@ digraph SecurityReview {
         shape=component,
         label="Red-team every survivor",
         for_each="context.redteam_jobs",
-        max_parallel=4,
+        max_parallel=24,
         auto_status=true
     ]
     redteam_verifier [
@@ -265,7 +265,7 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         auto_status=true,
-        timeout="1200s",
+        timeout="10800s",
         project_memory=false
     ]
     redteam_join [shape=tripleoctagon, label="Gather red-team votes"]

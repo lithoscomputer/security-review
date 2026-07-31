@@ -565,7 +565,8 @@
             <p>
               A deterministic completeness check follows. An incomplete answer gets exactly one
               correction pass with pointed feedback; a failed agent falls back to scanning the
-              whole target as a single component, so nothing silently disappears.
+              whole target as a single component, so nothing silently disappears. Each attempt
+              has a 60-minute timeout.
             </p>
             <details class="prompt">
               <summary>Full prompt — prompts/inventory.md</summary>
@@ -660,7 +661,8 @@ valid when there is genuinely nothing to partition.</pre>
           </summary>
           <div class="ph-body">
             <p>
-              One agent per component, up to 4 in parallel. Each maps its component's
+              One agent per component, up to 12 in parallel, with a 120-minute timeout per
+              attempt. Each maps its component's
               entry points, dangerous sinks, unstated assumptions, trust boundaries, and the
               hot files a researcher must read in full — with concrete <code>file:line</code>
               evidence, and explicitly without reporting vulnerabilities yet. The models feed
@@ -870,7 +872,8 @@ speculative finding.</pre>
           </summary>
           <div class="ph-body">
             <p>
-              Sweeps hunt where the component matrix has blind spots, up to 3 in parallel:
+              Sweeps hunt where the component matrix has blind spots. The phase has a concurrency
+              cap of 12 and a 180-minute timeout per attempt:
             </p>
             <ul>
               <li><b>Glue sweep</b> — entry points and sinks outside covered paths: scripts, CI definitions, migrations, admin tooling.</li>
@@ -984,8 +987,9 @@ result file. An empty `findings` array is a complete answer.</pre>
           </summary>
           <div class="ph-body">
             <p>
-              Three independent voters per candidate, up to 12 in parallel, each assigned one
-              refutation lens: <b>reachability</b> (is the source really attacker-controlled?),
+              Three independent voters per candidate, up to 24 in parallel, with a 120-minute
+              timeout per attempt. Each voter is assigned one refutation lens:
+              <b>reachability</b> (is the source really attacker-controlled?),
               <b>impact</b> (does it really do the claimed damage?), and <b>defenses</b>
               (does something already stop it?). Voters see only the reporter's claim and cited
               evidence — the confidence, impact story, and exploit scenario are withheld so they
@@ -1075,7 +1079,8 @@ result file and do not add narration.</pre>
               2-of-3 vote faces three fresh voters with the same lenses (using the same
               <code>verify.md</code> prompt). Fewer than 2 <code>TRUE_POSITIVE</code> on the
               recheck drops it. An incomplete repanel leaves the first verdict standing and
-              records the casualty in the coverage report.
+              records the casualty in the coverage report. The phase runs up to 24 voters in
+              parallel, with a 120-minute timeout per attempt.
             </p>
           </div>
         </details>
@@ -1092,7 +1097,8 @@ result file and do not add narration.</pre>
           <div class="ph-body">
             <p>
               Runs only at <code>max</code> effort. One dedicated refuter per surviving finding,
-              up to 4 in parallel, considering reachability, impact, and defenses together.
+              up to 24 in parallel, with a 180-minute timeout per attempt. Each refuter considers
+              reachability, impact, and defenses together.
               The burden flips here: the refuter must locate a real, citable reason the claim is
               a false positive; if it tries in earnest and cannot break it, the finding stands.
             </p>
@@ -1228,7 +1234,8 @@ result file and do not add narration.</pre>
     <p style="color: var(--muted); font-size: 14.5px; max-width: 66ch;">
       The secrets sweep is orthogonal to effort: it runs on any focused scan, even a
       single-researcher one. Focused means <code>focus=attack-surface</code> — set explicitly
-      or triggered automatically by a scan of more than 500 files.
+      or triggered automatically by a scan of more than 500 files. A separate workflow-wide
+      stall watchdog stops the run after four hours without an event.
     </p>
   </section>
 
@@ -1355,29 +1362,29 @@ result file and do not add narration.</pre>
       // Phases
       var prepEl = document.querySelector('[data-phase="prepare"]');
       prepEl.classList.remove("off");
-      setPhase("inventory", !empty && !single, "1 agent · ≤ " + cap + " components · 1 correction pass", "skipped — single-researcher shape");
+      setPhase("inventory", !empty && !single, "1 agent · ≤ " + cap + " components · 1 correction pass · 60 min/attempt", "skipped — single-researcher shape");
       setPhase("plan", !empty, single ? "plans 1 whole-target component" : "caps at " + cap + " components");
-      setPhase("threat", !empty && !single, "1 agent per component · 4 at a time", "skipped — single-researcher shape");
+      setPhase("threat", !empty && !single, "1 agent per component · 12 at a time · 120 min/attempt", "skipped — single-researcher shape");
 
       var researchNote, researchDesc;
       if (single) {
-        researchNote = "1 agent · all categories at once";
-        researchDesc = "In this shape a single researcher maps the attack surface briefly and hunts breadth-first across every category at once — proportionate to a small target, and its findings still face the full panel.";
+        researchNote = "1 agent · all categories at once · 180 min/attempt";
+        researchDesc = "In this shape a single researcher maps the attack surface briefly and hunts breadth-first across every category at once — proportionate to a small target, and its findings still face the full panel. The attempt has a 180-minute timeout.";
       } else {
-        researchNote = "components × ≤ 4 lenses × " + passes + " pass" + (passes > 1 ? "es" : "") + " · 8 at a time";
-        researchDesc = "One researcher per component × category cell" + (passes > 1 ? ", two independent passes per cell" : "") + ", up to 8 in parallel. Each gets its component's threat model and hunts through exactly one category lens.";
+        researchNote = "components × ≤ 4 lenses × " + passes + " pass" + (passes > 1 ? "es" : "") + " · 24 at a time · 180 min/attempt";
+        researchDesc = "One researcher per component × category cell" + (passes > 1 ? ", two independent passes per cell" : "") + ", up to 24 in parallel, with a 180-minute timeout per attempt. Each gets its component's threat model and hunts through exactly one category lens.";
       }
       setPhase("research", !empty, researchNote);
       document.getElementById("research-shape-desc").textContent = researchDesc;
 
       setPhase("sweep", !empty && sweepCount > 0,
-        sweepCount === 1 && focus && baseSweeps === 0 ? "secrets sweep only" :
-          baseSweeps + " gap sweep" + (baseSweeps === 1 ? "" : "s") + (focus ? " + secrets sweep" : ""),
+        (sweepCount === 1 && focus && baseSweeps === 0 ? "secrets sweep only" :
+          baseSweeps + " gap sweep" + (baseSweeps === 1 ? "" : "s") + (focus ? " + secrets sweep" : "")) + " · cap 12 · 180 min/attempt",
         "skipped — no sweeps at this shape/focus");
       setPhase("dedup", !empty, "");
-      setPhase("panel", !empty, "3 voters × ≤ 45 candidates · 12 at a time");
-      setPhase("repanel", !empty && mx, "3 fresh voters per 2-of-3 keep", "skipped — max effort only");
-      setPhase("redteam", !empty && mx, "1 refuter per survivor · 4 at a time", "skipped — max effort only");
+      setPhase("panel", !empty, "3 voters × ≤ 45 candidates · 24 at a time · 120 min/attempt");
+      setPhase("repanel", !empty && mx, "3 fresh voters per 2-of-3 keep · 24 at a time · 120 min/attempt", "skipped — max effort only");
+      setPhase("redteam", !empty && mx, "1 refuter per survivor · 24 at a time · 180 min/attempt", "skipped — max effort only");
       setPhase("publish", !empty, "");
       document.querySelector('[data-phase="dedup"]').classList.toggle("off", empty);
       document.querySelector('[data-phase="publish"]').classList.toggle("off", empty);

@@ -101,6 +101,22 @@ reasons. Every level uses three verification voters.
 | `high` | Expands the inventory, uses two researchers for each component and category, and performs two gap sweeps. |
 | `max` | Adds a second panel for marginal findings and a red-team refuter for every survivor. |
 
+Each agent attempt has a fixed timeout. Fan-out phases also have a concurrency
+cap:
+
+| Phase | Timeout per attempt | Concurrency cap |
+| --- | --- | --- |
+| Inventory | 60 minutes | 1 |
+| Threat models | 120 minutes | 12 |
+| Researchers | 180 minutes | 24 |
+| Sweeps | 180 minutes | 12 |
+| Panel | 120 minutes | 24 |
+| Repanel | 120 minutes | 24 |
+| Red team | 180 minutes | 24 |
+
+The workflow also has a four-hour stall timeout. Any workflow event resets
+that timer.
+
 Use `low` for a quick or narrow check. Use `medium` for a routine repository
 review. Use `high` or `max` when you want more independent coverage and accept
 the added time and model use.

@@ -1523,8 +1523,18 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertEqual(graph.count(digest), 1, path.name)
         self.assertNotIn("__SUPPORT_HASH_ARGUMENTS__", graph)
 
-    def test_model_stylesheet_and_concurrency_caps_match_decisions(self) -> None:
+    def test_model_stylesheet_and_agent_limits_match_decisions(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
+
+        def node_body(node: str) -> str:
+            match = re.search(
+                rf"^    {re.escape(node)} \[(.*?)^    \]",
+                graph,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+            self.assertIsNotNone(match, node)
+            return match.group(1)
+
         for rule in (
             ".inventory { model: sonnet; reasoning_effort: medium; }",
             ".threat-model { model: opus; reasoning_effort: medium; }",
@@ -1533,16 +1543,29 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         ):
             self.assertIn(rule, graph)
         self.assertNotIn(".report-author", graph)
-        for node, cap in (
-            ("threat_jobs", 4),
-            ("research_jobs", 8),
-            ("sweep_jobs", 3),
-            ("verification_jobs", 12),
-            ("repanel_jobs", 12),
-            ("redteam_jobs", 4),
+        self.assertIn('stall_timeout="14400s"', graph)
+        for node, jobs, cap in (
+            ("threat_models", "threat_jobs", 12),
+            ("research", "research_jobs", 24),
+            ("sweep", "sweep_jobs", 12),
+            ("panel", "verification_jobs", 24),
+            ("repanel", "repanel_jobs", 24),
+            ("redteam", "redteam_jobs", 24),
         ):
-            self.assertIn(f'for_each="context.{node}"', graph)
-            self.assertIn(f"max_parallel={cap}", graph)
+            body = node_body(node)
+            self.assertIn(f'for_each="context.{jobs}"', body)
+            self.assertIn(f"max_parallel={cap}", body)
+
+        for node, timeout in (
+            ("inventory", 3600),
+            ("threat_model", 7200),
+            ("researcher", 10800),
+            ("sweeper", 10800),
+            ("panel_verifier", 7200),
+            ("repanel_verifier", 7200),
+            ("redteam_verifier", 10800),
+        ):
+            self.assertIn(f'timeout="{timeout}s"', node_body(node), node)
 
     def test_finding_schema_requires_patch_ready_details(self) -> None:
         schema = json.loads(
