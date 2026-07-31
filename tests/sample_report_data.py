@@ -19,7 +19,6 @@ REVISION = {
     "branch": "main",
     "dirty": False,
 }
-MODEL = {"provider": "openrouter", "inventory": "sonnet", "scan": "opus"}
 REQUEST = {
     "mode": "scan",
     "scope": [],

@@ -226,7 +226,6 @@ def build_manifest(
         "workflow": {"name": "security-review", "stateVersion": 5},
         "request": dict(SOURCE.REQUEST),
         "revision": dict(SOURCE.REVISION),
-        "model": dict(SOURCE.MODEL),
         "completion": {
             "status": "complete",
             "reasons": [],

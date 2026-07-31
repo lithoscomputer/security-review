@@ -31,7 +31,6 @@ WORKFLOW_ROOT = Path(".fabro/workflows/security-review")
 CONTROL_DIR = WORKFLOW_ROOT / "runtime"
 STATE_PATH = CONTROL_DIR / "state.json"
 RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
-GRAPH_PATH = WORKFLOW_ROOT / "security-review.fabro"
 
 CANDIDATE_CAP = 400
 VERIFICATION_CAP = 45
@@ -382,45 +381,6 @@ def stable_target_identity() -> Tuple[str, str]:
         material = "local-path\0" + str(root())
         source = "local-path"
     return TARGET_ID_PREFIX + sha256_text(material), source
-
-
-def declared_model_routing() -> Dict[str, Any]:
-    """The model routing the graph declares, read from the graph itself.
-
-    Fabro applies the graph's `model_stylesheet` and does not report the model
-    it resolved back to a node, so this records what the workflow asked for
-    rather than what served each request. A command-line override at run time
-    is therefore not visible here. Reading it from the file beats naming models
-    in this program, which cannot know when the stylesheet changes.
-    """
-    routing: Dict[str, Any] = {"source": "graph.model_stylesheet", "rules": []}
-    try:
-        graph = (root() / GRAPH_PATH).read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        routing["source"] = "unavailable"
-        return routing
-    stylesheet = re.search(
-        r'model_stylesheet\s*=\s*"(.*?)"\s*\n',
-        graph,
-        re.S,
-    )
-    if stylesheet is None:
-        routing["source"] = "absent"
-        return routing
-    for selector, body in re.findall(
-        r"([^\s{}]+)\s*\{([^}]*)\}",
-        stylesheet.group(1),
-    ):
-        rule: Dict[str, str] = {"selector": one_line(selector, 120)}
-        for declaration in body.split(";"):
-            name, separator, value = declaration.partition(":")
-            if not separator:
-                continue
-            key = one_line(name, 60).strip()
-            if key:
-                rule[key] = one_line(value, 120).strip()
-        routing["rules"].append(rule)
-    return routing
 
 
 def scan_id_from_args(args: argparse.Namespace) -> str:
@@ -1168,9 +1128,7 @@ def prepare(args: argparse.Namespace) -> None:
         parent,
         revision_range,
     )
-    model_record = declared_model_routing()
     state["revision"] = revision
-    state["model"] = model_record
     scan_meta = {
         "schema_version": CANONICAL_SCHEMA_VERSION,
         "started_at": started_at,
@@ -1184,7 +1142,6 @@ def prepare(args: argparse.Namespace) -> None:
         "mode": mode,
         "scope": scope,
         "effort": effort,
-        "model": model_record,
         "revision": revision,
         "revision_source": "self-reported",
         "top_level_dirs": top_level_dirs,
@@ -2911,7 +2868,6 @@ def scan_manifest(
             "focus": state.get("focus"),
         },
         "revision": state.get("revision") or {"versioned": False},
-        "model": state.get("model") or {},
         "completion": {
             "status": completion_status,
             "reasons": reasons,

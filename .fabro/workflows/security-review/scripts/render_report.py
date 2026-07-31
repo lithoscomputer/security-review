@@ -81,7 +81,6 @@ MANIFEST_FIELDS = (
     "workflow",
     "request",
     "revision",
-    "model",
     "completion",
     "canonicalFiles",
 )
@@ -495,17 +494,15 @@ def validate_manifest(value: object) -> JsonMap:
     request = as_map(manifest.get("request"))
     revision = as_map(manifest.get("revision"))
     workflow = as_map(manifest.get("workflow"))
-    model = as_map(manifest.get("model"))
     completion = as_map(manifest.get("completion"))
     if (
         request is None
         or revision is None
         or workflow is None
-        or model is None
         or completion is None
     ):
         raise RenderError(
-            "scan-manifest.json workflow, request, revision, model, and "
+            "scan-manifest.json workflow, request, revision, and "
             "completion must be objects"
         )
     exact_keys(
@@ -2040,7 +2037,6 @@ def render(
         "scope": (as_map(manifest["request"]) or {}).get("scope") or [],
         "revision": revision,
         "revision_source": "self-reported",
-        "model": manifest.get("model"),
         "effort": (as_map(manifest["request"]) or {}).get("effort"),
         "findings": {
             "total": len(findings),

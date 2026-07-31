@@ -29,16 +29,6 @@ Severity describes impact. Difficulty describes the access, knowledge, and effor
 
 Canonical `category` slugs are part of `ruleId`, and therefore of a finding's stable identity. The HTML report maps them to display names in the renderer instead. Renaming a slug would change every `findingId` derived from it.
 
-## Model provenance
-
-`scan-manifest.json` records `model` as the routing the graph declares, parsed
-from its `model_stylesheet` at run time. It is a declaration, not an
-observation: Fabro does not report back which model served a request, so a
-command-line override is not visible in the record. `source` names where the
-routing came from, and is `unavailable` or `absent` when the graph could not be
-read or declares no stylesheet. No model name is written in the engine, so a
-change to the stylesheet changes the record.
-
 ## Source excerpts
 
 A researcher quotes one sink line in `snippet`. The excerpt shown in a report is not that quote: `final-tally` reads the lines around the finding from the reviewed tree, so the line numbers are the tree's own and no agent transcribes them. The excerpt is omitted when the file is unreadable, binary, oversized, or when the quoted line does not match the line that was read — a mismatch a stale line number or a commit-mode revision gap would cause. The report then falls back to the reporter's quoted line.
