@@ -1072,6 +1072,60 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.final_tally)
         return Path(DRIVER.load_state()["products_dir"])
 
+    def test_manifest_records_the_routing_the_graph_declares(self) -> None:
+        graph = self.root / DRIVER.GRAPH_PATH
+        graph.write_text(
+            'digraph SecurityReview {\n'
+            '    graph [\n'
+            '        goal="test",\n'
+            '        model_stylesheet="\n'
+            '            * { model: kimi-k3; provider: kimi; '
+            'reasoning_effort: low; }\n'
+            '            .research { model: kimi-k3; provider: kimi; '
+            'reasoning_effort: high; }\n'
+            '        "\n'
+            '    ]\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        routing = DRIVER.declared_model_routing()
+        self.assertEqual(routing["source"], "graph.model_stylesheet")
+        self.assertEqual(
+            routing["rules"],
+            [
+                {
+                    "selector": "*",
+                    "model": "kimi-k3",
+                    "provider": "kimi",
+                    "reasoning_effort": "low",
+                },
+                {
+                    "selector": ".research",
+                    "model": "kimi-k3",
+                    "provider": "kimi",
+                    "reasoning_effort": "high",
+                },
+            ],
+        )
+        # No model name is hardcoded in the engine: a graph naming other models
+        # has to change the record.
+        state = self.prepare(effort="low")
+        self.assertEqual(state["model"], routing)
+        products = self.verified_bundle([self.finding()])
+        manifest = json.loads(
+            (products / "scan-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["model"], routing)
+        for retired in ("sonnet", "opus", "openrouter"):
+            self.assertNotIn(retired, json.dumps(manifest["model"]))
+
+    def test_missing_graph_is_recorded_rather_than_guessed(self) -> None:
+        (self.root / DRIVER.GRAPH_PATH).unlink(missing_ok=True)
+        self.assertEqual(
+            DRIVER.declared_model_routing(),
+            {"source": "unavailable", "rules": []},
+        )
+
     def test_difficulty_is_required_and_keeps_the_easier_report(self) -> None:
         missing = self.finding()
         del missing["difficulty"]
