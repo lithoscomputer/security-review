@@ -1889,6 +1889,18 @@ def finding_or_rejection(
         cap=20,
         item_cap=2000,
     )
+    # Researchers now cite one hop per entry. A single blob is still accepted,
+    # and becomes a one-entry list, until that shape is retired.
+    raw_evidence = value.get("evidence")
+    if isinstance(raw_evidence, list):
+        citations = [
+            item
+            for item in (string_list(raw_evidence, cap=40, item_cap=2000) or [])
+            if item.strip()
+        ]
+    else:
+        blob = clean_text(raw_evidence, 8000).strip()
+        citations = [blob] if blob else []
     return {
         "file": path,
         "line": line,
@@ -1900,7 +1912,7 @@ def finding_or_rejection(
         "confidence": confidence,
         "title": title,
         "rationale": rationale,
-        "evidence": clean_text(value.get("evidence"), 8000),
+        "evidence": citations,
         "snippet": clean_text(value.get("snippet"), 2000),
         "symbol": one_line(value.get("symbol"), 500),
         "impact": clean_text(value.get("impact"), 4000),
@@ -2092,7 +2104,7 @@ def verification_claim(candidate: Mapping[str, Any]) -> Dict[str, Any]:
         "severityAsReported": candidate.get("severity"),
         "title": candidate.get("title"),
         "rationale": candidate.get("rationale"),
-        "evidenceAsCited": candidate.get("evidence") or "(none)",
+        "evidenceAsCited": "\n".join(candidate.get("evidence") or []) or "(none)",
         "snippetAsQuoted": candidate.get("snippet") or "(none)",
         "symbol": candidate.get("symbol") or "(none)",
         "reports": int(candidate.get("reports") or 1),
@@ -2700,7 +2712,7 @@ def canonical_candidate(
         "file": candidate["file"],
         "line": int(candidate["line"]),
         "description": candidate["rationale"],
-        "evidence": candidate.get("evidence") or "",
+        "evidence": list(candidate.get("evidence") or []),
         "exploit_scenarios": (
             list(candidate.get("exploitScenarios") or [])
             or [candidate["rationale"]]

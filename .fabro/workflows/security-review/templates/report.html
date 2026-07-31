@@ -787,6 +787,74 @@ td {
 	text-wrap: pretty;
 }
 
+.finding-evidence {
+	display: grid;
+	gap: 0.7rem;
+}
+
+.finding-evidence > summary {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	width: fit-content;
+	font-size: 1rem;
+	font-weight: 680;
+	list-style: none;
+}
+
+.finding-evidence > summary::-webkit-details-marker {
+	display: none;
+}
+
+.finding-evidence > summary::before {
+	content: "";
+	width: 0.4rem;
+	height: 0.4rem;
+	border-right: 0.11rem solid var(--finding-tone);
+	border-bottom: 0.11rem solid var(--finding-tone);
+	rotate: -45deg;
+	translate: 0 -0.06rem;
+	transition: rotate 120ms ease;
+}
+
+.finding-evidence[open] > summary::before {
+	rotate: 45deg;
+	translate: 0 -0.14rem;
+}
+
+.finding-evidence > summary:hover {
+	color: var(--accent-dark);
+}
+
+.finding-evidence__count {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 400;
+}
+
+.finding-evidence ol {
+	display: grid;
+	gap: 0.7rem;
+	padding-left: 1.25rem;
+	margin: 0;
+}
+
+.finding-evidence li {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 0.9375rem;
+	line-height: 1.7;
+	overflow-wrap: anywhere;
+	text-wrap: pretty;
+}
+
+.finding-evidence li::marker {
+	color: var(--finding-tone);
+	font-weight: 700;
+}
+
 .code-frame {
 	width: min(100%, 56rem);
 	overflow: hidden;
@@ -1196,6 +1264,10 @@ td {
 
 	.findings-table tbody tr[data-hidden="true"] {
 		display: table-row;
+	}
+
+	.finding-evidence > summary::before {
+		display: none;
 	}
 
 	.table-scroll,
@@ -1876,6 +1948,27 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		return section;
 	}
 
+	function createEvidenceBlock(finding) {
+		const citations = finding.evidence || [];
+		if (citations.length === 0) {
+			return null;
+		}
+		const block = element("details", { className: "finding-evidence" });
+		const heading = element("summary");
+		heading.append(
+			document.createTextNode("Evidence"),
+			element("span", {
+				className: "finding-evidence__count",
+				text: `${citations.length} ${
+					citations.length === 1 ? "citation" : "citations"
+				}`,
+			}),
+		);
+		block.append(heading);
+		appendList(block, citations, true);
+		return block;
+	}
+
 	function createCodeFrame(finding) {
 		if (!finding.code?.lines?.length && !finding.snippet) {
 			return null;
@@ -2000,11 +2093,16 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 				}),
 			);
 
+			const evidenceBlock = createEvidenceBlock(finding);
+			if (evidenceBlock) {
+				body.append(evidenceBlock);
+			}
+
 			const codeFrame = createCodeFrame(finding);
 			if (codeFrame) {
-				const evidence = createFindingBlock("Source evidence");
-				evidence.append(codeFrame);
-				body.append(evidence);
+				const sourceCode = createFindingBlock("Source code");
+				sourceCode.append(codeFrame);
+				body.append(sourceCode);
 			}
 
 			body.append(
@@ -2124,6 +2222,21 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		difficultyToneClass,
 	);
 	setupFilters();
+
+	// A collapsed block would print as a heading with nothing under it.
+	const evidenceBlocks = () =>
+		document.querySelectorAll(".finding-evidence");
+	window.addEventListener("beforeprint", () => {
+		for (const block of evidenceBlocks()) {
+			block.dataset.wasOpen = String(block.open);
+			block.open = true;
+		}
+	});
+	window.addEventListener("afterprint", () => {
+		for (const block of evidenceBlocks()) {
+			block.open = block.dataset.wasOpen === "true";
+		}
+	});
 })();
 
 		</script>

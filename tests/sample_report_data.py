@@ -93,16 +93,12 @@ FINDINGS = (
             "command. Shell metacharacters can start a second command with the "
             "worker's privileges."
         ),
-        "evidence": (
-            "The export request accepts a display name from an authenticated "
-            "workspace member. src/reports/export.ts:114 escapes spaces in that "
-            "name but does not preserve the value as one command argument, and "
-            "line 118 hands the assembled string to a shell.\n\n"
-            "Because the worker starts a shell, characters such as semicolons "
-            "and command substitutions retain their control meaning. The "
-            "container limits the blast radius, but the process can read report "
-            "inputs and its short-lived storage."
-        ),
+        "evidence": [
+            "src/reports/export.ts:114 takes the display name from the export request and only replaces spaces in it.",
+            "src/reports/export.ts:117 interpolates that value into a command string, so it is no longer one argument.",
+            "src/reports/export.ts:118 passes the string to exec, which starts a shell, giving semicolons and command substitutions their control meaning.",
+            "No call between line 114 and line 118 validates the value or escapes it for a shell.",
+        ],
         "impact": (
             "An attacker can execute commands in the report worker, read another "
             "queued export that shares the worker, and alter generated artifacts."
@@ -157,16 +153,12 @@ FINDINGS = (
             "signed but replayable internal event. It does not bind the "
             "destination to the originating build."
         ),
-        "evidence": (
-            "src/events/artifact_created.rs:82 authenticates the event at the "
-            "queue boundary. Line 85 then builds the destination key from the "
-            "event's own tenant identifier and object key, and line 87 writes "
-            "there without consulting the build record.\n\n"
-            "A caller with access to one worker signing key can replay a valid "
-            "event while changing fields that are outside the signature scope. "
-            "The storage write can then replace an artifact owned by another "
-            "tenant."
-        ),
+        "evidence": [
+            "src/events/artifact_created.rs:82 authenticates the event at the queue boundary, and nothing after it re-checks authority.",
+            "src/events/artifact_created.rs:85 builds the destination key from the event's own tenant identifier and object key.",
+            "src/events/artifact_created.rs:87 writes to that key without consulting the build record that produced the artifact.",
+            "The signature covers the payload but not the fields a replay changes, so a captured event can be redirected to another tenant.",
+        ],
         "impact": (
             "A compromised worker can replace downloadable build output across a "
             "tenant boundary and create a software supply-chain path."
@@ -220,14 +212,11 @@ FINDINGS = (
             "The document download route queries by document ID alone. Other "
             "document routes include the active tenant in the query."
         ),
-        "evidence": (
-            "app/routes/api.documents.$id.ts:39 authenticates the caller, but "
-            "the query on line 43 has no tenant predicate, and line 46 streams "
-            "whatever record it returned.\n\n"
-            "Document identifiers are random and are not normally disclosed "
-            "across workspaces. They do appear in copied links, browser history, "
-            "and support records, so obtaining one is practical."
-        ),
+        "evidence": [
+            "app/routes/api.documents.$id.ts:39 authenticates the caller through requireUser.",
+            "app/routes/api.documents.$id.ts:43 queries by document ID alone, with no tenant predicate.",
+            "app/routes/api.documents.$id.ts:46 streams whatever record the query returned.",
+        ],
         "impact": (
             "An authenticated user who learns a document ID can download a "
             "private document from another tenant."
@@ -281,16 +270,11 @@ FINDINGS = (
             "client sends storage credentials and artifact data without "
             "enforcing TLS."
         ),
-        "evidence": (
-            "src/storage/client.rs:60 accepts the configured endpoint URL "
-            "verbatim, and line 63 attaches storage credentials to the resulting "
-            "client. No branch rejects an http:// scheme or requires an explicit "
-            "unsafe override.\n\n"
-            "The default managed endpoint uses HTTPS, so this needs a "
-            "self-hosted deployment. Network access is normally restricted, so "
-            "exploitation also requires a position on the service network or "
-            "control of routing or DNS."
-        ),
+        "evidence": [
+            "src/storage/client.rs:59 reads a deployment-supplied endpoint from configuration.",
+            "src/storage/client.rs:60 accepts that endpoint URL verbatim, with no branch rejecting an http:// scheme.",
+            "src/storage/client.rs:63 attaches storage credentials to the client built from it, so they travel over whatever transport was configured.",
+        ],
         "impact": (
             "A network-positioned attacker can observe storage credentials and "
             "artifact contents, then read or replace stored artifacts."
@@ -343,15 +327,11 @@ FINDINGS = (
             "Account recovery tokens are generated with a seeded pseudo-random "
             "generator intended for simulations, not secrets."
         ),
-        "evidence": (
-            "app/services/recovery.server.ts:72 draws every token character from "
-            "seedRandom, a generator seeded once at process start, rather than "
-            "from the operating system's cryptographic source.\n\n"
-            "A party that can infer the seed and observe one token can narrow "
-            "the next token values. Tokens expire after 20 minutes and require "
-            "an account email address, which limits the useful attack window but "
-            "does not restore cryptographic unpredictability."
-        ),
+        "evidence": [
+            "app/services/recovery.server.ts:68 defines the token alphabet.",
+            "app/services/recovery.server.ts:72 draws every character from seedRandom, a generator seeded once at process start.",
+            "Nothing in the module reads the operating system's cryptographic random source.",
+        ],
         "impact": (
             "An attacker can predict a recovery token in favorable conditions "
             "and take control of a target account."
@@ -405,14 +385,11 @@ FINDINGS = (
             "Sign-in responses distinguish unknown emails, disabled accounts, "
             "and valid accounts with incorrect passwords."
         ),
-        "evidence": (
-            "app/services/authentication.server.ts:132, 135, and 137 return "
-            "three different messages for the three failure states, so the "
-            "response itself reports whether an email belongs to a workspace and "
-            "whether that account is disabled.\n\n"
-            "Rate limits reduce high-volume enumeration, but targeted checks "
-            "remain practical from distributed sources."
-        ),
+        "evidence": [
+            "app/services/authentication.server.ts:132 returns a distinct message when no account uses the address.",
+            "app/services/authentication.server.ts:135 returns a distinct message when the account is disabled.",
+            "app/services/authentication.server.ts:137 returns a third message for a wrong password, so the response itself reports account state.",
+        ],
         "impact": (
             "An attacker can identify customer users and account status, which "
             "improves phishing and credential-stuffing campaigns."
@@ -463,15 +440,11 @@ FINDINGS = (
             "Workspace role changes update membership state but do not create a "
             "durable audit event."
         ),
-        "evidence": (
-            "app/services/memberships.server.ts:204 writes the new role and the "
-            "function returns; no call in this path records an audit event, "
-            "though the invitation and removal paths in the same module do.\n\n"
-            "Routine request logs expire after seven days and do not include the "
-            "old role. This gap does not grant access by itself. It makes "
-            "unauthorized privilege changes harder to detect, investigate, and "
-            "prove."
-        ),
+        "evidence": [
+            "app/services/memberships.server.ts:200 checks that the actor administers the workspace.",
+            "app/services/memberships.server.ts:204 writes the new role and the function returns.",
+            "No call in this path records an audit event, though the invitation and removal paths in the same module do.",
+        ],
         "impact": (
             "A malicious or compromised administrator can change privileges with "
             "limited durable evidence, delaying response to later abuse."
@@ -524,16 +497,11 @@ FINDINGS = (
             "The post-login redirect check compares an encoded hostname string "
             "before the URL parser applies canonical form."
         ),
-        "evidence": (
-            "app/services/redirects.server.ts:50 tests the raw string for a "
-            "trusted domain substring, and line 51 parses it only afterwards, so "
-            "the check never sees the canonical host.\n\n"
-            "Most external URLs are rejected. Selected percent-encoded and "
-            "trailing-dot host representations pass the substring test and later "
-            "resolve outside the trusted domain. The redirect happens only after "
-            "a successful sign-in and does not expose the session token "
-            "directly."
-        ),
+        "evidence": [
+            "app/services/redirects.server.ts:48 returns relative paths unchanged, which is safe.",
+            "app/services/redirects.server.ts:50 tests the raw string for a trusted domain substring, before any parsing.",
+            "app/services/redirects.server.ts:51 parses the URL only afterwards, so the check never sees the canonical host.",
+        ],
         "impact": (
             "An attacker can send a signed-in user from the login flow to an "
             "attacker-controlled page that appears to originate from the product."
@@ -586,16 +554,11 @@ FINDINGS = (
             "system temporary location instead of a user-private application "
             "directory."
         ),
-        "evidence": (
-            "src/telemetry/spool.rs:37 joins a fixed directory name onto the "
-            "shared system temporary directory, and line 38 names each file "
-            "after its event ID, so both the directory and the filenames are "
-            "predictable.\n\n"
-            "Telemetry records contain command names, project paths, and error "
-            "categories. They do not contain source contents or credentials by "
-            "design. On a multi-user host, local users can infer activity or "
-            "interfere with queued telemetry."
-        ),
+        "evidence": [
+            "src/telemetry/spool.rs:36 resolves the shared system temporary directory.",
+            "src/telemetry/spool.rs:37 joins a fixed directory name onto it, so the location is predictable.",
+            "src/telemetry/spool.rs:38 names each file after its event ID, so the filenames are predictable too.",
+        ],
         "impact": (
             "Local users may observe limited developer activity metadata or "
             "disrupt diagnostic uploads on shared hosts."
@@ -644,14 +607,11 @@ FINDINGS = (
             "The release workflow references a third-party action by a mutable "
             "version tag while granting access to release credentials."
         ),
-        "evidence": (
-            ".github/workflows/release.yml:34 references the action by the "
-            "mutable tag v3, and line 36 passes the release token to that same "
-            "step.\n\n"
-            "The tag is convenient for updates but can move without a repository "
-            "change. Branch protection and environment approval reduce exposure. "
-            "They do not make the referenced action content immutable."
-        ),
+        "evidence": [
+            ".github/workflows/release.yml:34 references the action by the mutable tag v3 rather than a commit digest.",
+            ".github/workflows/release.yml:36 passes the release token to that same step.",
+            "Environment approval gates the job but does not make the referenced action content immutable.",
+        ],
         "impact": (
             "A compromised action version could access release tokens, alter "
             "packages, or change build provenance."
@@ -704,17 +664,11 @@ FINDINGS = (
             "The workflow assistant includes repository text in a model prompt "
             "and can propose executable workflow steps."
         ),
-        "evidence": (
-            "app/services/workflow-generator.server.ts:91 collects README and "
-            "issue text, line 95 interpolates it between instruction markers, "
-            "and line 99 asks the model for a workflow object built from that "
-            "prompt.\n\n"
-            "The markers are text, not a security boundary the model is "
-            "guaranteed to honor. Generated workflows remain drafts and require "
-            "user approval, and this review had no access to production model "
-            "settings or telemetry, so the reliability of a bypass is not "
-            "established here."
-        ),
+        "evidence": [
+            "app/services/workflow-generator.server.ts:91 collects README and issue text from the repository.",
+            "app/services/workflow-generator.server.ts:95 interpolates that text between instruction markers, which are prose rather than a boundary the model must honor.",
+            "app/services/workflow-generator.server.ts:99 asks the model for a workflow object built from that prompt.",
+        ],
         "impact": (
             "Repository text can shape a generated workflow draft, and an "
             "approved draft runs the steps it contains."
@@ -772,15 +726,11 @@ FINDINGS = (
             "The GraphQL error formatter returns the original database message "
             "for selected query failures."
         ),
-        "evidence": (
-            "app/graphql/error-format.ts:28 returns the database driver's own "
-            "message to the client, while line 30 shows the generic response the "
-            "other failure paths use.\n\n"
-            "Constraint names and table fields can therefore reach authenticated "
-            "clients when a mutation violates a database rule. Stack traces are "
-            "removed, and the values observed did not include credentials or row "
-            "data."
-        ),
+        "evidence": [
+            "app/graphql/error-format.ts:27 branches on the error being a database error.",
+            "app/graphql/error-format.ts:28 returns the driver's own message to the client, which can name constraints and columns.",
+            "app/graphql/error-format.ts:30 shows the generic response the other failure paths use.",
+        ],
         "impact": (
             "Authenticated users can learn internal table and constraint names "
             "that are not part of the public API."

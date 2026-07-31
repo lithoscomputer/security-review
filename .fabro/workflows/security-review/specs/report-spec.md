@@ -29,6 +29,19 @@ Severity describes impact. Difficulty describes the access, knowledge, and effor
 
 Canonical `category` slugs are part of `ruleId`, and therefore of a finding's stable identity. The HTML report maps them to display names in the renderer instead. Renaming a slug would change every `findingId` derived from it.
 
+## Evidence
+
+`evidence` is the source-to-sink proof as a list of citations, one entry per hop
+from the untrusted source to the dangerous operation. The report gives it its own
+block, collapsed by default, so a long proof does not crowd out the claim. The
+Markdown report lists the citations under **Evidence.**
+
+A researcher that reports one blob of prose instead still normalizes, becoming a
+one-entry list. That fallback exists so the older shape keeps working while
+researchers catch up, and it goes when the shape is retired. The verifier's
+`evidenceAsCited` is the citations joined by newlines, so the claim a panel saw
+stays one string.
+
 ## Source excerpts
 
 A researcher quotes one sink line in `snippet`. The excerpt shown in a report is not that quote: `final-tally` reads the lines around the finding from the reviewed tree, so the line numbers are the tree's own and no agent transcribes them. The excerpt is omitted when the file is unreadable, binary, oversized, or when the quoted line does not match the line that was read — a mismatch a stale line number or a commit-mode revision gap would cause. The report then falls back to the reporter's quoted line.

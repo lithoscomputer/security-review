@@ -1254,6 +1254,50 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         )[0]
         self.assertFalse([character for character in block if ord(character) > 127])
 
+    def test_evidence_is_a_citation_list_in_either_reported_shape(self) -> None:
+        cited = self.finding()
+        cited["evidence"] = [
+            "src/app.py:4 reads value from the caller.",
+            "src/app.py:5 passes it to os.system.",
+        ]
+        self.assertEqual(
+            DRIVER.normalize_finding(cited)["evidence"],
+            cited["evidence"],
+        )
+        # The retired single-blob shape still normalizes, so a researcher that
+        # has not caught up does not lose its finding.
+        legacy = self.finding()
+        legacy["evidence"] = "src/app.py:4-5 one blob of proof"
+        self.assertEqual(
+            DRIVER.normalize_finding(legacy)["evidence"],
+            ["src/app.py:4-5 one blob of proof"],
+        )
+        blank = self.finding()
+        blank["evidence"] = ""
+        self.assertEqual(DRIVER.normalize_finding(blank)["evidence"], [])
+
+        products = self.verified_bundle([cited])
+        self.call(DRIVER.render_report)
+        html = (products / "SECURITY-REVIEW-RESULTS.html").read_text(
+            encoding="utf-8"
+        )
+        entry = html_payload(html)["findings"][0]
+        # The claim is the description; the citations are their own field, no
+        # longer a second paragraph of it.
+        self.assertEqual(entry["description"], [self.finding()["rationale"]])
+        self.assertEqual(entry["evidence"], cited["evidence"])
+        self.assertIn('element("details", { className: "finding-evidence" })', html)
+        self.assertIn('createFindingBlock("Source code")', html)
+        self.assertNotIn("Source evidence", html)
+        markdown = (products / "SECURITY-REVIEW-RESULTS.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "**Evidence.**\n\n- src/app.py:4 reads value from the caller.\n"
+            "- src/app.py:5 passes it to os.system.",
+            markdown,
+        )
+
     def test_code_spans_in_finding_text_become_code_nodes(self) -> None:
         finding = self.finding()
         finding["impact"] = "The `repo` path reaches `os.system` unquoted."

@@ -658,6 +658,18 @@ def string_list(value: object, field: str) -> List[str]:
     ]
 
 
+def canonical_evidence(value: object, field: str) -> List[str]:
+    """The source-to-sink proof, one citation per hop.
+
+    A bundle written before the list shape carries one blob; it becomes a
+    one-entry list so both render. That fallback goes when the shape is retired.
+    """
+    if isinstance(value, str):
+        text = safe_text(value, field)
+        return [text] if text.strip() else []
+    return string_list(value, field)
+
+
 def non_empty_string_list(value: object, field: str) -> List[str]:
     items = string_list(value, field)
     if not items or any(not item.strip() for item in items):
@@ -782,7 +794,7 @@ def canonical_finding(
             f"{label}.description",
             False,
         ),
-        "evidence": safe_text(item.get("evidence"), f"{label}.evidence"),
+        "evidence": canonical_evidence(item.get("evidence"), f"{label}.evidence"),
         "exploit_scenarios": non_empty_string_list(
             item.get("exploit_scenarios"),
             f"{label}.exploit_scenarios",
@@ -994,7 +1006,7 @@ def validate_votes(
             "severityAsReported": candidate["severity"],
             "title": candidate["title"],
             "rationale": candidate["description"],
-            "evidenceAsCited": candidate["evidence"] or "(none)",
+            "evidenceAsCited": "\n".join(candidate["evidence"]) or "(none)",
             "snippetAsQuoted": candidate["snippet"] or "(none)",
             "symbol": candidate["symbol"] or "(none)",
             "reports": ledger_entry["reports"],
@@ -1540,11 +1552,19 @@ def finding_markdown(
         "",
         "**What.** " + escape_markdown(finding["description"]),
         "",
-        "**Evidence.** " + escape_markdown(finding["evidence"]),
+        "**Evidence.**",
+        "",
+    ]
+    citations = finding["evidence"]
+    if isinstance(citations, list) and citations:
+        lines.extend("- " + escape_markdown(item) for item in citations)
+    else:
+        lines.append("- None recorded.")
+    lines.extend([
         "",
         "**Exploit scenario.**",
         "",
-    ]
+    ])
     scenarios = finding["exploit_scenarios"]
     if isinstance(scenarios, list) and scenarios:
         lines.extend(
@@ -1830,14 +1850,14 @@ def html_finding(
         # The excerpt read from the tree is preferred. This is the reporter's
         # quoted line, which the page falls back to when there is no excerpt.
         "snippet": finding["snippet"],
-        "summary": finding["description"],
-        # The canonical description is the claim; the cited source-to-sink
-        # proof is what a reader needs next, so it becomes the body text.
+        # The claim is the body text. The source-to-sink citations get their
+        # own block, which the page keeps collapsed.
         "description": [
             paragraph.strip()
-            for paragraph in re.split(r"\n\s*\n", str(finding["evidence"]))
+            for paragraph in re.split(r"\n\s*\n", str(finding["description"]))
             if paragraph.strip()
         ],
+        "evidence": list(finding["evidence"]),
         "impact": finding["impact"],
         "exploitScenarios": string_list(
             finding["exploit_scenarios"],

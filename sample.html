@@ -787,6 +787,74 @@ td {
 	text-wrap: pretty;
 }
 
+.finding-evidence {
+	display: grid;
+	gap: 0.7rem;
+}
+
+.finding-evidence > summary {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	width: fit-content;
+	font-size: 1rem;
+	font-weight: 680;
+	list-style: none;
+}
+
+.finding-evidence > summary::-webkit-details-marker {
+	display: none;
+}
+
+.finding-evidence > summary::before {
+	content: "";
+	width: 0.4rem;
+	height: 0.4rem;
+	border-right: 0.11rem solid var(--finding-tone);
+	border-bottom: 0.11rem solid var(--finding-tone);
+	rotate: -45deg;
+	translate: 0 -0.06rem;
+	transition: rotate 120ms ease;
+}
+
+.finding-evidence[open] > summary::before {
+	rotate: 45deg;
+	translate: 0 -0.14rem;
+}
+
+.finding-evidence > summary:hover {
+	color: var(--accent-dark);
+}
+
+.finding-evidence__count {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 400;
+}
+
+.finding-evidence ol {
+	display: grid;
+	gap: 0.7rem;
+	padding-left: 1.25rem;
+	margin: 0;
+}
+
+.finding-evidence li {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 0.9375rem;
+	line-height: 1.7;
+	overflow-wrap: anywhere;
+	text-wrap: pretty;
+}
+
+.finding-evidence li::marker {
+	color: var(--finding-tone);
+	font-weight: 700;
+}
+
 .code-frame {
 	width: min(100%, 56rem);
 	overflow: hidden;
@@ -1196,6 +1264,10 @@ td {
 
 	.findings-table tbody tr[data-hidden="true"] {
 		display: table-row;
+	}
+
+	.finding-evidence > summary::before {
+		display: none;
 	}
 
 	.table-scroll,
@@ -1633,10 +1705,15 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-78",
       "description": [
-        "The export request accepts a display name from an authenticated workspace member. src/reports/export.ts:114 escapes spaces in that name but does not preserve the value as one command argument, and line 118 hands the assembled string to a shell.",
-        "Because the worker starts a shell, characters such as semicolons and command substitutions retain their control meaning. The container limits the blast radius, but the process can read report inputs and its short-lived storage."
+        "The report worker inserts a user-controlled filename into a shell command. Shell metacharacters can start a second command with the worker's privileges."
       ],
       "difficulty": "Low",
+      "evidence": [
+        "src/reports/export.ts:114 takes the display name from the export request and only replaces spaces in it.",
+        "src/reports/export.ts:117 interpolates that value into a command string, so it is no longer one argument.",
+        "src/reports/export.ts:118 passes the string to exec, which starts a shell, giving semicolons and command substitutions their control meaning.",
+        "No call between line 114 and line 118 validates the value or escapes it for a shell."
+      ],
       "exploitScenarios": [
         "An editor names a report quarterly; cp /work/input.json /work/public/leak.json and starts an export.",
         "The worker runs the injected copy command and publishes the copied input with the normal export artifacts."
@@ -1656,7 +1733,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "High",
       "snippet": "await exec(command, { cwd: jobDirectory });",
-      "summary": "The report worker inserts a user-controlled filename into a shell command. Shell metacharacters can start a second command with the worker's privileges.",
       "symbol": "renderReport",
       "target": "Report worker",
       "title": "Shell command injection in report export",
@@ -1702,10 +1778,15 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-862",
       "description": [
-        "src/events/artifact_created.rs:82 authenticates the event at the queue boundary. Line 85 then builds the destination key from the event's own tenant identifier and object key, and line 87 writes there without consulting the build record.",
-        "A caller with access to one worker signing key can replay a valid event while changing fields that are outside the signature scope. The storage write can then replace an artifact owned by another tenant."
+        "The artifact processor trusts tenant and storage identifiers from a signed but replayable internal event. It does not bind the destination to the originating build."
       ],
       "difficulty": "High",
+      "evidence": [
+        "src/events/artifact_created.rs:82 authenticates the event at the queue boundary, and nothing after it re-checks authority.",
+        "src/events/artifact_created.rs:85 builds the destination key from the event's own tenant identifier and object key.",
+        "src/events/artifact_created.rs:87 writes to that key without consulting the build record that produced the artifact.",
+        "The signature covers the payload but not the fields a replay changes, so a captured event can be redirected to another tenant."
+      ],
       "exploitScenarios": [
         "An attacker extracts a worker event key, captures a valid artifact event, and changes the tenant and object key fields.",
         "The processor accepts the replay and writes attacker-controlled bytes over a release artifact in another workspace."
@@ -1725,7 +1806,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "High",
       "snippet": "store.put(\u0026destination, event.bytes).await?;",
-      "summary": "The artifact processor trusts tenant and storage identifiers from a signed but replayable internal event. It does not bind the destination to the originating build.",
       "symbol": "handle_artifact_created",
       "target": "Job execution",
       "title": "Cross-tenant artifact overwrite through event replay",
@@ -1775,10 +1855,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-639",
       "description": [
-        "app/routes/api.documents.$id.ts:39 authenticates the caller, but the query on line 43 has no tenant predicate, and line 46 streams whatever record it returned.",
-        "Document identifiers are random and are not normally disclosed across workspaces. They do appear in copied links, browser history, and support records, so obtaining one is practical."
+        "The document download route queries by document ID alone. Other document routes include the active tenant in the query."
       ],
       "difficulty": "Medium",
+      "evidence": [
+        "app/routes/api.documents.$id.ts:39 authenticates the caller through requireUser.",
+        "app/routes/api.documents.$id.ts:43 queries by document ID alone, with no tenant predicate.",
+        "app/routes/api.documents.$id.ts:46 streams whatever record the query returned."
+      ],
       "exploitScenarios": [
         "A former contractor retains a copied document link after moving to a different workspace.",
         "The route authenticates the contractor but does not verify that the current workspace owns the document."
@@ -1798,7 +1882,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Medium",
       "snippet": "where: { id: documentId },",
-      "summary": "The document download route queries by document ID alone. Other document routes include the active tenant in the query.",
       "symbol": "loader",
       "target": "Web application",
       "title": "Document download omits tenant authorization",
@@ -1844,10 +1927,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-319",
       "description": [
-        "src/storage/client.rs:60 accepts the configured endpoint URL verbatim, and line 63 attaches storage credentials to the resulting client. No branch rejects an http:// scheme or requires an explicit unsafe override.",
-        "The default managed endpoint uses HTTPS, so this needs a self-hosted deployment. Network access is normally restricted, so exploitation also requires a position on the service network or control of routing or DNS."
+        "A deployment can configure an HTTP object-storage endpoint. The client sends storage credentials and artifact data without enforcing TLS."
       ],
       "difficulty": "High",
+      "evidence": [
+        "src/storage/client.rs:59 reads a deployment-supplied endpoint from configuration.",
+        "src/storage/client.rs:60 accepts that endpoint URL verbatim, with no branch rejecting an http:// scheme.",
+        "src/storage/client.rs:63 attaches storage credentials to the client built from it, so they travel over whatever transport was configured."
+      ],
       "exploitScenarios": [
         "An operator copies an internal HTTP endpoint from a development environment into production.",
         "A compromised host on the service network captures the signed storage requests and artifact data."
@@ -1867,7 +1954,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Medium",
       "snippet": "builder = builder.endpoint_url(endpoint);",
-      "summary": "A deployment can configure an HTTP object-storage endpoint. The client sends storage credentials and artifact data without enforcing TLS.",
       "symbol": "build_client",
       "target": "Job execution",
       "title": "Custom object-storage endpoint permits plaintext transport",
@@ -1913,10 +1999,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-338",
       "description": [
-        "app/services/recovery.server.ts:72 draws every token character from seedRandom, a generator seeded once at process start, rather than from the operating system's cryptographic source.",
-        "A party that can infer the seed and observe one token can narrow the next token values. Tokens expire after 20 minutes and require an account email address, which limits the useful attack window but does not restore cryptographic unpredictability."
+        "Account recovery tokens are generated with a seeded pseudo-random generator intended for simulations, not secrets."
       ],
       "difficulty": "Medium",
+      "evidence": [
+        "app/services/recovery.server.ts:68 defines the token alphabet.",
+        "app/services/recovery.server.ts:72 draws every character from seedRandom, a generator seeded once at process start.",
+        "Nothing in the module reads the operating system's cryptographic random source."
+      ],
       "exploitScenarios": [
         "An attacker requests recovery for their own account after a known deployment time and observes the token.",
         "They reconstruct the generator state, predict a nearby token, and submit it for a known administrator email."
@@ -1936,7 +2026,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Medium",
       "snippet": "alphabet[Math.floor(seedRandom() * alphabet.length)]",
-      "summary": "Account recovery tokens are generated with a seeded pseudo-random generator intended for simulations, not secrets.",
       "symbol": "createRecoveryToken",
       "target": "Web application",
       "title": "Recovery tokens use a predictable random source",
@@ -1982,10 +2071,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-204",
       "description": [
-        "app/services/authentication.server.ts:132, 135, and 137 return three different messages for the three failure states, so the response itself reports whether an email belongs to a workspace and whether that account is disabled.",
-        "Rate limits reduce high-volume enumeration, but targeted checks remain practical from distributed sources."
+        "Sign-in responses distinguish unknown emails, disabled accounts, and valid accounts with incorrect passwords."
       ],
       "difficulty": "Low",
+      "evidence": [
+        "app/services/authentication.server.ts:132 returns a distinct message when no account uses the address.",
+        "app/services/authentication.server.ts:135 returns a distinct message when the account is disabled.",
+        "app/services/authentication.server.ts:137 returns a third message for a wrong password, so the response itself reports account state."
+      ],
       "exploitScenarios": [
         "An attacker submits a small list of executives to the sign-in endpoint.",
         "Different errors identify active users, who then receive tailored password-reset phishing."
@@ -2005,7 +2098,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "return fail(\"This account has been disabled\");",
-      "summary": "Sign-in responses distinguish unknown emails, disabled accounts, and valid accounts with incorrect passwords.",
       "symbol": "authenticate",
       "target": "Web application",
       "title": "Authentication errors reveal workspace membership",
@@ -2047,10 +2139,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-778",
       "description": [
-        "app/services/memberships.server.ts:204 writes the new role and the function returns; no call in this path records an audit event, though the invitation and removal paths in the same module do.",
-        "Routine request logs expire after seven days and do not include the old role. This gap does not grant access by itself. It makes unauthorized privilege changes harder to detect, investigate, and prove."
+        "Workspace role changes update membership state but do not create a durable audit event."
       ],
       "difficulty": "Medium",
+      "evidence": [
+        "app/services/memberships.server.ts:200 checks that the actor administers the workspace.",
+        "app/services/memberships.server.ts:204 writes the new role and the function returns.",
+        "No call in this path records an audit event, though the invitation and removal paths in the same module do."
+      ],
       "exploitScenarios": [
         "A compromised workspace administrator promotes an accomplice, accesses restricted reports, and restores the prior role.",
         "The membership table shows only the final role, and no audit event records the temporary elevation."
@@ -2070,7 +2166,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "data: { role: nextRole },",
-      "summary": "Workspace role changes update membership state but do not create a durable audit event.",
       "symbol": "changeMemberRole",
       "target": "Web application",
       "title": "Role changes are not recorded in the audit trail",
@@ -2120,10 +2215,14 @@ window.securityReportData = Object.freeze({
       "confidence": "Medium",
       "cwe": "CWE-601",
       "description": [
-        "app/services/redirects.server.ts:50 tests the raw string for a trusted domain substring, and line 51 parses it only afterwards, so the check never sees the canonical host.",
-        "Most external URLs are rejected. Selected percent-encoded and trailing-dot host representations pass the substring test and later resolve outside the trusted domain. The redirect happens only after a successful sign-in and does not expose the session token directly."
+        "The post-login redirect check compares an encoded hostname string before the URL parser applies canonical form."
       ],
       "difficulty": "Medium",
+      "evidence": [
+        "app/services/redirects.server.ts:48 returns relative paths unchanged, which is safe.",
+        "app/services/redirects.server.ts:50 tests the raw string for a trusted domain substring, before any parsing.",
+        "app/services/redirects.server.ts:51 parses the URL only afterwards, so the check never sees the canonical host."
+      ],
       "exploitScenarios": [
         "An attacker sends a login link with a crafted returnTo value.",
         "After authentication, the user lands on a look-alike page that requests a second credential or recovery code."
@@ -2143,7 +2242,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "if (returnTo.includes(\".acme.example\")) {",
-      "summary": "The post-login redirect check compares an encoded hostname string before the URL parser applies canonical form.",
       "symbol": "safeRedirect",
       "target": "Web application",
       "title": "Encoded hostnames bypass the redirect allowlist",
@@ -2181,10 +2279,14 @@ window.securityReportData = Object.freeze({
       "confidence": "Medium",
       "cwe": "CWE-377",
       "description": [
-        "src/telemetry/spool.rs:37 joins a fixed directory name onto the shared system temporary directory, and line 38 names each file after its event ID, so both the directory and the filenames are predictable.",
-        "Telemetry records contain command names, project paths, and error categories. They do not contain source contents or credentials by design. On a multi-user host, local users can infer activity or interfere with queued telemetry."
+        "The CLI writes diagnostic events to a predictable directory in the system temporary location instead of a user-private application directory."
       ],
       "difficulty": "Low",
+      "evidence": [
+        "src/telemetry/spool.rs:36 resolves the shared system temporary directory.",
+        "src/telemetry/spool.rs:37 joins a fixed directory name onto it, so the location is predictable.",
+        "src/telemetry/spool.rs:38 names each file after its event ID, so the filenames are predictable too."
+      ],
       "exploitScenarios": [
         "A developer runs the CLI on a shared build host.",
         "Another local user monitors predictable spool filenames and learns repository path and command metadata."
@@ -2204,7 +2306,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": ".join(\"acme-telemetry\")",
-      "summary": "The CLI writes diagnostic events to a predictable directory in the system temporary location instead of a user-private application directory.",
       "symbol": "spool_path",
       "target": "Command-line client",
       "title": "Telemetry files use shared temporary storage",
@@ -2250,10 +2351,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-829",
       "description": [
-        ".github/workflows/release.yml:34 references the action by the mutable tag v3, and line 36 passes the release token to that same step.",
-        "The tag is convenient for updates but can move without a repository change. Branch protection and environment approval reduce exposure. They do not make the referenced action content immutable."
+        "The release workflow references a third-party action by a mutable version tag while granting access to release credentials."
       ],
       "difficulty": "High",
+      "evidence": [
+        ".github/workflows/release.yml:34 references the action by the mutable tag v3 rather than a commit digest.",
+        ".github/workflows/release.yml:36 passes the release token to that same step.",
+        "Environment approval gates the job but does not make the referenced action content immutable."
+      ],
       "exploitScenarios": [
         "An attacker compromises the action publisher and moves the version tag to malicious code.",
         "The next approved release runs that code with package publication permissions."
@@ -2273,7 +2378,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "- uses: vendor/publish-artifact@v3",
-      "summary": "The release workflow references a third-party action by a mutable version tag while granting access to release credentials.",
       "symbol": "release job",
       "target": "Release automation",
       "title": "Release workflow uses an unpinned third-party action",
@@ -2327,10 +2431,14 @@ window.securityReportData = Object.freeze({
       "confidence": "Low",
       "cwe": "",
       "description": [
-        "app/services/workflow-generator.server.ts:91 collects README and issue text, line 95 interpolates it between instruction markers, and line 99 asks the model for a workflow object built from that prompt.",
-        "The markers are text, not a security boundary the model is guaranteed to honor. Generated workflows remain drafts and require user approval, and this review had no access to production model settings or telemetry, so the reliability of a bypass is not established here."
+        "The workflow assistant includes repository text in a model prompt and can propose executable workflow steps."
       ],
       "difficulty": "High",
+      "evidence": [
+        "app/services/workflow-generator.server.ts:91 collects README and issue text from the repository.",
+        "app/services/workflow-generator.server.ts:95 interpolates that text between instruction markers, which are prose rather than a boundary the model must honor.",
+        "app/services/workflow-generator.server.ts:99 asks the model for a workflow object built from that prompt."
+      ],
       "exploitScenarios": [
         "Repository text tells the model to ignore the user request and add a step that uploads environment data.",
         "A reviewer overlooks the added step and approves the generated workflow."
@@ -2350,7 +2458,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "${context}",
-      "summary": "The workflow assistant includes repository text in a model prompt and can propose executable workflow steps.",
       "symbol": "generateWorkflow",
       "target": "Web application",
       "title": "Repository text reaches a workflow-generating model prompt",
@@ -2400,10 +2507,14 @@ window.securityReportData = Object.freeze({
       "confidence": "High",
       "cwe": "CWE-209",
       "description": [
-        "app/graphql/error-format.ts:28 returns the database driver's own message to the client, while line 30 shows the generic response the other failure paths use.",
-        "Constraint names and table fields can therefore reach authenticated clients when a mutation violates a database rule. Stack traces are removed, and the values observed did not include credentials or row data."
+        "The GraphQL error formatter returns the original database message for selected query failures."
       ],
       "difficulty": "Low",
+      "evidence": [
+        "app/graphql/error-format.ts:27 branches on the error being a database error.",
+        "app/graphql/error-format.ts:28 returns the driver's own message to the client, which can name constraints and columns.",
+        "app/graphql/error-format.ts:30 shows the generic response the other failure paths use."
+      ],
       "exploitScenarios": [
         "A user submits conflicting object values to mutations and records the returned database constraints.",
         "The schema details guide later testing for authorization and injection weaknesses."
@@ -2423,7 +2534,6 @@ window.securityReportData = Object.freeze({
       ],
       "severity": "Low",
       "snippet": "return { message: cause.message, code: \"INVALID_INPUT\" };",
-      "summary": "The GraphQL error formatter returns the original database message for selected query failures.",
       "symbol": "formatError",
       "target": "Web application",
       "title": "Database details appear in client error responses",
@@ -2879,6 +2989,27 @@ window.securityReportData = Object.freeze({
 		return section;
 	}
 
+	function createEvidenceBlock(finding) {
+		const citations = finding.evidence || [];
+		if (citations.length === 0) {
+			return null;
+		}
+		const block = element("details", { className: "finding-evidence" });
+		const heading = element("summary");
+		heading.append(
+			document.createTextNode("Evidence"),
+			element("span", {
+				className: "finding-evidence__count",
+				text: `${citations.length} ${
+					citations.length === 1 ? "citation" : "citations"
+				}`,
+			}),
+		);
+		block.append(heading);
+		appendList(block, citations, true);
+		return block;
+	}
+
 	function createCodeFrame(finding) {
 		if (!finding.code?.lines?.length && !finding.snippet) {
 			return null;
@@ -3003,11 +3134,16 @@ window.securityReportData = Object.freeze({
 				}),
 			);
 
+			const evidenceBlock = createEvidenceBlock(finding);
+			if (evidenceBlock) {
+				body.append(evidenceBlock);
+			}
+
 			const codeFrame = createCodeFrame(finding);
 			if (codeFrame) {
-				const evidence = createFindingBlock("Source evidence");
-				evidence.append(codeFrame);
-				body.append(evidence);
+				const sourceCode = createFindingBlock("Source code");
+				sourceCode.append(codeFrame);
+				body.append(sourceCode);
 			}
 
 			body.append(
@@ -3127,6 +3263,21 @@ window.securityReportData = Object.freeze({
 		difficultyToneClass,
 	);
 	setupFilters();
+
+	// A collapsed block would print as a heading with nothing under it.
+	const evidenceBlocks = () =>
+		document.querySelectorAll(".finding-evidence");
+	window.addEventListener("beforeprint", () => {
+		for (const block of evidenceBlocks()) {
+			block.dataset.wasOpen = String(block.open);
+			block.open = true;
+		}
+	});
+	window.addEventListener("afterprint", () => {
+		for (const block of evidenceBlocks()) {
+			block.open = block.dataset.wasOpen === "true";
+		}
+	});
 })();
 
 		</script>
