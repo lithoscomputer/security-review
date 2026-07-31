@@ -18,7 +18,8 @@ Everything that a review runs lives under
 | `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown, HTML, JSONL, and revision reports. |
 | `scripts/git_readonly.py` | A read-only Git entry point with external diff and text conversion drivers disabled. |
 | `templates/report.html` | The self-contained HTML report template. |
-| `prompts/` | Prompts for inventory, threat modeling, research, sweeping, verification, and red-team work. |
+| `prompts/*.md.j2` | MiniJinja prompt templates for inventory, threat modeling, research, sweeping, verification, and red-team work. |
+| `prompts/partials/` | Shared MiniJinja prompt content. |
 | `schemas/` | Model response schemas and versioned canonical bundle contracts. |
 | `specs/report-spec.md` | Canonical bundle relationships and deterministic report rules. |
 | `fixtures/` | The command-injection fixture used by the smoke run. |

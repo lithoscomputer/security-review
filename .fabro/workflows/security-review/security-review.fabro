@@ -36,7 +36,7 @@ digraph SecurityReview {
     inventory [
         label="Inventory",
         class="inventory",
-        prompt="@prompts/inventory.md",
+        prompt="@prompts/inventory.md.j2",
         output_schema="@schemas/inventory.schema.json",
         output_retries=2,
         max_retries=2,
@@ -87,7 +87,7 @@ digraph SecurityReview {
     threat_model [
         label="Threat-model component",
         class="threat-model",
-        prompt="@prompts/threat-model.md",
+        prompt="@prompts/threat-model.md.j2",
         output_schema="@schemas/threat-model.schema.json",
         output_retries=2,
         max_retries=2,
@@ -123,7 +123,7 @@ digraph SecurityReview {
     researcher [
         label="Research component and category",
         class="research",
-        prompt="@prompts/research.md",
+        prompt="@prompts/research.md.j2",
         output_schema="@schemas/findings.schema.json",
         output_retries=2,
         max_retries=2,
@@ -151,7 +151,7 @@ digraph SecurityReview {
     sweeper [
         label="Gap-fill sweep",
         class="research",
-        prompt="@prompts/sweep.md",
+        prompt="@prompts/sweep.md.j2",
         output_schema="@schemas/findings.schema.json",
         output_retries=2,
         max_retries=2,
@@ -187,7 +187,7 @@ digraph SecurityReview {
     panel_verifier [
         label="Verify candidate",
         class="verification",
-        prompt="@prompts/verify.md",
+        prompt="@prompts/verify.md.j2",
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,
@@ -224,7 +224,7 @@ digraph SecurityReview {
     repanel_verifier [
         label="Recheck marginal candidate",
         class="verification",
-        prompt="@prompts/verify.md",
+        prompt="@prompts/verify.md.j2",
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,
@@ -260,7 +260,7 @@ digraph SecurityReview {
     redteam_verifier [
         label="Red-team candidate",
         class="verification",
-        prompt="@prompts/redteam.md",
+        prompt="@prompts/redteam.md.j2",
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,

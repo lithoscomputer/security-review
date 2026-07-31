@@ -1621,7 +1621,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         for field in ("exploitScenarios", "recommendations"):
             self.assertEqual(properties[field]["type"], "array")
             self.assertEqual(properties[field]["minItems"], 1)
-        for name in ("research.md", "sweep.md"):
+        for name in ("research.md.j2", "sweep.md.j2"):
             prompt = (
                 WORKFLOW_ROOT / "prompts" / name
             ).read_text(encoding="utf-8")
@@ -1665,6 +1665,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn(field, report_spec)
             self.assertIn(field, renderer)
         self.assertFalse((WORKFLOW_ROOT / "prompts/report.md").exists())
+        self.assertFalse((WORKFLOW_ROOT / "prompts/report.md.j2").exists())
 
     def test_merges_pipe_context_directly_to_deterministic_scripts(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1698,7 +1699,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             'inventory -> merge_inventory [condition="outcome=succeeded"]',
             graph,
         )
-        for prompt in (WORKFLOW_ROOT / "prompts").glob("*.md"):
+        for prompt in (WORKFLOW_ROOT / "prompts").glob("*.md.j2"):
             text = prompt.read_text(encoding="utf-8")
             self.assertNotIn("result_path", text)
             self.assertNotIn("write the exact JSON", text.lower())
@@ -1853,14 +1854,46 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             renderer,
         )
         self.assertFalse((WORKFLOW_ROOT / "prompts/report.md").exists())
+        self.assertFalse((WORKFLOW_ROOT / "prompts/report.md.j2").exists())
+
+    def test_agent_prompts_are_minijinja_templates(self) -> None:
+        prompt_root = WORKFLOW_ROOT / "prompts"
+        names = {
+            "inventory.md.j2",
+            "threat-model.md.j2",
+            "research.md.j2",
+            "sweep.md.j2",
+            "verify.md.j2",
+            "redteam.md.j2",
+        }
+        self.assertEqual(
+            {path.name for path in prompt_root.glob("*.md.j2")},
+            names,
+        )
+        self.assertFalse(list(prompt_root.glob("*.md")))
+
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        include = '{% include "partials/output-schema.md.j2" -%}'
+        for name in names:
+            prompt = (prompt_root / name).read_text(encoding="utf-8")
+            self.assertIn(include, prompt, name)
+            self.assertIn(f'prompt="@prompts/{name}"', graph, name)
+
+        partial = (
+            prompt_root / "partials/output-schema.md.j2"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            partial,
+            "Return exactly the JSON object required by the output schema.\n",
+        )
 
     def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
         for name in (
-            "threat-model.md",
-            "research.md",
-            "sweep.md",
-            "verify.md",
-            "redteam.md",
+            "threat-model.md.j2",
+            "research.md.j2",
+            "sweep.md.j2",
+            "verify.md.j2",
+            "redteam.md.j2",
         ):
             text = (WORKFLOW_ROOT / "prompts" / name).read_text(
                 encoding="utf-8"
@@ -1871,7 +1904,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             # the spawn_agent/wait vocabulary. Naming either misleads the other.
             for vocabulary_name in ("spawn_agent", "`wait`", "TaskOutput"):
                 self.assertNotIn(vocabulary_name, text, name)
-        inventory = (WORKFLOW_ROOT / "prompts/inventory.md").read_text(
+        inventory = (WORKFLOW_ROOT / "prompts/inventory.md.j2").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("read-only explorer", inventory)

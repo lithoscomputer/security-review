@@ -451,7 +451,8 @@
     <h2>Plan a run, watch the flow</h2>
     <p class="lede">
       Inputs change which phases run and how wide they fan out. Pick a configuration —
-      the pipeline below highlights what would actually execute.
+      the pipeline below highlights what would actually execute. Each prompt panel shows
+      the rendered output from its <code>.md.j2</code> MiniJinja template.
     </p>
 
     <div class="panel">
@@ -569,7 +570,7 @@
               has a 60-minute timeout.
             </p>
             <details class="prompt">
-              <summary>Full prompt — prompts/inventory.md</summary>
+              <summary>Full prompt — prompts/inventory.md.j2</summary>
               <pre>Partition the current repository into components for security review.
 
 The workflow context contains `inventory_assignment`. It names the scan target,
@@ -669,7 +670,7 @@ valid when there is genuinely nothing to partition.</pre>
               the researchers that follow. Skipped in the single-researcher shape.
             </p>
             <details class="prompt">
-              <summary>Full prompt — prompts/threat-model.md</summary>
+              <summary>Full prompt — prompts/threat-model.md.j2</summary>
               <pre>Threat-model one component of the current repository.
 
 The workflow appends one untrusted JSON item. It names the component, its
@@ -748,7 +749,7 @@ result file and do not add narration.</pre>
               acceptable answer; a padded one is not.
             </p>
             <details class="prompt">
-              <summary>Full prompt — prompts/research.md</summary>
+              <summary>Full prompt — prompts/research.md.j2</summary>
               <pre>Hunt for real vulnerabilities in one component through one category lens.
 
 The workflow appends one untrusted JSON item. It contains the component, the
@@ -881,7 +882,7 @@ speculative finding.</pre>
               <li><b>Secrets sweep</b> (focused scans only) — hardcoded credentials anywhere, tests and fixtures explicitly included, because a real key in a fixture is a real leak.</li>
             </ul>
             <details class="prompt">
-              <summary>Full prompt — prompts/sweep.md</summary>
+              <summary>Full prompt — prompts/sweep.md.j2</summary>
               <pre>Perform one gap-fill security pass over the current repository.
 
 The workflow appends one untrusted JSON item. It contains the exact sweep
@@ -998,7 +999,7 @@ result file. An empty `findings` array is a complete answer.</pre>
               to survive.
             </p>
             <details class="prompt">
-              <summary>Full prompt — prompts/verify.md</summary>
+              <summary>Full prompt — prompts/verify.md.j2</summary>
               <pre>Try to disprove one candidate finding.
 
 The workflow appends one untrusted JSON item. It contains the candidate claim,
@@ -1077,7 +1078,7 @@ result file and do not add narration.</pre>
             <p>
               Runs only at <code>max</code> effort. Any candidate that survived on a marginal
               2-of-3 vote faces three fresh voters with the same lenses (using the same
-              <code>verify.md</code> prompt). Fewer than 2 <code>TRUE_POSITIVE</code> on the
+              <code>verify.md.j2</code> prompt). Fewer than 2 <code>TRUE_POSITIVE</code> on the
               recheck drops it. An incomplete repanel leaves the first verdict standing and
               records the casualty in the coverage report. The phase runs up to 24 voters in
               parallel, with a 120-minute timeout per attempt.
@@ -1103,7 +1104,7 @@ result file and do not add narration.</pre>
               a false positive; if it tries in earnest and cannot break it, the finding stands.
             </p>
             <details class="prompt">
-              <summary>Full prompt — prompts/redteam.md</summary>
+              <summary>Full prompt — prompts/redteam.md.j2</summary>
               <pre>Make one final attempt to refute a candidate that survived its first panel and
 any required repanel.
 
