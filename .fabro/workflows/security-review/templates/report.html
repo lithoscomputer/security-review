@@ -181,7 +181,7 @@ pre {
 
 .scan-identity {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: 0;
 	max-width: 58rem;
 	padding: 1rem 0 0;
@@ -1229,12 +1229,15 @@ td {
 				<div class="page-container">
 					<div class="report-hero__topline">
 						<p class="eyebrow">Security review</p>
-						<p id="report-target"></p>
 					</div>
 					<h1 id="report-title"></h1>
 					<p class="report-hero__summary" id="report-summary"></p>
 
 					<dl class="scan-identity" aria-label="Report identity">
+						<div>
+							<dt>Repository</dt>
+							<dd id="report-repository"></dd>
+						</div>
 						<div>
 							<dt>Report date</dt>
 							<dd id="report-date"></dd>
@@ -1550,10 +1553,38 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 
 	const findings = data.findings.map(normalizedFinding);
 
+	function inlineText(value) {
+		// Model-authored prose carries Markdown code spans. They become real
+		// <code> nodes here; the page still never assembles markup, so this
+		// keeps the property that finding text cannot inject an element.
+		const text = String(value === undefined || value === null ? "" : value);
+		const codeSpan = /(`+)([^\n]+?)\1/g;
+		const fragment = document.createDocumentFragment();
+		let consumed = 0;
+		let match = codeSpan.exec(text);
+
+		while (match !== null) {
+			if (match.index > consumed) {
+				fragment.append(
+					document.createTextNode(text.slice(consumed, match.index)),
+				);
+			}
+			fragment.append(element("code", { text: match[2] }));
+			consumed = match.index + match[0].length;
+			match = codeSpan.exec(text);
+		}
+		if (consumed < text.length) {
+			fragment.append(document.createTextNode(text.slice(consumed)));
+		}
+		return fragment;
+	}
+
 	function appendList(container, items, ordered = false) {
 		const list = element(ordered ? "ol" : "ul");
 		for (const item of items) {
-			list.append(element("li", { text: item }));
+			const entry = element("li");
+			entry.append(inlineText(item));
+			list.append(entry);
 		}
 		container.append(list);
 	}
@@ -1564,7 +1595,7 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 
 		document.title = data.report.title;
 		byId("report-title").textContent = data.report.title;
-		byId("report-target").textContent = data.scan.root;
+		byId("report-repository").textContent = data.scan.repository;
 		byId("report-summary").textContent =
 			`Source review of ${componentCount} ` +
 			`${componentCount === 1 ? "component" : "components"} at ` +
@@ -1715,16 +1746,17 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		} else {
 			for (const skipped of coverage.skippedComponents) {
 				const item = element("article", { className: "coverage-item" });
+				const reason = element("p", {
+					className: "coverage-item__reason",
+				});
+				reason.append(inlineText(skipped.reason));
 				item.append(
 					element("h4", { text: skipped.name }),
 					element("p", {
 						className: "coverage-item__paths",
 						text: skipped.paths.join(" · "),
 					}),
-					element("p", {
-						className: "coverage-item__reason",
-						text: skipped.reason,
-					}),
+					reason,
 				);
 				skips.append(item);
 			}
@@ -1798,13 +1830,12 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 			row.dataset.difficulty = finding.difficulty;
 
 			const titleCell = element("td");
-			titleCell.append(
-				element("a", {
-					className: "finding-title-link",
-					text: finding.title,
-					attributes: { href: `#finding-${slugify(finding.id)}` },
-				}),
-			);
+			const titleLink = element("a", {
+				className: "finding-title-link",
+				attributes: { href: `#finding-${slugify(finding.id)}` },
+			});
+			titleLink.append(inlineText(finding.title));
+			titleCell.append(titleLink);
 
 			row.append(
 				element("td", {
@@ -1834,7 +1865,9 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 		section.append(element("h4", { text: title }));
 
 		for (const paragraph of options.paragraphs || []) {
-			section.append(element("p", { text: paragraph }));
+			const body = element("p");
+			body.append(inlineText(paragraph));
+			section.append(body);
 		}
 		if (options.items?.length) {
 			appendList(section, options.items, options.ordered);
@@ -1916,15 +1949,14 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 			);
 
 			const header = element("header", { className: "finding__header" });
+			const headingTitle = element("h3", { className: "finding__title" });
+			headingTitle.append(inlineText(finding.title));
 			header.append(
 				element("p", {
 					className: "finding__index",
 					text: `Finding ${String(index + 1).padStart(2, "0")} · ${finding.id}`,
 				}),
-				element("h3", {
-					className: "finding__title",
-					text: finding.title,
-				}),
+				headingTitle,
 			);
 
 			const metadata = element("dl", { className: "finding__meta" });
@@ -1948,18 +1980,18 @@ window.securityReportData = Object.freeze(__REPORT_DATA__);
 			const location = element("p", { className: "finding__location" });
 			location.append(
 				element("strong", { text: "Location: " }),
-				element("code", {
-					text: `${finding.file}:${finding.line}`,
-				}),
+				element("code", { text: finding.file }),
 				document.createTextNode(finding.target ? ` · ${finding.target}` : ""),
 			);
 			header.append(location);
 
 			const body = element("div", { className: "finding__body" });
 			const impact = element("section", { className: "finding-impact" });
+			const impactText = element("p");
+			impactText.append(inlineText(finding.impact));
 			impact.append(
 				element("h4", { text: "Security impact" }),
-				element("p", { text: finding.impact }),
+				impactText,
 			);
 			body.append(
 				impact,

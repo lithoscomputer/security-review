@@ -1750,13 +1750,27 @@ def display_id(value: object) -> str:
     return f"F-{int(match.group(1)):03d}"
 
 
+def repository_name(scan_root: object) -> str:
+    """The reviewed repository's own name, for the report's identity line."""
+    text = str(scan_root or "").replace("\\", "/").rstrip("/")
+    name = text.rsplit("/", 1)[-1] if "/" in text else text
+    return name or text or "repository"
+
+
 def component_for_file(
     path: str,
     components: Sequence[Mapping[str, object]],
 ) -> Optional[str]:
-    """Name the examined component a finding's file belongs to."""
+    """Name the examined component a finding's file belongs to.
+
+    One component covers every finding, so naming it beside each location says
+    nothing. A component whose path is the whole tree localizes nothing either.
+    Both cases yield no name rather than a constant repeated on every finding.
+    """
+    if len(components) < 2:
+        return None
     best_name: Optional[str] = None
-    best_length = -1
+    best_length = 0
     for component in components:
         name = component.get("name")
         raw_paths = component.get("paths")
@@ -1767,8 +1781,8 @@ def component_for_file(
                 continue
             prefix = raw_path.rstrip("/")
             if prefix in ("", "."):
-                length = 0
-            elif path == prefix or path.startswith(prefix + "/"):
+                continue
+            if path == prefix or path.startswith(prefix + "/"):
                 length = len(prefix)
             else:
                 continue
@@ -1882,6 +1896,7 @@ def report_payload(
         },
         "scan": {
             "root": target.get("scanRoot"),
+            "repository": repository_name(target.get("scanRoot")),
             "revision": revision_tag(manifest["revision"]),
             "mode": mode,
             "modeLabel": MODE_LABELS.get(mode, mode or "Unknown"),

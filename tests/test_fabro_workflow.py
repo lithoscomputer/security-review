@@ -1242,7 +1242,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertEqual(entry["severity"], "High")
         self.assertEqual(entry["difficulty"], "Low")
         self.assertEqual(entry["category"], "Data Validation")
-        self.assertEqual(entry["target"], "repository")
+        self.assertNotIn("target", entry)
         self.assertEqual(entry["verification"], "3/3 review lenses confirmed.")
         self.assertEqual(len(entry["exploitScenarios"]), 2)
         self.assertEqual(len(entry["recommendations"]), 2)
@@ -1253,6 +1253,84 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             1,
         )[0]
         self.assertFalse([character for character in block if ord(character) > 127])
+
+    def test_code_spans_in_finding_text_become_code_nodes(self) -> None:
+        finding = self.finding()
+        finding["impact"] = "The `repo` path reaches `os.system` unquoted."
+        finding["evidence"] = "src/app.py:5 passes `value` to the shell."
+        finding["recommendations"] = ["Call `subprocess.run` with a list."]
+        products = self.verified_bundle([finding])
+        self.call(DRIVER.render_report)
+        html = (products / "SECURITY-REVIEW-RESULTS.html").read_text(
+            encoding="utf-8"
+        )
+        # The payload keeps the author's text verbatim; the page turns the
+        # spans into nodes, so no markup is ever assembled from finding text.
+        payload = html_payload(html)
+        self.assertIn("`repo`", payload["findings"][0]["impact"])
+        self.assertIn("inlineText", html)
+        self.assertIn('fragment.append(element("code", { text: match[2] }))', html)
+        for forbidden in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
+            self.assertNotIn(forbidden, html)
+
+    def test_identity_names_the_repository_and_location_omits_the_line(
+        self,
+    ) -> None:
+        products = self.verified_bundle([self.finding()])
+        self.call(DRIVER.render_report)
+        html = (products / "SECURITY-REVIEW-RESULTS.html").read_text(
+            encoding="utf-8"
+        )
+        payload = html_payload(html)
+        # The identity line names the repository; the full path stays in the
+        # coverage facts.
+        self.assertEqual(payload["scan"]["repository"], self.root.name)
+        self.assertEqual(
+            payload["scan"]["root"],
+            str(self.root.resolve()),
+        )
+        self.assertIn('id="report-repository"', html)
+        self.assertNotIn('id="report-target"', html)
+        # A single examined component names every finding, so it is not shown.
+        self.assertNotIn("target", payload["findings"][0])
+        # The excerpt carries the line numbers, so the location need not. The
+        # code frame still uses finding.line for its own header and fallback.
+        self.assertIn('element("code", { text: finding.file })', html)
+        self.assertNotIn("text: `${finding.file}:${finding.line}`", html)
+
+    def test_a_component_is_named_only_when_it_localizes_a_finding(self) -> None:
+        one = [{"name": "repository", "paths": ["."]}]
+        many = [
+            {"name": "Web application", "paths": ["app/routes"]},
+            {"name": "Worker", "paths": ["src/reports"]},
+        ]
+        renderer = load_module("renderer_for_targets", RENDERER_PATH)
+        # One component covers everything, so its name says nothing.
+        self.assertIsNone(
+            renderer.component_for_file("app/routes/a.ts", one)
+        )
+        self.assertEqual(
+            renderer.component_for_file("app/routes/a.ts", many),
+            "Web application",
+        )
+        self.assertEqual(
+            renderer.component_for_file("src/reports/b.ts", many),
+            "Worker",
+        )
+        # A whole-tree path among several components localizes nothing either.
+        self.assertIsNone(
+            renderer.component_for_file(
+                "docs/x.md",
+                [*many, {"name": "Everything", "paths": ["."]}],
+            )
+        )
+        for scan_root, expected in (
+            ("/home/daytona/repos/fabro-sh/quarry", "quarry"),
+            ("/workspace/acme-portal/", "acme-portal"),
+            ("quarry", "quarry"),
+            ("/", "repository"),
+        ):
+            self.assertEqual(renderer.repository_name(scan_root), expected)
 
     def test_markdown_lists_the_exploit_steps_and_recommendations(self) -> None:
         finding = self.finding()
@@ -1710,7 +1788,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("fetch(", template)
         for element_id in (
             "report-title",
-            "report-target",
+            "report-repository",
             "report-summary",
             "report-date",
             "scan-revision",
