@@ -1606,6 +1606,10 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         legacy_name = "clau" + "de"
         paths = [
             REPOSITORY_ROOT / "README.md",
+            # The guide and the example report went stale on the rename once
+            # because nothing checked them.
+            REPOSITORY_ROOT / "workflow.html",
+            REPOSITORY_ROOT / "sample.html",
             Path(__file__).resolve(),
             *(
                 path
@@ -1647,6 +1651,33 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', template)
             self.assertIn(f'"{element_id}"', template)
+
+    def test_guide_describes_the_artifacts_the_workflow_writes(self) -> None:
+        guide = (REPOSITORY_ROOT / "workflow.html").read_text(encoding="utf-8")
+        for artifact in (
+            "SECURITY-REVIEW-RESULTS.md",
+            "SECURITY-REVIEW-RESULTS.html",
+            "SECURITY-REVIEW-RESULTS.jsonl",
+            "scan-manifest.json",
+            "candidate-ledger.jsonl",
+            "findings.json",
+            "coverage.json",
+            "panel-votes.jsonl",
+        ):
+            self.assertIn(artifact, guide, artifact)
+        # The guide quotes the researcher prompts verbatim. Any field name it
+        # shows must still be one the schema asks for -- these went stale once.
+        schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/findings.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        required = set(schema["properties"]["findings"]["items"]["required"])
+        for field in ("exploitScenarios", "recommendations", "difficulty"):
+            self.assertIn(field, required, field)
+            self.assertIn(field, guide, field)
+        for retired in ("`exploitScenario`", "`recommendation`"):
+            self.assertNotIn(retired, guide, retired)
 
     def test_report_spec_records_the_html_view_and_its_rules(self) -> None:
         spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
