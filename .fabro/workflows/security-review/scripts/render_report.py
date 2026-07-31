@@ -1887,7 +1887,6 @@ def report_payload(
     findings: Sequence[Finding],
     coverage: Mapping[str, object],
     votes: Sequence[Mapping[str, object]],
-    backlink: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, object]:
     request = as_map(manifest["request"]) or {}
     target = as_map(manifest["target"]) or {}
@@ -1905,7 +1904,6 @@ def report_payload(
         "report": {
             "title": HTML_REPORT_TITLE,
             "date": display_date(manifest["completedAt"]),
-            **({"backlink": backlink} if backlink else {}),
         },
         # A partial scan must say so where the findings are read, or a reader
         # takes an incomplete review for a clean one.
@@ -1998,10 +1996,8 @@ def render_html(
     findings: Sequence[Finding],
     coverage: Mapping[str, object],
     votes: Sequence[Mapping[str, object]],
-    backlink: Optional[Mapping[str, str]] = None,
 ) -> str:
-    """Render the page. `backlink` is for a published example, not a run."""
-    payload = report_payload(manifest, findings, coverage, votes, backlink)
+    payload = report_payload(manifest, findings, coverage, votes)
     return read_template().replace(REPORT_DATA_MARKER, embed_json(payload))
 
 
@@ -2040,7 +2036,6 @@ def jsonl_line(finding: Finding) -> str:
 
 def render(
     bundle_dir: str,
-    html_backlink: Optional[Mapping[str, str]] = None,
 ) -> Tuple[List[Finding], Dict[str, object], str]:
     manifest = validate_manifest(read_json(bundle_dir, "scan-manifest.json"))
     target = as_map(manifest["target"]) or {}
@@ -2074,7 +2069,7 @@ def render(
     )
     atomic_write(
         os.path.join(bundle_dir, HTML_REPORT_NAME),
-        render_html(manifest, findings, coverage, votes, html_backlink),
+        render_html(manifest, findings, coverage, votes),
     )
     atomic_write(
         os.path.join(bundle_dir, "SECURITY-REVIEW-RESULTS.jsonl"),
