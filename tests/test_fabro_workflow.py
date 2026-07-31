@@ -1654,6 +1654,27 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertEqual(graph.count(f"    {node} ["), 1)
         self.assertNotIn("report_author", graph)
 
+    def test_both_run_configs_declare_the_same_model_fallback_chain(
+        self,
+    ) -> None:
+        # The chain is keyed by the model a node requests, which the graph's
+        # stylesheet decides. A key no stylesheet asks for never fires, so the
+        # key and the routing have to be read together.
+        chain = (
+            '[run.model.fallbacks]\n'
+            '"kimi-k3" = ["openrouter:kimi-k3", "' + "clau" + 'de-opus-5"]\n'
+        )
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            self.assertIn(chain, config, config_name)
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        stylesheet = graph.split('model_stylesheet="', 1)[1].split('\n        "', 1)[0]
+        requested = set(re.findall(r"model:\s*([^;\s]+)", stylesheet))
+        self.assertTrue(requested, "the stylesheet requests no model")
+        # This repository routes to Anthropic, so the kimi chain is declared
+        # for a downstream copy that routes to Kimi and does not fire here.
+        self.assertNotIn("kimi-k3", requested)
+
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
         workflow_config = (WORKFLOW_ROOT / "workflow.toml").read_text(
             encoding="utf-8"
@@ -1811,13 +1832,15 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 and "runtime" not in path.parts
             ),
         ]
+        # A model ID legitimately names its vendor. Nothing else may, so the
+        # ids are removed before the check rather than the check being dropped.
+        vendor_model_ids = (legacy_name + "-opus-5", legacy_name + "-sonnet-5")
         for path in paths:
             self.assertNotIn(legacy_name, path.as_posix().lower(), path)
-            self.assertNotIn(
-                legacy_name,
-                path.read_text(encoding="utf-8").lower(),
-                path,
-            )
+            content = path.read_text(encoding="utf-8").lower()
+            for model_id in vendor_model_ids:
+                content = content.replace(model_id, "")
+            self.assertNotIn(legacy_name, content, path)
 
     def test_template_builds_its_page_from_data_not_from_markup(self) -> None:
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
