@@ -117,6 +117,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         commit: str = "",
         revision_range: str = "",
         focus: str = "",
+        component_guidance: str = "",
+        research_guidance: str = "",
         scan_id: str = "test-scan-01",
     ) -> dict:
         self.call(
@@ -129,6 +131,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                 commit=commit,
                 range=revision_range,
                 focus=focus,
+                component_guidance=component_guidance,
+                research_guidance=research_guidance,
                 scan_id=scan_id,
                 scan_id_stdin=False,
             ),
@@ -198,7 +202,22 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         return DRIVER.load_state()
 
     def test_full_max_effort_transition_chain_uses_merged_outputs(self) -> None:
-        state = self.prepare()
+        component_guidance = "Keep the API and worker separate."
+        research_guidance = "Watch values passed into the command runner."
+        state = self.prepare(
+            component_guidance=f"  {component_guidance}  ",
+            research_guidance=f"\n{research_guidance}\n",
+        )
+        self.assertEqual(state["component_guidance"], component_guidance)
+        self.assertEqual(state["research_guidance"], research_guidance)
+        target = DRIVER.common_target(state)
+        for field in (
+            "componentGuidance",
+            "researchGuidance",
+            "component_guidance",
+            "research_guidance",
+        ):
+            self.assertNotIn(field, target)
         inventory = {
             "components": [
                 {
@@ -333,7 +352,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         panel_votes = read_jsonl(evidence / "panel-votes.jsonl")
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(manifest["scanId"], "test-scan-01")
-        self.assertEqual(manifest["workflow"]["stateVersion"], 6)
+        self.assertEqual(manifest["workflow"]["stateVersion"], 7)
+        self.assertEqual(
+            manifest["request"]["componentGuidance"],
+            component_guidance,
+        )
+        self.assertEqual(
+            manifest["request"]["researchGuidance"],
+            research_guidance,
+        )
         self.assertEqual(manifest["completion"]["status"], "complete")
         self.assertEqual(
             manifest["completion"]["dispositions"],
@@ -557,6 +584,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
                     commit="",
                     range="",
                     focus="",
+                    component_guidance="",
+                    research_guidance="",
                     scan_id="test-scan-01",
                     scan_id_stdin=False,
                 )
@@ -1007,6 +1036,8 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.assertIsNone(ledger[0]["displayId"])
         self.assertEqual(findings, [])
         self.assertEqual(manifest["completion"]["status"], "complete")
+        self.assertNotIn("componentGuidance", manifest["request"])
+        self.assertNotIn("researchGuidance", manifest["request"])
         self.assertEqual(
             manifest["completion"]["dispositions"],
             {"rejected": 1},
@@ -1887,6 +1918,56 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "Return exactly the JSON object required by the output schema.\n",
         )
 
+    def test_guidance_inputs_reach_only_the_intended_prompts(self) -> None:
+        prompt_root = WORKFLOW_ROOT / "prompts"
+        inventory = (prompt_root / "inventory.md.j2").read_text(
+            encoding="utf-8"
+        )
+        research = (prompt_root / "research.md.j2").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("inputs.component_guidance", inventory)
+        self.assertIn("grouping and prioritizing components", inventory)
+        self.assertNotIn("research_guidance", inventory)
+        self.assertIn("inputs.research_guidance", research)
+        self.assertIn("lead, not as evidence", research)
+        self.assertNotIn("component_guidance", research)
+
+        for name in (
+            "threat-model.md.j2",
+            "sweep.md.j2",
+            "verify.md.j2",
+            "redteam.md.j2",
+        ):
+            prompt = (prompt_root / name).read_text(encoding="utf-8")
+            self.assertNotIn("component_guidance", prompt, name)
+            self.assertNotIn("research_guidance", prompt, name)
+
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "--component-guidance {{ inputs.component_guidance }}",
+            graph,
+        )
+        self.assertIn(
+            "--research-guidance {{ inputs.research_guidance }}",
+            graph,
+        )
+        for config_name in ("workflow.toml", "verify.toml"):
+            config = (WORKFLOW_ROOT / config_name).read_text(encoding="utf-8")
+            self.assertIn('component_guidance = ""', config, config_name)
+            self.assertIn('research_guidance = ""', config, config_name)
+
+        for documentation in (
+            REPOSITORY_ROOT / "README.md",
+            REPOSITORY_ROOT / "index.html",
+        ):
+            text = documentation.read_text(encoding="utf-8")
+            self.assertIn("component_guidance", text, documentation.name)
+            self.assertIn("research_guidance", text, documentation.name)
+        report_spec = REPORT_SPEC_PATH.read_text(encoding="utf-8")
+        self.assertIn("componentGuidance", report_spec)
+        self.assertIn("researchGuidance", report_spec)
+
     def test_explore_capable_prompts_offer_spawn_agent(self) -> None:
         for name in (
             "threat-model.md.j2",
@@ -2114,6 +2195,10 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             manifest["properties"]["canonicalFiles"]["const"],
             list(DRIVER.CANONICAL_FILES),
         )
+        request = manifest["properties"]["request"]
+        for field in ("componentGuidance", "researchGuidance"):
+            self.assertIn(field, request["properties"])
+            self.assertNotIn(field, request["required"])
 
 
 if __name__ == "__main__":

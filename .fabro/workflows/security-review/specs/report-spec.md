@@ -4,7 +4,7 @@ The completed `evidence/` directory is the canonical bundle and the source of tr
 
 ## Canonical files
 
-- `scan-manifest.json` identifies the scan, target, revision, request, completion status, counts, and canonical file set.
+- `scan-manifest.json` identifies the scan, target, revision, request, completion status, counts, and canonical file set. Its request records `componentGuidance` and `researchGuidance` when the user supplied them.
 - `candidate-ledger.jsonl` contains every unique candidate after deduplication. Each record has a rank and one disposition: `reportable`, `rejected`, `deferred`, or `verification-incomplete`. Candidates beyond a work budget remain in this ledger.
 - `findings.json` contains only the reportable subset. It is the authoritative finding list. Each reportable finding also carries a `code` excerpt, which the ledger's candidate records do not.
 - `coverage.json` records what the scan examined, skipped, deferred, or could not complete.
