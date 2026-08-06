@@ -1556,10 +1556,10 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             return match.group(1)
 
         for rule in (
-            ".inventory { model: sonnet; reasoning_effort: medium; }",
-            ".threat-model { model: opus; reasoning_effort: medium; }",
-            ".research { model: opus; reasoning_effort: xhigh; }",
-            ".verification { model: opus; reasoning_effort: xhigh; }",
+            ".inventory { model: kimi-k3; reasoning_effort: low; }",
+            ".threat-model { model: kimi-k3; reasoning_effort: low; }",
+            ".research { model: kimi-k3; reasoning_effort: high; }",
+            ".verification { model: kimi-k3; reasoning_effort: high; }",
         ):
             self.assertIn(rule, graph)
         self.assertNotIn(".report-author", graph)
@@ -1749,11 +1749,11 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         # The chain is keyed by the model a node requests, which the graph's
         # stylesheet decides. A key no stylesheet asks for never fires, so the
         # key and the routing have to be read together.
-        # Ordered: the fastest endpoint first, then the model's own provider,
-        # then another host for it, then a different model as the last resort.
+        # Ordered: the direct provider first, another Kimi host second, then a
+        # different model as the last resort.
         chain = (
             '[run.model.fallbacks]\n'
-            '"kimi-k3" = ["kimi:kimi-k3", "openrouter:kimi-k3", '
+            '"kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", '
             '"' + "clau" + 'de-opus-5"]\n'
         )
         for config_name in ("workflow.toml", "verify.toml"):
@@ -1763,9 +1763,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         stylesheet = graph.split('model_stylesheet="', 1)[1].split('\n        "', 1)[0]
         requested = set(re.findall(r"model:\s*([^;\s]+)", stylesheet))
         self.assertTrue(requested, "the stylesheet requests no model")
-        # This repository routes to Anthropic, so the kimi chain is declared
-        # for a downstream copy that routes to Kimi and does not fire here.
-        self.assertNotIn("kimi-k3", requested)
+        self.assertEqual(requested, {"kimi-k3"})
 
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
         workflow_config = (WORKFLOW_ROOT / "workflow.toml").read_text(

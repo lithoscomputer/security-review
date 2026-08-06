@@ -5,11 +5,11 @@ digraph SecurityReview {
         default_fidelity="compact",
         stall_timeout="14400s",
         model_stylesheet="
-            * { model: sonnet; reasoning_effort: low; }
-            .inventory { model: sonnet; reasoning_effort: medium; }
-            .threat-model { model: opus; reasoning_effort: medium; }
-            .research { model: opus; reasoning_effort: xhigh; }
-            .verification { model: opus; reasoning_effort: xhigh; }
+            * { model: kimi-k3; reasoning_effort: low; }
+            .inventory { model: kimi-k3; reasoning_effort: low; }
+            .threat-model { model: kimi-k3; reasoning_effort: low; }
+            .research { model: kimi-k3; reasoning_effort: high; }
+            .verification { model: kimi-k3; reasoning_effort: high; }
         "
     ]
     rankdir=LR

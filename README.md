@@ -101,6 +101,11 @@ reasons. Every level uses three verification voters.
 | `high` | Expands the inventory, uses two researchers for each component and category, and performs two gap sweeps. |
 | `max` | Adds a second panel for marginal findings and a red-team refuter for every survivor. |
 
+All agent stages use Kimi K3. Inventory and threat-modeling agents use low
+reasoning. Researchers, gap sweeps, and verification agents use high reasoning.
+If the selected Kimi provider fails, the run configuration tries Moonshot and
+OpenRouter before it falls back to `claude-opus-5`.
+
 Each agent attempt has a fixed timeout. Fan-out phases also have a concurrency
 cap:
 
