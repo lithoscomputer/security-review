@@ -107,6 +107,16 @@
         },
         "focus": {
           "type": ["string", "null"]
+        },
+        "componentGuidance": {
+          "type": "string",
+          "minLength": 1,
+          "description": "User guidance for grouping and prioritizing inventory components."
+        },
+        "researchGuidance": {
+          "type": "string",
+          "minLength": 1,
+          "description": "User guidance supplied to each vulnerability researcher."
         }
       }
     },

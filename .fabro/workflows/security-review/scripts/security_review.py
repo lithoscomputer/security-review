@@ -892,6 +892,8 @@ def prepare(args: argparse.Namespace) -> None:
             f'unknown effort "{one_line(args.effort, 60)}" -- using medium '
             f"(tiers: {', '.join(EFFORT_TIERS)})"
         )
+    component_guidance = args.component_guidance.strip()
+    research_guidance = args.research_guidance.strip()
     focus_input = args.focus.strip().lower()
     if focus_input == "attack-surface":
         focus = "attack-surface"
@@ -1049,7 +1051,7 @@ def prepare(args: argparse.Namespace) -> None:
     empty_target = empty_diff or empty_scope
 
     state: Dict[str, Any] = {
-        "version": 6,
+        "version": 7,
         "root": str(root()),
         "started_at": started_at,
         "scan_id": scan_id,
@@ -1066,6 +1068,8 @@ def prepare(args: argparse.Namespace) -> None:
         "effort": effort,
         "focus": focus,
         "scope": scope,
+        "component_guidance": component_guidance,
+        "research_guidance": research_guidance,
         "range": revision_range,
         "base": base,
         "merge_base": merge_base,
@@ -1166,6 +1170,8 @@ def prepare(args: argparse.Namespace) -> None:
         "agent": "fabro:security-review",
         "mode": mode,
         "scope": scope,
+        "component_guidance": component_guidance or None,
+        "research_guidance": research_guidance or None,
         "effort": effort,
         "revision": revision,
         "revision_source": "self-reported",
@@ -2949,6 +2955,21 @@ def scan_manifest(
     if verification.get("status") != "verified" and verification.get("reason"):
         reasons.append(str(verification["reason"]))
     completion_status = "partial" if reasons else "complete"
+    request = {
+        "mode": state.get("mode"),
+        "scope": state.get("scope") or [],
+        "range": state.get("range"),
+        "base": state.get("base"),
+        "commit": state.get("commit"),
+        "effort": state.get("effort"),
+        "focus": state.get("focus"),
+    }
+    component_guidance = state.get("component_guidance")
+    if component_guidance:
+        request["componentGuidance"] = component_guidance
+    research_guidance = state.get("research_guidance")
+    if research_guidance:
+        request["researchGuidance"] = research_guidance
     return {
         "schemaVersion": CANONICAL_SCHEMA_VERSION,
         "kind": "security-review.completed-scan",
@@ -2964,15 +2985,7 @@ def scan_manifest(
             "name": "security-review",
             "stateVersion": int(state.get("version") or 0),
         },
-        "request": {
-            "mode": state.get("mode"),
-            "scope": state.get("scope") or [],
-            "range": state.get("range"),
-            "base": state.get("base"),
-            "commit": state.get("commit"),
-            "effort": state.get("effort"),
-            "focus": state.get("focus"),
-        },
+        "request": request,
         "revision": state.get("revision") or {"versioned": False},
         "completion": {
             "status": completion_status,
@@ -3223,6 +3236,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--mode", default="scan")
     prepare_parser.add_argument("--effort", default="medium")
     prepare_parser.add_argument("--scope", default="")
+    prepare_parser.add_argument("--component-guidance", default="")
+    prepare_parser.add_argument("--research-guidance", default="")
     prepare_parser.add_argument("--base", default="")
     prepare_parser.add_argument("--commit", default="")
     prepare_parser.add_argument("--range", default="")

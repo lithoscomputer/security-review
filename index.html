@@ -402,7 +402,7 @@
     <div class="eyebrow">Reference</div>
     <h2>Inputs</h2>
     <p class="lede">
-      Seven inputs, all optional except when a mode demands one. The <code>prepare</code> step
+      Nine inputs, all optional except when a mode demands one. The <code>prepare</code> step
       validates every combination and rejects contradictions (for example, <code>scan</code> mode
       with a <code>base</code>).
     </p>
@@ -425,6 +425,14 @@
             <td>Comma-separated repo-relative paths. Limits what is scanned or diffed. Paths that escape the repo are rejected.</td>
           </tr>
           <tr>
+            <td>component_guidance</td><td><em>none</em></td><td>inventory</td>
+            <td>Advisory text that guides how the inventory agent groups and prioritizes components. It cannot change the hard scope, component cap, completeness rules, or skipped-component rules. It has no effect when the run skips inventory.</td>
+          </tr>
+          <tr>
+            <td>research_guidance</td><td><em>none</em></td><td>research</td>
+            <td>A tip sent to each researcher as a lead to verify, not as evidence. Verification and red-team agents do not receive it.</td>
+          </tr>
+          <tr>
             <td>base</td><td><em>auto</em></td><td>changes</td>
             <td>Base ref for the diff. When empty, prepare tries <code>@{upstream}</code>, <code>origin/HEAD</code>, <code>origin/main</code>, <code>origin/master</code>, <code>main</code>, <code>master</code>. The diff is <code>merge-base..HEAD</code>. Mutually exclusive with <code>range</code>.</td>
           </tr>
@@ -443,6 +451,10 @@
         </tbody>
       </table>
     </div>
+    <p class="lede">
+      Supplied component and research guidance is retained in the canonical
+      <code>scan-manifest.json</code> request.
+    </p>
   </section>
 
   <!-- ================= SIMULATOR + SPINE ================= -->
@@ -567,7 +579,8 @@
               A deterministic completeness check follows. An incomplete answer gets exactly one
               correction pass with pointed feedback; a failed agent falls back to scanning the
               whole target as a single component, so nothing silently disappears. Each attempt
-              has a 60-minute timeout.
+              has a 60-minute timeout. When supplied, <code>component_guidance</code> influences
+              component grouping and priority without changing these deterministic limits.
             </p>
             <details class="prompt">
               <summary>Full prompt — prompts/inventory.md.j2</summary>
@@ -746,7 +759,9 @@ result file and do not add narration.</pre>
               entirely in managed languages (Python, TypeScript, Ruby, Java, …).
               Each researcher must report a complete path from an attacker-controlled source
               to a dangerous sink with no effective defense — an empty findings array is an
-              acceptable answer; a padded one is not.
+              acceptable answer; a padded one is not. When supplied,
+              <code>research_guidance</code> gives every researcher a lead to verify. It is not
+              shown to the independent verification or red-team agents.
             </p>
             <details class="prompt">
               <summary>Full prompt — prompts/research.md.j2</summary>

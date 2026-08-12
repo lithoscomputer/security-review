@@ -59,6 +59,8 @@ Pass inputs with `-I name=value`. You can repeat `-I`.
 | `mode` | `scan`, `changes`, `commit` | `scan` | Review the pushed tree, a set of changes, or one commit. |
 | `effort` | `low`, `medium`, `high`, `max` | `medium` | Set how much research the workflow performs. |
 | `scope` | comma-separated paths | Whole target | Limit the review to named files or directories. |
+| `component_guidance` | Free text | Empty | Guide how the inventory agent groups and prioritizes components. |
+| `research_guidance` | Free text | Empty | Give each researcher a tip about what to watch for. |
 | `base` | Git revision | Auto-detected | In `changes` mode, compare the current revision with this revision. |
 | `range` | `base..HEAD` | Empty | In `changes` mode, review an explicit two-sided revision range. |
 | `commit` | Git revision | Empty | In `commit` mode, review this commit against its parent. |
@@ -84,10 +86,23 @@ fabro run \
   -I effort=high \
   -I scope=src/auth,src/session \
   .fabro/workflows/security-review/workflow.toml
+
+# Guide component planning and vulnerability research.
+fabro run \
+  -I component_guidance='Keep the API and background workers separate' \
+  -I research_guidance='Watch tenant IDs passed into background jobs' \
+  .fabro/workflows/security-review/workflow.toml
 ```
 
 When `base` is empty, the workflow tries the branch upstream, then
 `origin/HEAD`, `origin/main`, `origin/master`, `main`, and `master`.
+
+Guidance is advisory. `component_guidance` cannot change the hard `scope`,
+component cap, completeness rules, or skipped-component rules. It has no effect
+when a low-effort or small-target run skips inventory. `research_guidance` goes
+to each researcher as a lead to verify, not as evidence. Verification and
+red-team agents do not receive it. Supplied guidance is recorded in the
+canonical `scan-manifest.json` request.
 
 ## Choose an effort level
 
