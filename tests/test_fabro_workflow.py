@@ -2058,6 +2058,15 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         ):
             self.assertIn(rule, spec)
 
+    def test_html_report_falls_back_to_the_finding_snippet(self) -> None:
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "const lines = finding.code?.lines?.length\n"
+            "\t\t\t? finding.code.lines\n"
+            "\t\t\t: String(finding.snippet)",
+            template,
+        )
+
     def test_sample_report_is_rendered_from_the_template(self) -> None:
         builder = load_module(
             "sample_report_builder",

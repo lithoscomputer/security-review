@@ -3044,9 +3044,9 @@ window.securityReportData = Object.freeze({
 
 		const pre = element("pre", { attributes: { tabindex: "0" } });
 		const code = element("code");
-		const lines =
-			finding.code?.lines ||
-			String(finding.snippet)
+		const lines = finding.code?.lines?.length
+			? finding.code.lines
+			: String(finding.snippet)
 				.split("\n")
 				.map((text, index) => ({
 					number: finding.line + index,
