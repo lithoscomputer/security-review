@@ -40,7 +40,6 @@ digraph SecurityReview {
         output_schema="@schemas/inventory.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
         timeout="3600s",
         fidelity="compact",
         project_memory=false,

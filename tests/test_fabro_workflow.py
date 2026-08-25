@@ -1817,6 +1817,11 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
 
     def test_agent_failures_degrade_before_aborting(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
+        inventory = graph.split("    inventory [", 1)[1].split(
+            "    ]",
+            1,
+        )[0]
+        self.assertNotIn("auto_status=true", inventory)
         self.assertIn("    inventory -> inventory_failed\n", graph)
         self.assertIn(
             'inventory_failed -> plan_matrix [condition="outcome=succeeded"]',
