@@ -1692,7 +1692,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertIn(f"merge_{phase} [", graph)
         self.assertIn(
-            'target_gate -> inventory [condition="context.use_inventory=true"]',
+            'prepare -> inventory [condition="outcome=succeeded && '
+            'context.empty_target=false && context.use_inventory=true"]',
             graph,
         )
         self.assertIn(
@@ -1704,33 +1705,101 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertNotIn("result_path", text)
             self.assertNotIn("write the exact JSON", text.lower())
 
-    def test_routing_fails_fast_and_uses_decision_defaults(self) -> None:
+    def test_routing_fails_fast_without_routing_only_gate_nodes(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertNotIn("goal_gate=true", graph)
         self.assertNotIn("abort ->", graph)
-        for gate, conditional_target, default_target in (
-            ("target_gate", "inventory", "plan_matrix"),
-            ("inventory_gate", "inventory", "plan_matrix"),
-            ("threat_gate", "threat_models", "research_gate"),
-            ("research_gate", "research", "sweep_gate"),
-            ("sweep_gate", "sweep", "dedup_rank"),
-            ("panel_gate", "panel", "tally"),
-            ("effort_gate", "repanel_gate", "final_tally"),
-            ("repanel_gate", "repanel", "adversarial_plan"),
-            ("redteam_gate", "redteam", "final_tally"),
+        self.assertNotIn("on_failure=", graph)
+        for gate in (
+            "target_gate",
+            "inventory_gate",
+            "threat_gate",
+            "research_gate",
+            "sweep_gate",
+            "panel_gate",
+            "effort_gate",
+            "repanel_gate",
+            "redteam_gate",
         ):
-            self.assertRegex(
-                graph,
-                rf"{gate} -> {conditional_target} \[condition=",
-            )
-            self.assertIn(f"    {gate} -> {default_target}\n", graph)
+            self.assertNotIn(gate, graph)
+
+        for edge in (
+            'prepare -> exit [condition="outcome=succeeded && '
+            'context.empty_target=true"]',
+            'prepare -> inventory [condition="outcome=succeeded && '
+            'context.empty_target=false && context.use_inventory=true"]',
+            'prepare -> plan_matrix [condition="outcome=succeeded && '
+            'context.empty_target=false && context.use_inventory=false"]',
+            'merge_inventory -> inventory [condition="outcome=succeeded && '
+            'context.inventory_correction=true"]',
+            'merge_inventory -> plan_matrix [condition="outcome=succeeded && '
+            'context.inventory_correction=false"]',
+            'plan_matrix -> threat_models [condition="outcome=succeeded && '
+            'context.run_threat_models=true"]',
+            'plan_matrix -> research [condition="outcome=succeeded && '
+            'context.run_threat_models=false && context.run_research=true"]',
+            'plan_matrix -> sweep [condition="outcome=succeeded && '
+            'context.run_threat_models=false && context.run_research=false && '
+            'context.run_sweeps=true"]',
+            'plan_matrix -> dedup_rank [condition="outcome=succeeded && '
+            'context.run_threat_models=false && context.run_research=false && '
+            'context.run_sweeps=false"]',
+            'zip_cells -> research [condition="outcome=succeeded && '
+            'context.run_research=true"]',
+            'zip_cells -> sweep [condition="outcome=succeeded && '
+            'context.run_research=false && context.run_sweeps=true"]',
+            'zip_cells -> dedup_rank [condition="outcome=succeeded && '
+            'context.run_research=false && context.run_sweeps=false"]',
+            'merge_research -> sweep [condition="outcome=succeeded && '
+            'context.run_sweeps=true"]',
+            'merge_research -> dedup_rank [condition="outcome=succeeded && '
+            'context.run_sweeps=false"]',
+            'dedup_rank -> panel [condition="outcome=succeeded && '
+            'context.run_panel=true"]',
+            'dedup_rank -> tally [condition="outcome=succeeded && '
+            'context.run_panel=false"]',
+            'tally -> repanel [condition="outcome=succeeded && '
+            'context.max_effort=true && context.run_repanel=true"]',
+            'tally -> adversarial_plan [condition="outcome=succeeded && '
+            'context.max_effort=true && context.run_repanel=false"]',
+            'tally -> final_tally [condition="outcome=succeeded && '
+            'context.max_effort=false"]',
+            'adversarial_plan -> redteam [condition="outcome=succeeded && '
+            'context.run_redteam=true"]',
+            'adversarial_plan -> final_tally [condition="outcome=succeeded && '
+            'context.run_redteam=false"]',
+        ):
+            self.assertIn(edge, graph)
+
+        for source in (
+            "prepare",
+            "inventory_failed",
+            "merge_inventory",
+            "plan_matrix",
+            "merge_threat",
+            "zip_cells",
+            "merge_research",
+            "merge_sweep",
+            "dedup_rank",
+            "merge_panel",
+            "tally",
+            "merge_repanel",
+            "adversarial_plan",
+            "merge_redteam",
+            "final_tally",
+            "render_report",
+        ):
+            self.assertIn(f"    {source} -> abort\n", graph)
 
     def test_graph_has_one_execution_path_per_role(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         for edge in (
-            'research_gate -> research [condition="context.run_research=true"]',
-            'panel_gate -> panel [condition="context.run_panel=true"]',
-            'repanel_gate -> repanel [condition="context.run_repanel=true"]',
+            'zip_cells -> research [condition="outcome=succeeded && '
+            'context.run_research=true"]',
+            'dedup_rank -> panel [condition="outcome=succeeded && '
+            'context.run_panel=true"]',
+            'tally -> repanel [condition="outcome=succeeded && '
+            'context.max_effort=true && context.run_repanel=true"]',
             'final_tally -> render_report [condition="outcome=succeeded"]',
         ):
             self.assertIn(edge, graph)
@@ -1800,7 +1869,6 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("bootstrap_wait", graph)
         for phase, next_node in (
             ("threat", "zip_cells"),
-            ("research", "sweep_gate"),
             ("sweep", "dedup_rank"),
             ("panel", "tally"),
             ("repanel", "adversarial_plan"),
@@ -1813,6 +1881,18 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             )
             self.assertNotIn(f"wait_{phase}_", graph)
             self.assertNotIn(f"{phase}_retry_gate", graph)
+        self.assertIn(
+            'merge_research -> sweep [condition="outcome=succeeded && '
+            'context.run_sweeps=true"]',
+            graph,
+        )
+        self.assertIn(
+            'merge_research -> dedup_rank [condition="outcome=succeeded && '
+            'context.run_sweeps=false"]',
+            graph,
+        )
+        self.assertNotIn("wait_research_", graph)
+        self.assertNotIn("research_retry_gate", graph)
         self.assertEqual(graph.count("max_retries=2"), 7)
 
     def test_agent_failures_degrade_before_aborting(self) -> None:

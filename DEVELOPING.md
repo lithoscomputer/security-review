@@ -11,7 +11,7 @@ Everything that a review runs lives under
 
 | Path | Contents |
 | --- | --- |
-| `security-review.fabro` | The workflow graph, phase gates, and deterministic steps. |
+| `security-review.fabro` | The workflow graph, direct phase routing, and deterministic steps. |
 | `workflow.toml` | The normal run configuration, inputs, environment, and artifacts. |
 | `verify.toml` | A `low`-effort smoke run against the command-injection fixture. |
 | `scripts/security_review.py` | The deterministic engine. It owns state transitions, limits, deduplication, and vote tallies. |

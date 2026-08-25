@@ -31,8 +31,6 @@ digraph SecurityReview {
         stdin_source="context.internal.run_id",
         script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 61d648f17f4f05b424c93c47522599201afc32f5d1225851f7509f1ed329bd99 .fabro/workflows/security-review/scripts/git_readonly.py 6bafe2418234d7887d9f4726208bc9e50325bf34c5098c4a6ef508f1a5486ec5 .fabro/workflows/security-review/scripts/render_report.py 9627794e71b71ebe4ce2d469549d70ce5b21bd4f231e080b7afd8a7655b0e5b7 .fabro/workflows/security-review/specs/report-spec.md 0b24400adbeca32e2ca98e1b9e992fe8ec0be98a8297fd55b8e07b685017aea7 .fabro/workflows/security-review/templates/report.html 093c5806974e31a61c30985f28274be7412477fc9e91ebe6568e67dc20aa26ae && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
-    target_gate [shape=diamond, label="Target has work?"]
-
     inventory [
         label="Inventory",
         class="inventory",
@@ -54,11 +52,6 @@ digraph SecurityReview {
         timeout="180s",
         max_visits=2
     ]
-    inventory_gate [
-        shape=diamond,
-        label="Inventory complete or correct?",
-        max_visits=2
-    ]
     inventory_failed [
         shape=parallelogram,
         label="Record inventory-failed fallback",
@@ -74,8 +67,6 @@ digraph SecurityReview {
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py plan-matrix"
     ]
-    threat_gate [shape=diamond, label="Threat models needed?"]
-
     threat_models [
         shape=component,
         label="Threat models",
@@ -111,7 +102,6 @@ digraph SecurityReview {
         script="python3 .fabro/workflows/security-review/scripts/security_review.py zip-cells"
     ]
 
-    research_gate [shape=diamond, label="Researchers needed?"]
     research [
         shape=component,
         label="Research",
@@ -139,7 +129,6 @@ digraph SecurityReview {
         output_schema="routing",
         timeout="180s"
     ]
-    sweep_gate [shape=diamond, label="Sweeps needed?"]
     sweep [
         shape=component,
         label="Gap-fill sweeps",
@@ -175,7 +164,6 @@ digraph SecurityReview {
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py dedup-rank"
     ]
-    panel_gate [shape=diamond, label="Panel votes needed?"]
     panel [
         shape=component,
         label="Three-lens panel",
@@ -211,8 +199,6 @@ digraph SecurityReview {
         script="python3 .fabro/workflows/security-review/scripts/security_review.py tally"
     ]
 
-    effort_gate [shape=diamond, label="Max effort?"]
-    repanel_gate [shape=diamond, label="Marginal keeps need repanel?"]
     repanel [
         shape=component,
         label="Repanel marginal keeps",
@@ -248,7 +234,6 @@ digraph SecurityReview {
         script="python3 .fabro/workflows/security-review/scripts/security_review.py adversarial-plan"
     ]
 
-    redteam_gate [shape=diamond, label="Red-team votes needed?"]
     redteam [
         shape=component,
         label="Red-team every survivor",
@@ -293,70 +278,64 @@ digraph SecurityReview {
     ]
 
     start -> prepare
-    prepare -> target_gate [condition="outcome=succeeded"]
+    prepare -> exit [condition="outcome=succeeded && context.empty_target=true"]
+    prepare -> inventory [condition="outcome=succeeded && context.empty_target=false && context.use_inventory=true"]
+    prepare -> plan_matrix [condition="outcome=succeeded && context.empty_target=false && context.use_inventory=false"]
     prepare -> abort
-    target_gate -> exit [condition="context.empty_target=true"]
-    target_gate -> inventory [condition="context.use_inventory=true"]
-    target_gate -> plan_matrix
 
     inventory -> merge_inventory [condition="outcome=succeeded"]
     inventory -> inventory_failed
     inventory_failed -> plan_matrix [condition="outcome=succeeded"]
     inventory_failed -> abort
-    merge_inventory -> inventory_gate [condition="outcome=succeeded"]
+    merge_inventory -> inventory [condition="outcome=succeeded && context.inventory_correction=true"]
+    merge_inventory -> plan_matrix [condition="outcome=succeeded && context.inventory_correction=false"]
     merge_inventory -> abort
-    inventory_gate -> inventory [condition="context.inventory_correction=true"]
-    inventory_gate -> plan_matrix
 
-    plan_matrix -> threat_gate [condition="outcome=succeeded"]
+    plan_matrix -> threat_models [condition="outcome=succeeded && context.run_threat_models=true"]
+    plan_matrix -> research [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=true"]
+    plan_matrix -> sweep [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=false && context.run_sweeps=true"]
+    plan_matrix -> dedup_rank [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=false && context.run_sweeps=false"]
     plan_matrix -> abort
-    threat_gate -> threat_models [condition="context.run_threat_models=true"]
-    threat_gate -> research_gate
     threat_models -> threat_model [fidelity="truncate"]
     threat_model -> threat_join -> merge_threat
     merge_threat -> zip_cells [condition="outcome=succeeded"]
     merge_threat -> abort
-    zip_cells -> research_gate [condition="outcome=succeeded"]
+    zip_cells -> research [condition="outcome=succeeded && context.run_research=true"]
+    zip_cells -> sweep [condition="outcome=succeeded && context.run_research=false && context.run_sweeps=true"]
+    zip_cells -> dedup_rank [condition="outcome=succeeded && context.run_research=false && context.run_sweeps=false"]
     zip_cells -> abort
 
-    research_gate -> research [condition="context.run_research=true"]
-    research_gate -> sweep_gate
     research -> researcher [fidelity="truncate"]
     researcher -> research_join -> merge_research
-    merge_research -> sweep_gate [condition="outcome=succeeded"]
+    merge_research -> sweep [condition="outcome=succeeded && context.run_sweeps=true"]
+    merge_research -> dedup_rank [condition="outcome=succeeded && context.run_sweeps=false"]
     merge_research -> abort
 
-    sweep_gate -> sweep [condition="context.run_sweeps=true"]
-    sweep_gate -> dedup_rank
     sweep -> sweeper [fidelity="truncate"]
     sweeper -> sweep_join -> merge_sweep
     merge_sweep -> dedup_rank [condition="outcome=succeeded"]
     merge_sweep -> abort
 
-    dedup_rank -> panel_gate [condition="outcome=succeeded"]
+    dedup_rank -> panel [condition="outcome=succeeded && context.run_panel=true"]
+    dedup_rank -> tally [condition="outcome=succeeded && context.run_panel=false"]
     dedup_rank -> abort
-    panel_gate -> panel [condition="context.run_panel=true"]
-    panel_gate -> tally
     panel -> panel_verifier [fidelity="truncate"]
     panel_verifier -> panel_join -> merge_panel
     merge_panel -> tally [condition="outcome=succeeded"]
     merge_panel -> abort
 
-    tally -> effort_gate [condition="outcome=succeeded"]
+    tally -> repanel [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=true"]
+    tally -> adversarial_plan [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=false"]
+    tally -> final_tally [condition="outcome=succeeded && context.max_effort=false"]
     tally -> abort
-    effort_gate -> repanel_gate [condition="context.max_effort=true"]
-    effort_gate -> final_tally
-    repanel_gate -> repanel [condition="context.run_repanel=true"]
-    repanel_gate -> adversarial_plan
     repanel -> repanel_verifier [fidelity="truncate"]
     repanel_verifier -> repanel_join -> merge_repanel
     merge_repanel -> adversarial_plan [condition="outcome=succeeded"]
     merge_repanel -> abort
 
-    adversarial_plan -> redteam_gate [condition="outcome=succeeded"]
+    adversarial_plan -> redteam [condition="outcome=succeeded && context.run_redteam=true"]
+    adversarial_plan -> final_tally [condition="outcome=succeeded && context.run_redteam=false"]
     adversarial_plan -> abort
-    redteam_gate -> redteam [condition="context.run_redteam=true"]
-    redteam_gate -> final_tally
     redteam -> redteam_verifier [fidelity="truncate"]
     redteam_verifier -> redteam_join -> merge_redteam
     merge_redteam -> final_tally [condition="outcome=succeeded"]
