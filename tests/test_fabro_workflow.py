@@ -71,6 +71,32 @@ def read_jsonl(path: Path) -> list[dict]:
     ]
 
 
+STATIC_PROMPT_INCLUDE = re.compile(
+    r'{%\s*include\s+"([^"]+)"\s*-?%}'
+)
+
+
+def read_prompt_with_static_includes(path: Path) -> str:
+    prompt_root = WORKFLOW_ROOT / "prompts"
+    root = prompt_root.resolve()
+
+    def expand(candidate: Path, stack: tuple[Path, ...]) -> str:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+        if resolved in stack:
+            raise AssertionError(f"cyclic prompt include: {resolved}")
+        text = resolved.read_text(encoding="utf-8")
+        return STATIC_PROMPT_INCLUDE.sub(
+            lambda match: expand(
+                prompt_root / match.group(1),
+                (*stack, resolved),
+            ),
+            text,
+        )
+
+    return expand(path, ())
+
+
 class FabroWorkflowDriverTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -1954,6 +1980,17 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             names,
         )
         self.assertFalse(list(prompt_root.glob("*.md")))
+        self.assertEqual(
+            {
+                path.name
+                for path in (prompt_root / "partials").glob("*.md.j2")
+            },
+            {
+                "output-schema.md.j2",
+                "read-only-explorer.md.j2",
+                "safe-git-history.md.j2",
+            },
+        )
 
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         include = '{% include "partials/output-schema.md.j2" -%}'
@@ -1978,10 +2015,17 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "verify.md.j2",
             "redteam.md.j2",
         ):
-            text = (WORKFLOW_ROOT / "prompts" / name).read_text(
-                encoding="utf-8"
+            text = read_prompt_with_static_includes(
+                WORKFLOW_ROOT / "prompts" / name
             )
             self.assertIn("dispatch one read-only explorer", text, name)
+            self.assertRegex(
+                text,
+                r"For\s+history on an untrusted tree",
+                name,
+            )
+            self.assertIn("git_readonly.py diff|show|log|blame", text, name)
+            self.assertIn("disables the external diff and textconv", text, name)
             self.assertNotIn("spawn subagents", text, name)
             # One provider profile exposes Agent/TaskOutput, while Fabro uses
             # the spawn_agent/wait vocabulary. Naming either misleads the other.
