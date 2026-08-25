@@ -64,6 +64,9 @@ Pass inputs with `-I name=value`. You can repeat `-I`.
 | `commit` | Git revision | Empty | In `commit` mode, review this commit against its parent. |
 | `focus` | `attack-surface`, `none` | Automatic | Focus on reachable production code, or turn that focus off. |
 
+The main run configuration clones the complete Git history. This lets change
+and commit scans resolve older revisions without fetching during the review.
+
 For example:
 
 ```bash

@@ -12,8 +12,8 @@ Everything that a review runs lives under
 | Path | Contents |
 | --- | --- |
 | `security-review.fabro` | The workflow graph, direct phase routing, and deterministic steps. |
-| `workflow.toml` | The normal run configuration, inputs, environment, and artifacts. |
-| `verify.toml` | A `low`-effort smoke run against the command-injection fixture. |
+| `workflow.toml` | The normal run configuration. It clones full history for arbitrary revision inputs. |
+| `verify.toml` | A `low`-effort smoke run against the current command-injection fixture. It keeps Fabro's shallow-clone default. |
 | `scripts/security_review.py` | The deterministic engine. It owns state transitions, limits, deduplication, and vote tallies. |
 | `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown, HTML, JSONL, and revision reports. |
 | `scripts/git_readonly.py` | A read-only Git entry point with external diff and text conversion drivers disabled. |

@@ -12,6 +12,9 @@ commit = ""
 range = ""
 focus = ""
 
+[run.clone]
+depth = 0
+
 [run.model.fallbacks]
 "kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", "claude-opus-5"]
 

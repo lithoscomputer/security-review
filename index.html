@@ -404,7 +404,8 @@
     <p class="lede">
       Seven inputs, all optional except when a mode demands one. The <code>prepare</code> step
       validates every combination and rejects contradictions (for example, <code>scan</code> mode
-      with a <code>base</code>).
+      with a <code>base</code>). The main run configuration clones the complete Git history so
+      older revision inputs are available without a fetch during the review.
     </p>
     <div class="tablewrap">
       <table>
@@ -430,7 +431,7 @@
           </tr>
           <tr>
             <td>range</td><td><em>none</em></td><td>changes</td>
-            <td>An explicit two-sided range such as <code>v1.2..HEAD</code>. Both endpoints must already exist locally — the workflow never fetches.</td>
+            <td>An explicit two-sided range such as <code>v1.2..HEAD</code>. Both endpoints must exist in the full clone — the workflow never fetches.</td>
           </tr>
           <tr>
             <td>commit</td><td><em>none</em></td><td>commit</td>

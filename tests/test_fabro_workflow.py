@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from argparse import Namespace
 from pathlib import Path
@@ -1859,6 +1860,16 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         requested = set(re.findall(r"model:\s*([^;\s]+)", stylesheet))
         self.assertTrue(requested, "the stylesheet requests no model")
         self.assertEqual(requested, {"kimi-k3"})
+
+    def test_main_run_clones_full_history_for_revision_inputs(self) -> None:
+        workflow = tomllib.loads(
+            (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
+        )
+        verify = tomllib.loads(
+            (WORKFLOW_ROOT / "verify.toml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(workflow["run"]["clone"]["depth"], 0)
+        self.assertNotIn("clone", verify["run"])
 
     def test_checkpoint_excludes_the_ignored_runtime_directory(self) -> None:
         workflow_config = (WORKFLOW_ROOT / "workflow.toml").read_text(
