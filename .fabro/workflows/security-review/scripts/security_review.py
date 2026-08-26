@@ -22,8 +22,20 @@ import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 from urllib.parse import urlsplit
 
 
@@ -31,6 +43,9 @@ WORKFLOW_ROOT = Path(".fabro/workflows/security-review")
 CONTROL_DIR = WORKFLOW_ROOT / "runtime"
 STATE_PATH = CONTROL_DIR / "state.json"
 RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
+TAXONOMY_PATH = WORKFLOW_ROOT / "schemas/taxonomy.json"
+FINDINGS_SCHEMA_PATH = WORKFLOW_ROOT / "schemas/findings.schema.json"
+CATEGORY_SLUGS_PARTIAL = WORKFLOW_ROOT / "prompts/partials/category-slugs.md.j2"
 
 CANDIDATE_CAP = 400
 VERIFICATION_CAP = 45
@@ -56,37 +71,33 @@ SCAN_MODES = ("scan", "changes", "commit")
 VERIFICATION_LENSES = ("REACHABILITY", "IMPACT", "DEFENSES")
 CATEGORY_LENSES = (
     (
-        "injection-and-input",
-        "injection and input handling: SQL/command/code injection, XSS, XXE, "
-        "deserialization, template injection, ReDoS, path traversal from user "
-        "input, and prompt injection",
+        "identity-and-state",
+        "Access Controls, Authentication, and Session Management: missing or "
+        "weak authentication, bypasses, ownership and role checks, security-"
+        "sensitive workflow transitions, CSRF, IDOR, privilege boundaries, "
+        "and session creation, rotation, expiration, revocation, and binding",
     ),
     (
-        "auth-and-access",
-        "authentication and authorization: auth bypass, missing or wrong "
-        "authorization checks, IDOR, privilege escalation, CSRF, SSRF, open "
-        "redirect, and race conditions in access decisions",
+        "input-and-execution",
+        "Data Validation: untrusted input reaching queries, commands, code, "
+        "templates, browsers, parsers, files and uploads, URLs, headers and "
+        "logs, deserializers, protocol boundaries, or production agents",
     ),
     (
-        "memory-and-unsafe",
-        "memory and unsafe operations: buffer overflows, out-of-bounds access, "
-        "use-after-free, integer overflow, type confusion, unsafe FFI, and "
-        "unchecked unsafe blocks",
+        "runtime-and-failure",
+        "Denial of Service, Error Reporting, Timing, and Undefined Behavior: "
+        "unbounded resources or work, unsafe failure paths, fail-open behavior, "
+        "error disclosure, races and time-of-check/time-of-use gaps, timing "
+        "side channels, and memory, integer, type, or runtime safety failures",
     ),
     (
-        "crypto-and-secrets",
-        "cryptography and secrets: weak or misused crypto, weak randomness, "
-        "key/nonce reuse, timing side channels, hardcoded secrets, and "
-        "credential handling and exposure",
+        "secrets-and-operations",
+        "Auditing and Logging, Configuration, Cryptography, and Data Exposure: "
+        "security events and log integrity, unsafe defaults and supply-chain "
+        "trust, crypto, randomness, keys and protected transport, and secrets "
+        "or sensitive data exposed through storage, interfaces, or permissions",
     ),
 )
-MANAGED_LANGUAGE_RE = re.compile(
-    r"^(python|javascript|typescript|node(\.js)?|ruby|php|java|kotlin|scala|"
-    r"c#|csharp|\.net|elixir|erlang|clojure|dart|perl|lua|r|shell|bash|sql|"
-    r"html|css)$",
-    re.IGNORECASE,
-)
-LANGUAGE_JOIN_WORD_RE = re.compile(r"^(and|with|plus|or)$", re.IGNORECASE)
 SAFE_REV_RE = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9._/@{}^~:+-]{0,399}$")
 SCAN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 TARGET_ID_RE = re.compile(
@@ -255,6 +266,133 @@ def load_state() -> Dict[str, Any]:
     if not isinstance(value, dict):
         raise WorkflowDataError(f"{STATE_PATH} must contain a JSON object")
     return value
+
+
+@lru_cache(maxsize=1)
+def category_slugs() -> FrozenSet[str]:
+    """The closed set of canonical category slugs, from its one definition."""
+    payload = read_json(TAXONOMY_PATH)
+    slugs = payload.get("slugs") if isinstance(payload, dict) else None
+    if not isinstance(slugs, dict) or not slugs:
+        raise WorkflowDataError(f"{TAXONOMY_PATH} has no slugs object")
+    return frozenset(str(slug) for slug in slugs)
+
+
+def rule_id_pattern(slugs: Iterable[str]) -> str:
+    """The findings-schema pattern that admits only taxonomy category slugs.
+
+    Slugs are lowercase letters, digits, and hyphens, so none of them carries a
+    regex metacharacter and the alternation needs no escaping.
+    """
+    return (
+        "^(?:"
+        + "|".join(sorted(slugs))
+        + ")\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    )
+
+
+def verify_taxonomy_sources() -> None:
+    """Refuse to start when the taxonomy's three consumers disagree.
+
+    The taxonomy has one definition, but the findings schema and the prompt
+    partial restate its slugs: the schema because Fabro reads a static file,
+    and the partial because researchers need to read the list. Neither is
+    generated, so drift is caught here rather than in a finished report.
+    """
+    slugs = category_slugs()
+
+    schema = read_json(FINDINGS_SCHEMA_PATH)
+    try:
+        pattern = schema["properties"]["findings"]["items"]["properties"][
+            "ruleId"
+        ]["pattern"]
+    except (KeyError, TypeError) as error:
+        raise WorkflowDataError(
+            f"{FINDINGS_SCHEMA_PATH} has no ruleId pattern"
+        ) from error
+    expected = rule_id_pattern(slugs)
+    if pattern != expected:
+        raise WorkflowDataError(
+            f"{FINDINGS_SCHEMA_PATH} ruleId pattern does not match "
+            f"{TAXONOMY_PATH}; regenerate it from the taxonomy"
+        )
+
+    taxonomy = read_json(TAXONOMY_PATH)
+    raw_categories = (
+        taxonomy.get("categories") if isinstance(taxonomy, dict) else None
+    )
+    raw_mapping = (
+        taxonomy.get("slugs") if isinstance(taxonomy, dict) else None
+    )
+    if not isinstance(raw_categories, list) or not isinstance(raw_mapping, dict):
+        raise WorkflowDataError(
+            f"{TAXONOMY_PATH} has an invalid category mapping"
+        )
+    category_names = [
+        entry.get("name")
+        for entry in raw_categories
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+    ]
+    if len(category_names) != len(raw_categories) or len(category_names) != len(
+        set(category_names)
+    ):
+        raise WorkflowDataError(f"{TAXONOMY_PATH} has invalid category names")
+    expected_by_category = {
+        name: {
+            str(slug)
+            for slug, category in raw_mapping.items()
+            if category == name
+        }
+        for name in category_names
+    }
+
+    try:
+        partial = CATEGORY_SLUGS_PARTIAL.read_text(encoding="utf-8")
+    except OSError as error:
+        raise WorkflowDataError(
+            f"could not read {CATEGORY_SLUGS_PARTIAL}: {error}"
+        ) from error
+
+    offered_by_category: Dict[str, List[str]] = {}
+    current_category: Optional[str] = None
+    for line in partial.splitlines():
+        if line.startswith("- "):
+            heading, separator, rest = line[2:].partition(":")
+            if not separator:
+                current_category = None
+                continue
+            current_category = heading.strip()
+            if current_category in offered_by_category:
+                raise WorkflowDataError(
+                    f"{CATEGORY_SLUGS_PARTIAL} repeats category "
+                    f"{current_category!r}"
+                )
+            offered_by_category[current_category] = re.findall(
+                r"`([a-z0-9-]+)`", rest
+            )
+        elif current_category is not None and line.startswith("  "):
+            offered_by_category[current_category].extend(
+                re.findall(r"`([a-z0-9-]+)`", line)
+            )
+        else:
+            current_category = None
+
+    if list(offered_by_category) != category_names:
+        raise WorkflowDataError(
+            f"{CATEGORY_SLUGS_PARTIAL} category headings or order disagree with "
+            f"{TAXONOMY_PATH}"
+        )
+    for category, offered in offered_by_category.items():
+        if len(offered) != len(set(offered)):
+            raise WorkflowDataError(
+                f"{CATEGORY_SLUGS_PARTIAL} repeats a slug under {category}"
+            )
+        expected = expected_by_category[category]
+        if set(offered) != expected:
+            raise WorkflowDataError(
+                f"{CATEGORY_SLUGS_PARTIAL} slugs under {category} disagree with "
+                f"{TAXONOMY_PATH}"
+            )
 
 
 def point_state_locator_at(path: Path) -> None:
@@ -869,12 +1007,13 @@ def common_target(state: Mapping[str, Any]) -> Dict[str, Any]:
         "focus": state.get("focus"),
         "scanRoot": str(root()),
         "gitWrapper": (
-            "python3 .fabro/workflows/security-review/scripts/git_readonly.py"
+            "python3 -I .fabro/workflows/security-review/scripts/git_readonly.py"
         ),
     }
 
 
 def prepare(args: argparse.Namespace) -> None:
+    verify_taxonomy_sources()
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     started_at = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -1655,22 +1794,6 @@ def plan_matrix() -> None:
     emit(**updates)
 
 
-def split_languages(description: Any) -> List[str]:
-    words = re.split(r"[/,+&()\s]+", str(description or ""))
-    return [
-        word.strip()
-        for word in words
-        if word.strip() and not LANGUAGE_JOIN_WORD_RE.match(word.strip())
-    ]
-
-
-def managed_only(component: Mapping[str, Any]) -> bool:
-    languages = split_languages(component.get("language"))
-    return bool(languages) and all(
-        MANAGED_LANGUAGE_RE.match(language) for language in languages
-    )
-
-
 def normalize_threat_model(value: Any) -> Optional[Dict[str, List[str]]]:
     if not isinstance(value, dict):
         return None
@@ -1706,7 +1829,6 @@ def build_cells(state: Dict[str, Any]) -> None:
         else {}
     )
     research_jobs: List[Dict[str, Any]] = []
-    pruned: List[str] = []
     passes = int(state["researchers_per_cell"])
     target = common_target(state)
 
@@ -1719,11 +1841,6 @@ def build_cells(state: Dict[str, Any]) -> None:
             else None
         )
         lenses = list(CATEGORY_LENSES)
-        if managed_only(component):
-            lenses = [
-                lens for lens in lenses if lens[0] != "memory-and-unsafe"
-            ]
-            pruned.append(f"{component['name']}:memory-and-unsafe")
         if state["use_single"]:
             combined = "; ".join(lens for _, lens in lenses)
             assignments = [
@@ -1813,13 +1930,11 @@ def build_cells(state: Dict[str, Any]) -> None:
         )
     state["research_jobs"] = research_jobs
     state["sweep_jobs"] = sweep_jobs
-    state["pruned_buckets"] = pruned
+    state["pruned_buckets"] = []
     state["run_research"] = bool(research_jobs)
     state["run_sweeps"] = bool(sweep_jobs)
     set_phase_jobs(state, "research", research_jobs)
     set_phase_jobs(state, "sweep", sweep_jobs)
-    for bucket in pruned:
-        print(f"{bucket}: skipped (managed language)")
 
 
 def research_sweep_updates(state: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1847,14 +1962,6 @@ def zip_cells() -> None:
     emit(**research_sweep_updates(state))
 
 
-def normalize_category(value: Any) -> str:
-    return re.sub(
-        r"[^a-z0-9]+",
-        "-",
-        one_line(value, 120).lower(),
-    ).strip("-")
-
-
 def finding_or_rejection(
     value: Any,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -1871,11 +1978,14 @@ def finding_or_rejection(
     severity = one_line(value.get("severity"), 20).upper()
     difficulty = one_line(value.get("difficulty"), 20).upper()
     confidence = one_line(value.get("confidence"), 20).upper()
-    category = normalize_category(value.get("category"))
     title = one_line(value.get("title"), 300).strip()
     rationale = clean_text(value.get("rationale"), 4000).strip()
     rule_id = normalize_rule_id(value.get("ruleId"))
     identity = normalize_identity(value.get("identity"))
+    # The category is derived, never reported. A researcher that supplies one
+    # is ignored: the ruleId already names the class, and asking twice is how
+    # the two answers came to disagree.
+    category = rule_id.split(".", 1)[0] if rule_id else ""
     for failed, reason in (
         (path is None or path == ".", "file does not name a repository file"),
         (
@@ -1891,10 +2001,13 @@ def finding_or_rejection(
             confidence not in CONFIDENCE_RANK,
             "confidence is not HIGH, MEDIUM, or LOW",
         ),
-        (not category, "category is empty"),
         (not title, "title is empty"),
         (not rationale, "rationale is empty"),
         (rule_id is None, "ruleId is not <category>.<control-family>"),
+        (
+            rule_id is not None and category not in category_slugs(),
+            "ruleId does not begin with a taxonomy category slug",
+        ),
         (identity is None, "identity.anchor is not a lowercase slug"),
     ):
         if failed:
@@ -2086,6 +2199,11 @@ def merge(phase: str) -> None:
                 else ""
             )
         )
+    elif phase == "dedupe":
+        updates = merge_dedupe(state, raw)
+        print(
+            f"Recorded {updates['duplicates_recorded']} duplicate finding(s)"
+        )
     else:
         updates = merge_phase(state, phase, raw)
         print(
@@ -2162,7 +2280,6 @@ def dedup_rank() -> None:
         else {}
     )
     raw_candidates: List[Dict[str, Any]] = []
-    roots_by_fingerprint: Dict[str, Tuple[str, str]] = {}
     fingerprints_by_finding_id: Dict[str, str] = {}
     fingerprints_by_occurrence_id: Dict[str, str] = {}
     returned = 0
@@ -2188,18 +2305,11 @@ def dedup_rank() -> None:
             copy["component"] = one_line(component, 120)
             copy.update(derive_finding_identity(target_id, scan_id, copy))
             fingerprint = finding_key(copy)
-            root_control = (
-                str(copy.get("file") or ""),
-                str(copy.get("symbol") or ""),
-            )
-            existing_root = roots_by_fingerprint.setdefault(
-                fingerprint,
-                root_control,
-            )
-            if existing_root != root_control:
-                raise WorkflowDataError(
-                    "stable finding identity is ambiguous across root controls"
-                )
+            # Two reporters can describe one control's enclosing `symbol` in
+            # different prose ("the run case branch" vs "run) branch of the
+            # dispatch"). That is not an ambiguity: findings sharing a
+            # fingerprint merge in `by_key` below, keeping the first file and
+            # symbol. Never abort a multi-hour scan over model-authored prose.
             for derived_field, collision_map in (
                 ("findingId", fingerprints_by_finding_id),
                 ("occurrenceId", fingerprints_by_occurrence_id),
@@ -2496,6 +2606,141 @@ def adversarial_plan() -> None:
     emit(**updates)
 
 
+def provisional_kept_records(
+    state: Mapping[str, Any],
+) -> List[Dict[str, Any]]:
+    """The findings that would be reported, computed without side effects.
+
+    `assemble_final` finalizes the same set but also mutates records, appends
+    casualties, and counts votes. The duplicate-scan stage runs before it and
+    only needs to see the survivors, so this mirrors the keep rule read-only.
+    The red-team round (max effort) can still drop a kept candidate; apply that
+    verdict here so the scan compares the exact set the report will carry.
+    """
+    reviewed = state.get("reviewed") or []
+    is_max = state.get("effort") == "max"
+    redteam_jobs = state.get("redteam_jobs") or []
+    jobs_by_id = {
+        job.get("candidate_id"): job
+        for job in redteam_jobs
+        if isinstance(job, dict)
+    }
+    kept: List[Dict[str, Any]] = []
+    for record in reviewed:
+        if not isinstance(record, dict) or not record.get("kept"):
+            continue
+        candidate = record.get("candidate")
+        if not isinstance(candidate, dict):
+            continue
+        if is_max:
+            job = jobs_by_id.get(candidate.get("id"))
+            vote = phase_vote(state, "redteam", job) if isinstance(job, dict) else None
+            if not vote or vote.get("verdict") != "TRUE_POSITIVE":
+                continue
+        kept.append(record)
+    kept.sort(key=confidence_sort_key)
+    return kept
+
+
+def dedupe_plan() -> None:
+    state = load_state()
+    kept = provisional_kept_records(state)
+    index: Dict[str, str] = {}
+    claims: List[Dict[str, Any]] = []
+    for position, record in enumerate(kept, 1):
+        candidate = record["candidate"]
+        display = f"F{position}"
+        index[display] = str(candidate["findingId"])
+        claims.append(
+            {
+                "id": display,
+                "title": one_line(candidate.get("title"), 300),
+                "category": one_line(candidate.get("category"), 120),
+                "severity": candidate.get("severity"),
+                "file": candidate.get("file"),
+                "line": candidate.get("line"),
+                "symbol": one_line(candidate.get("symbol"), 300),
+                "summary": clean_text(candidate.get("rationale"), 1200),
+                "impact": clean_text(candidate.get("impact"), 1200),
+            }
+        )
+    # One duplicate needs two findings, so a scan of fewer than two is a no-op.
+    # This also covers the requested "zero findings" skip.
+    run_dedupe = len(claims) >= 2
+    state["dedupe_index"] = index
+    state["dedupe_verdicts"] = {}
+    save_state(state)
+    updates: Dict[str, Any] = {"run_dedupe": run_dedupe}
+    if run_dedupe:
+        updates["dedupe_assignment"] = {
+            "target": common_target(state),
+            "findings": claims,
+        }
+        print(f"Duplicate scan: comparing {len(claims)} verified finding(s)")
+    else:
+        print(
+            "Duplicate scan skipped: "
+            f"{len(claims)} verified finding(s), fewer than two to compare"
+        )
+    emit(**updates)
+
+
+def merge_dedupe(
+    state: Dict[str, Any],
+    raw: Any,
+) -> Dict[str, Any]:
+    """Fold the duplicate scan's verdicts into state, conservatively.
+
+    The agent output is untrusted. Every reference must name a finding the scan
+    was given; a finding is a duplicate of at most one primary; and a primary
+    may not itself be a duplicate, which rejects chains and cycles in one rule.
+    Anything that fails a check is dropped, never fatal — a flaky duplicate scan
+    must not lose the findings the rest of the run verified.
+    """
+    index = state.get("dedupe_index")
+    verdicts: Dict[str, Dict[str, str]] = {}
+    recorded = 0
+    entries = raw.get("duplicates") if isinstance(raw, dict) else None
+    if isinstance(index, dict) and index and isinstance(entries, list):
+        proposed_duplicate_ids = {
+            entry.get("finding")
+            for entry in entries
+            if isinstance(entry, dict) and isinstance(entry.get("finding"), str)
+        }
+        assigned: Set[str] = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            finding = entry.get("finding")
+            primary = entry.get("duplicateOf")
+            reasoning = entry.get("reasoning")
+            if not (
+                isinstance(finding, str)
+                and isinstance(primary, str)
+                and isinstance(reasoning, str)
+            ):
+                continue
+            if finding not in index or primary not in index:
+                continue
+            if finding == primary or finding in assigned:
+                continue
+            # A primary that is itself proposed as a duplicate cannot anchor a
+            # group; skipping these rejects both chains and cycles.
+            if primary in proposed_duplicate_ids:
+                continue
+            reason_text = one_line(reasoning, 1000)
+            if not reason_text:
+                continue
+            assigned.add(finding)
+            verdicts[index[finding]] = {
+                "primary": index[primary],
+                "reasoning": reason_text,
+            }
+            recorded += 1
+    state["dedupe_verdicts"] = verdicts
+    return {"duplicates_recorded": recorded}
+
+
 def confidence_sort_key(record: Mapping[str, Any]) -> Tuple[int, int, str]:
     candidate = record.get("candidate") or {}
     return (
@@ -2753,6 +2998,11 @@ def canonical_candidate(
         "cwe_id": cwe_id,
         "snippet": candidate.get("snippet") or "",
         "symbol": candidate.get("symbol") or "",
+        # The late duplicate-scan stage may mark a verified finding a duplicate
+        # of another. Both fields default to "not a duplicate" so every
+        # candidate — reportable, deferred, or rejected — carries the shape.
+        "duplicate_of": candidate.get("duplicate_of") or None,
+        "duplicate_reasoning": candidate.get("duplicate_reasoning") or "",
     }
 
 
@@ -3055,6 +3305,27 @@ def assemble_final(state: Dict[str, Any]) -> Dict[str, Any]:
             round_record["adversarial"] = record["adversarial"]
         rounds[candidate_id] = round_record
 
+    # Overlay the duplicate scan's verdicts onto the survivors. A verdict only
+    # holds when its primary is itself a reported finding, so a primary dropped
+    # after the scan (a late red-team casualty) safely demotes its duplicate
+    # back to a standalone finding rather than dangling.
+    verdicts = state.get("dedupe_verdicts")
+    verdicts = verdicts if isinstance(verdicts, dict) else {}
+    kept_ids = {record["candidate"]["findingId"] for record in kept}
+    for record in kept:
+        candidate = record["candidate"]
+        verdict = verdicts.get(candidate["findingId"])
+        primary = verdict.get("primary") if isinstance(verdict, dict) else None
+        if primary and primary in kept_ids and primary != candidate["findingId"]:
+            candidate["duplicate_of"] = primary
+            candidate["duplicate_reasoning"] = one_line(
+                verdict.get("reasoning"),
+                1000,
+            )
+        else:
+            candidate["duplicate_of"] = None
+            candidate["duplicate_reasoning"] = ""
+
     findings = []
     for record in kept:
         candidate = record["candidate"]
@@ -3215,6 +3486,63 @@ def render_report() -> None:
     )
 
 
+def verify_expectations(expected_count_text: str, expected_rule_id: str) -> None:
+    expected_count_text = expected_count_text.strip()
+    expected_rule_id = expected_rule_id.strip()
+    if not expected_count_text and not expected_rule_id:
+        print("No report expectations configured")
+        emit(report_expectations_checked=False)
+        return
+    if not re.fullmatch(r"0|[1-9][0-9]*", expected_count_text):
+        raise WorkflowDataError(
+            "expected finding count must be a non-negative integer"
+        )
+    expected_count = int(expected_count_text)
+    if expected_rule_id and not RULE_ID_RE.fullmatch(expected_rule_id):
+        raise WorkflowDataError("expected rule ID has an invalid format")
+    if expected_rule_id and expected_count != 1:
+        raise WorkflowDataError(
+            "an expected rule ID requires an expected finding count of 1"
+        )
+
+    state = load_state()
+    evidence_dir = state.get("evidence_dir")
+    if not isinstance(evidence_dir, str) or not evidence_dir:
+        raise WorkflowDataError("state has no evidence directory")
+    findings = read_json(Path(evidence_dir) / "findings.json")
+    if not isinstance(findings, list):
+        raise WorkflowDataError("findings.json must contain a JSON array")
+    if len(findings) != expected_count:
+        raise WorkflowDataError(
+            f"expected {expected_count} verified finding(s), found "
+            f"{len(findings)}"
+        )
+    if expected_rule_id:
+        finding = findings[0]
+        actual_rule_id = (
+            finding.get("ruleId") if isinstance(finding, dict) else None
+        )
+        if actual_rule_id != expected_rule_id:
+            raise WorkflowDataError(
+                f"expected verified rule {expected_rule_id!r}, found "
+                f"{actual_rule_id!r}"
+            )
+
+    print(
+        f"Verified report expectations: {expected_count} finding(s)"
+        + (
+            f" with rule {expected_rule_id}"
+            if expected_rule_id
+            else ""
+        )
+    )
+    emit(
+        report_expectations_checked=True,
+        expected_finding_count=expected_count,
+        expected_rule_id=expected_rule_id,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -3232,8 +3560,12 @@ def build_parser() -> argparse.ArgumentParser:
     merge_parser = subparsers.add_parser("merge")
     merge_parser.add_argument(
         "phase",
-        choices=("inventory", *PHASE_OUTPUT_KEYS.keys()),
+        choices=("inventory", "dedupe", *PHASE_OUTPUT_KEYS.keys()),
     )
+
+    expectations_parser = subparsers.add_parser("verify-expectations")
+    expectations_parser.add_argument("--expected-count", default="")
+    expectations_parser.add_argument("--expected-rule-id", default="")
 
     for name in (
         "inventory-failed",
@@ -3242,6 +3574,7 @@ def build_parser() -> argparse.ArgumentParser:
         "dedup-rank",
         "tally",
         "adversarial-plan",
+        "dedupe-plan",
         "final-tally",
         "render-report",
     ):
@@ -3260,8 +3593,13 @@ def main(argv: Sequence[str]) -> int:
         "dedup-rank": dedup_rank,
         "tally": tally,
         "adversarial-plan": adversarial_plan,
+        "dedupe-plan": dedupe_plan,
         "final-tally": final_tally,
         "render-report": render_report,
+        "verify-expectations": lambda: verify_expectations(
+            args.expected_count,
+            args.expected_rule_id,
+        ),
     }
     try:
         commands[args.command]()

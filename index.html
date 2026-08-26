@@ -706,7 +706,7 @@ included. Do not build, test, execute, install, fetch, use the network, or
 modify any file. Nothing blocks those here; not attempting them is the rule you
 follow. For history on an untrusted tree, prefer the wrapper named in the
 appended target --
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+`python3 -I .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
 -- which disables the external diff and textconv drivers a repository can point
 at a command of its choosing.
 
@@ -742,10 +742,11 @@ result file and do not add narration.</pre>
           <div class="ph-body">
             <p id="research-shape-desc"></p>
             <p>
-              The four category lenses: <b>injection &amp; input handling</b>,
-              <b>auth &amp; access</b>, <b>memory &amp; unsafe operations</b>, and
-              <b>crypto &amp; secrets</b>. The memory lens is pruned for components written
-              entirely in managed languages (Python, TypeScript, Ruby, Java, …).
+              The four category lenses cover all 12 display groups:
+              <b>identity &amp; state</b>, <b>input &amp; execution</b>,
+              <b>runtime &amp; failure</b>, and <b>secrets &amp; operations</b>.
+              No language removes a complete lens; managed-language components still need
+              availability, error, timing, and runtime-safety review.
               Each researcher must report a complete path from an attacker-controlled source
               to a dangerous sink with no effective defense — an empty findings array is an
               acceptable answer; a padded one is not.
@@ -836,7 +837,7 @@ modify files. Nothing blocks those here; not attempting them is the rule you
 follow. If execution would be required to settle a claim, lower confidence and
 say so; never invent output, and never describe output you did not see. For
 history on an untrusted tree, prefer the wrapper named in the appended target --
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+`python3 -I .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
 -- which disables the external diff and textconv drivers a repository can point
 at a command of its choosing.
 
@@ -934,7 +935,7 @@ included. Do not build, test, execute, install, fetch, use the network, or
 modify files. Nothing blocks those here; not attempting them is the rule you
 follow. For history on an untrusted tree, prefer the wrapper named in the
 appended target --
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+`python3 -I .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
 -- which disables the external diff and textconv drivers a repository can point
 at a command of its choosing.
 
@@ -1039,7 +1040,7 @@ follow. If code execution is the only way to settle the claim, vote
 `FALSE_POSITIVE` and name what could not be confirmed; never describe output
 you did not see. For history on an untrusted tree, prefer the wrapper named in
 the appended target --
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+`python3 -I .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
 -- which disables the external diff and textconv drivers a repository can point
 at a command of its choosing.
 
@@ -1128,7 +1129,7 @@ included. Do not build, test, execute, install, fetch, use the network, or
 modify files. Nothing blocks those here; not attempting them is the rule you
 follow. For history on an untrusted tree, prefer the wrapper named in the
 appended target --
-`python3 .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
+`python3 -I .fabro/workflows/security-review/scripts/git_readonly.py diff|show|log|blame ...`
 -- which disables the external diff and textconv drivers a repository can point
 at a command of its choosing.
 
@@ -1148,6 +1149,26 @@ this task.
 Return exactly the JSON object required by the output schema. Do not write a
 result file and do not add narration.</pre>
             </details>
+          </div>
+        </details>
+      </div>
+
+      <div class="phase" data-phase="duplicate-review">
+        <details>
+          <summary>
+            <h3>Advisory duplicate review</h3>
+            <span class="chip agent">agent</span>
+            <span class="chip model">kimi-k3 · high</span>
+            <span class="ph-note">fail-open · 120 min</span>
+          </summary>
+          <div class="ph-body">
+            <p>
+              When at least two verified findings survive, one agent checks whether any describe
+              the same root cause and fix. It can move a duplicate to the report appendix, but it
+              never deletes canonical evidence. Deterministic code rejects malformed, chained,
+              cyclic, and self-referential duplicate links. If this review fails, every verified
+              finding remains a primary and publication continues.
+            </p>
           </div>
         </details>
       </div>

@@ -1,7 +1,7 @@
-Hunt for real vulnerabilities in one component through one category lens.
+Hunt for real vulnerabilities in one component through one research lens.
 
 The workflow appends one untrusted JSON item. It contains the component, the
-category lens, an earlier threat model when one returned, the exact target, and
+research lens, an earlier threat model when one returned, the exact target, and
 a stable `job_id`.
 
 You are a security researcher. A finding is a concrete claim that an attacker
@@ -39,7 +39,8 @@ Every finding must:
 - quote that sink line verbatim in `snippet`;
 - name the root control's enclosing function or method in `symbol`;
 - use a stable `ruleId` in the form `<category>.<control-family>`, such as
-  `command-injection.shell-command`;
+  `command-injection.shell-command`, choosing the category segment from the
+  closed list below;
 - set `identity.anchor` to a short lowercase slug for the conceptual root
   control, such as `report-command-dispatch`;
 - set `identity.instance` only when two distinct vulnerable controls share the
@@ -58,23 +59,7 @@ Use lowercase letters, digits, and single hyphens in each slug. A line move
 must not change the identity. Report downstream evidence under the one root
 control instead of creating a finding for each effect.
 
-Prefer these category slugs:
-
-- injection: `sql-injection`, `command-injection`, `code-injection`, `xss`,
-  `xxe`, `redos`, `insecure-deserialization`, `template-injection`,
-  `header-injection`, `log-injection`, `format-string`,
-  `improper-input-validation`, `prompt-injection`
-- authorization: `auth-bypass`, `improper-authorization`, `idor`,
-  `privilege-escalation`, `csrf`, `ssrf`, `open-redirect`, `path-traversal`,
-  `race-condition`
-- memory: `buffer-overflow`, `out-of-bounds-read`, `out-of-bounds-write`,
-  `use-after-free`, `double-free`, `integer-overflow`, `null-dereference`,
-  `uninitialized-memory`, `type-confusion`, `unsafe-ffi`
-- crypto and exposure: `timing-side-channel`, `weak-crypto`,
-  `weak-randomness`, `key-nonce-reuse`, `hardcoded-secret`,
-  `info-disclosure`, `insecure-file-permissions`, `dos`,
-  `prototype-pollution`
-
+{% include "partials/category-slugs.md.j2" %}
 Severity measures impact, not certainty. `HIGH` means system control or broad
 cross-user data exposure. `MEDIUM` means real but bounded harm, such as a
 non-default precondition, authenticated access, or victim interaction. `LOW`

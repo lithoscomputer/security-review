@@ -6,7 +6,7 @@ The completed `evidence/` directory is the canonical bundle and the source of tr
 
 - `scan-manifest.json` identifies the scan, target, revision, request, completion status, counts, and canonical file set.
 - `candidate-ledger.jsonl` contains every unique candidate after deduplication. Each record has a rank and one disposition: `reportable`, `rejected`, `deferred`, or `verification-incomplete`. Candidates beyond a work budget remain in this ledger.
-- `findings.json` contains only the reportable subset. It is the authoritative finding list. Each reportable finding also carries a `code` excerpt, which the ledger's candidate records do not.
+- `findings.json` contains only the reportable subset. It is the authoritative finding list. Each reportable finding also carries a `code` excerpt, which the ledger's candidate records do not. Each finding also carries `duplicate_of` and `duplicate_reasoning`: `duplicate_of` is `null` for a distinct finding, or the stable `findingId` of the primary it repeats; `duplicate_reasoning` records why.
 - `coverage.json` records what the scan examined, skipped, deferred, or could not complete.
 - `panel-votes.jsonl` contains one record for each dispatched panel, repanel, or red-team vote. Each record preserves the exact claim and cited evidence shown to that verifier, plus its verdict and reasoning when it completed.
 
@@ -28,7 +28,38 @@ SARIF is not generated. It can be added later as another deterministic view of t
 
 Severity describes impact. Difficulty describes the access, knowledge, and effort exploitation takes, so `LOW` difficulty is the worse case. When two reporters describe one candidate with different difficulties, deduplication keeps the lower one: a researcher who found a cheaper path is evidence the cheaper path exists.
 
-Canonical `category` slugs are part of `ruleId`, and therefore of a finding's stable identity. The HTML report maps them to display names in the renderer instead. Renaming a slug would change every `findingId` derived from it.
+The vulnerability taxonomy has one definition: `schemas/taxonomy.json`. It maps every canonical category slug to one display name, and defines the display names a report may show.
+
+A finding's category is derived, never reported. Researchers supply only `ruleId`, whose first segment is the category slug; the reports map that slug to its display name. Two fields carrying the same answer is how the reported category and the `ruleId` prefix came to disagree, so there is now one.
+
+Researchers choose the most specific applicable slug and classify the root cause rather than a downstream impact. Broad slugs are fallbacks only. The second `ruleId` segment names the vulnerable control. This keeps independent reports of one root vulnerability on the same stable identity whenever the evidence supports the same class.
+
+The component matrix keeps four research lenses. Together they cover all 12 display groups: identity and state; input and execution; runtime and failure; and secrets and operations. A language does not remove a complete lens, because managed-language components still need availability, error, and timing review.
+
+The slug set is closed at both ends. `schemas/findings.schema.json` admits only these slugs in `ruleId`, which makes a wrong slug a structured-output retry rather than a lost finding, and `finding_or_rejection` rejects any that still arrives. The renderer refuses an unmapped slug outright: it has no title-casing fallback, because that fallback once let a broken taxonomy ship inside a finished report.
+
+Neither the schema pattern nor `prompts/partials/category-slugs.md.j2` is generated, so `prepare` compares both against the taxonomy and refuses to start when they disagree. The prompt check validates the category headings, order, slug membership, and slug-to-category assignment.
+
+Category slugs are part of `ruleId`, and therefore of a finding's stable identity. Renaming a slug would change every `findingId` derived from it.
+
+## Duplicate findings
+
+Independent researchers reviewing overlapping code can report one vulnerability
+more than once. Deterministic deduplication only merges reports that share a
+stable fingerprint, so two descriptions of the same defect under different rule
+or anchor slugs survive as separate verified findings. After verification, a
+`kimi-k3` duplicate scan reads every reported finding and names the ones that
+repeat another. It runs at every effort level and is skipped when there are
+fewer than two findings to compare.
+
+The scan never removes a finding. It records `duplicate_of` and
+`duplicate_reasoning` on each repeat, pointing at one primary. `findings.json`
+stays the complete verified set, and the manifest counts every finding. The
+reports present the split: primaries carry the headline counts, the index, and
+the detailed section; duplicates move to an appendix that names the primary and
+the reason and folds the full finding detail behind progressive disclosure. The
+duplicate scan is advisory. If it fails or returns nothing usable, the run
+finalizes with no finding marked a duplicate rather than failing.
 
 ## Evidence
 
@@ -56,6 +87,8 @@ A researcher quotes one sink line in `snippet`. The excerpt shown in a report is
 A reportable ledger record must match one entry in `findings.json`. Every reported finding must have a complete initial three-lens panel and at least two `TRUE_POSITIVE` votes. Deferred candidates must not appear in `findings.json`. Manifest counts must match the canonical records.
 
 `findingId` identifies the same root vulnerability across scans. `occurrenceId` identifies that finding in one Fabro run. The Markdown and JSONL views copy both IDs from `findings.json`.
+
+A finding's `duplicate_of`, when set, must name the `findingId` of another finding in `findings.json` that is not itself a duplicate, must differ from the finding's own `findingId`, and must come with non-empty `duplicate_reasoning`. This forbids self-references, chains, cycles, and dangling primaries.
 
 Severity describes impact. Confidence describes certainty. A two-of-three panel limits confidence to `medium`. Only a unanimous panel can produce `high` confidence.
 

@@ -1173,15 +1173,13 @@ class GoalHelperTests(unittest.TestCase):
 class GitWrapperTests(unittest.TestCase):
     """The wrapper's hardening is positional, so re-enabling flags must fail.
 
-    Both workflows ship a copy, and a gap in either is a gap. Git lets a later
-    flag override an earlier one, so `--no-textconv ... --textconv` restores a
-    driver the repository chose and runs it.
+    Git lets a later flag override an earlier one, so
+    `--no-textconv ... --textconv` restores a driver the repository chose and
+    runs it. The review wrapper requires isolated Python before import and has
+    its own subprocess tests in test_fabro_workflow.py.
     """
 
-    WRAPPERS = (
-        WORKFLOW_ROOT / "scripts/git_readonly.py",
-        REPOSITORY_ROOT / ".fabro/workflows/security-review/scripts/git_readonly.py",
-    )
+    WRAPPERS = (WORKFLOW_ROOT / "scripts/git_readonly.py",)
 
     def wrapper_modules(self):
         for index, path in enumerate(self.WRAPPERS):

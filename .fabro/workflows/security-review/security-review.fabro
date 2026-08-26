@@ -11,20 +11,20 @@ digraph SecurityReview {
             .threat-model { model: kimi-k3; reasoning_effort: low; }
             .research { model: kimi-k3; reasoning_effort: high; }
             .verification { model: kimi-k3; reasoning_effort: high; }
+            .dedupe { model: kimi-k3; reasoning_effort: high; }
         "
     ]
     rankdir=LR
 
     start [shape=Mdiamond, label="Start"]
     exit  [shape=Msquare, label="Exit"]
-
     prepare [
         shape=parallelogram,
         label="Resolve and size scan target",
         timeout="180s",
         output_schema="routing",
         stdin_source="context.internal.run_id",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py 61d648f17f4f05b424c93c47522599201afc32f5d1225851f7509f1ed329bd99 .fabro/workflows/security-review/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/security-review/scripts/render_report.py 9627794e71b71ebe4ce2d469549d70ce5b21bd4f231e080b7afd8a7655b0e5b7 .fabro/workflows/security-review/specs/report-spec.md 0b24400adbeca32e2ca98e1b9e992fe8ec0be98a8297fd55b8e07b685017aea7 .fabro/workflows/security-review/templates/report.html 093c5806974e31a61c30985f28274be7412477fc9e91ebe6568e67dc20aa26ae && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/security-review/scripts/security_review.py e86d0589908aac3844b8fcba0c233863f15f72026665a6833d2b368e747db7fc .fabro/workflows/security-review/scripts/git_readonly.py 9fb5ad5efb9164cded322a39e87680182711feba835fbec1fe8ea51fca993c34 .fabro/workflows/security-review/scripts/render_report.py c3edf58fde0883955355c79d98da80798285522e3e1c706c4a6d6d7afb616d52 .fabro/workflows/security-review/specs/report-spec.md baefbfd5970e734b4e05ce799e4613432ac81bb941708ddb7c53c9e6013646f4 .fabro/workflows/security-review/templates/report.html 666e2c0c28cb827fbc2113851c9aba5eea5a0c0d0e2eda0a9555cc375db23952 .fabro/workflows/security-review/schemas/taxonomy.json bde2b3caf394ccca1239a2a1a5b1cc98c109a74b9d15626d57af2d4e27cfbd10 && python3 .fabro/workflows/security-review/scripts/security_review.py prepare --scan-id-stdin --mode {{ inputs.mode }} --effort {{ inputs.effort }} --scope {{ inputs.scope }} --base {{ inputs.base }} --commit {{ inputs.commit }} --range {{ inputs.range }} --focus {{ inputs.focus }}"
     ]
     inventory [
         label="Inventory",
@@ -33,9 +33,10 @@ digraph SecurityReview {
         output_schema="@schemas/inventory.schema.json",
         output_retries=2,
         max_retries=2,
+        on_failure="succeed",
         timeout="3600s",
         project_memory=false,
-        max_visits=2
+        max_visits=3
     ]
     merge_inventory [
         shape=parallelogram,
@@ -44,7 +45,7 @@ digraph SecurityReview {
         script="python3 .fabro/workflows/security-review/scripts/security_review.py merge inventory",
         output_schema="routing",
         timeout="180s",
-        max_visits=2
+        max_visits=3
     ]
     inventory_failed [
         shape=parallelogram,
@@ -104,7 +105,7 @@ digraph SecurityReview {
         on_failure="succeed"
     ]
     researcher [
-        label="Research component and category",
+        label="Research component and lens",
         class="research",
         prompt="@prompts/research.md.j2",
         output_schema="@schemas/findings.schema.json",
@@ -256,6 +257,33 @@ digraph SecurityReview {
         timeout="180s"
     ]
 
+    dedupe_plan [
+        shape=parallelogram,
+        label="Plan duplicate scan over verified findings",
+        timeout="180s",
+        output_schema="routing",
+        script="python3 .fabro/workflows/security-review/scripts/security_review.py dedupe-plan"
+    ]
+    dedupe [
+        label="De-duplicate verified findings",
+        class="dedupe",
+        prompt="@prompts/dedupe.md.j2",
+        output_schema="@schemas/dedupe.schema.json",
+        output_retries=2,
+        max_retries=2,
+        on_failure="succeed",
+        timeout="7200s",
+        project_memory=false
+    ]
+    merge_dedupe [
+        shape=parallelogram,
+        label="Merge duplicate-scan verdicts",
+        stdin_source="context.output.dedupe",
+        script="python3 .fabro/workflows/security-review/scripts/security_review.py merge dedupe",
+        output_schema="routing",
+        timeout="180s"
+    ]
+
     final_tally [
         shape=parallelogram,
         label="Write completed canonical scan bundle",
@@ -269,6 +297,13 @@ digraph SecurityReview {
         timeout="180s",
         output_schema="routing",
         script="python3 .fabro/workflows/security-review/scripts/security_review.py render-report"
+    ]
+    verify_expectations [
+        shape=parallelogram,
+        label="Verify configured report expectations",
+        timeout="30s",
+        output_schema="routing",
+        script="python3 .fabro/workflows/security-review/scripts/security_review.py verify-expectations --expected-count '{{ inputs.expected_finding_count }}' --expected-rule-id '{{ inputs.expected_rule_id }}'"
     ]
 
     start -> prepare
@@ -310,17 +345,24 @@ digraph SecurityReview {
 
     tally -> repanel [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=true"]
     tally -> adversarial_plan [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=false"]
-    tally -> final_tally
+    tally -> dedupe_plan
     repanel -> repanel_verifier [fidelity="truncate"]
     repanel_verifier -> repanel_join -> merge_repanel
     merge_repanel -> adversarial_plan
 
     adversarial_plan -> redteam [condition="outcome=succeeded && context.run_redteam=true"]
-    adversarial_plan -> final_tally
+    adversarial_plan -> dedupe_plan
     redteam -> redteam_verifier [fidelity="truncate"]
     redteam_verifier -> redteam_join -> merge_redteam
-    merge_redteam -> final_tally
+    merge_redteam -> dedupe_plan
+
+    dedupe_plan -> dedupe [condition="outcome=succeeded && context.run_dedupe=true"]
+    dedupe_plan -> final_tally
+    dedupe -> merge_dedupe [condition="outcome=succeeded"]
+    dedupe -> final_tally
+    merge_dedupe -> final_tally
 
     final_tally -> render_report
-    render_report -> exit
+    render_report -> verify_expectations
+    verify_expectations -> exit
 }

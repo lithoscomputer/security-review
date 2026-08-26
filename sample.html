@@ -1000,6 +1000,142 @@ td {
 	text-align: center;
 }
 
+.duplicate-list {
+	display: grid;
+	gap: 1rem;
+	max-width: 58rem;
+	padding-top: 3rem;
+}
+
+.duplicate {
+	--finding-tone: var(--tone, var(--undetermined));
+	--finding-tone-soft: var(--tone-soft, var(--undetermined-soft));
+	border: 1px solid var(--line);
+	border-left: 0.3rem solid var(--tone, var(--undetermined));
+	background: var(--paper);
+}
+
+.duplicate > summary {
+	cursor: pointer;
+	list-style: none;
+	display: grid;
+	gap: 0.6rem;
+	padding: 1.1rem 1.25rem;
+}
+
+.duplicate > summary::-webkit-details-marker {
+	display: none;
+}
+
+.duplicate > summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.duplicate__head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+}
+
+.duplicate__id {
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+}
+
+.duplicate__title {
+	flex: 1 1 18rem;
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 640;
+	letter-spacing: -0.01em;
+	line-height: 1.35;
+}
+
+.duplicate__pill {
+	align-self: center;
+	padding: 0.15rem 0.55rem;
+	background: var(--tone-soft, var(--undetermined-soft));
+	box-shadow: inset 0.2rem 0 var(--tone, var(--undetermined));
+	font-size: 0.72rem;
+	font-weight: 650;
+	text-transform: capitalize;
+	white-space: nowrap;
+}
+
+.duplicate__ref {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	color: var(--ink-soft);
+	font-size: 0.85rem;
+	line-height: 1.5;
+}
+
+.duplicate__ref strong {
+	color: var(--ink);
+	font-weight: 650;
+}
+
+.duplicate__ref-id {
+	font-family: var(--font-mono);
+	font-size: 0.78rem;
+	font-weight: 700;
+	color: var(--accent-dark);
+}
+
+.duplicate__reason {
+	margin: 0;
+	color: var(--ink-soft);
+	font-size: 0.9rem;
+	line-height: 1.6;
+	text-wrap: pretty;
+}
+
+.duplicate__toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	width: fit-content;
+	color: var(--accent-dark);
+	font-size: 0.8rem;
+	font-weight: 650;
+}
+
+.duplicate__toggle::before {
+	content: "";
+	width: 0.4rem;
+	height: 0.4rem;
+	border-right: 0.11rem solid currentColor;
+	border-bottom: 0.11rem solid currentColor;
+	rotate: -45deg;
+	transition: rotate 120ms ease;
+}
+
+.duplicate[open] .duplicate__toggle::before {
+	rotate: 45deg;
+}
+
+.duplicate[open] .duplicate__toggle-label--show,
+.duplicate:not([open]) .duplicate__toggle-label--hide {
+	display: none;
+}
+
+.duplicate__detail {
+	padding: 0 1.25rem 1.6rem;
+	border-top: 1px solid var(--line);
+}
+
+.duplicate__detail .finding__body {
+	max-width: 74ch;
+	padding-top: 1.6rem;
+}
+
 .tone--high {
 	--tone: var(--high);
 	--tone-soft: var(--high-soft);
@@ -1475,6 +1611,22 @@ td {
 				</div>
 			</section>
 
+			<section
+				class="report-section report-section--muted"
+				id="duplicate-findings"
+				hidden
+			>
+				<div class="page-container">
+					<header class="section-heading">
+						<p class="eyebrow">Appendix</p>
+						<h2>Duplicate findings</h2>
+						<p id="duplicate-intro"></p>
+					</header>
+
+					<div class="duplicate-list" id="duplicate-list"></div>
+				</div>
+			</section>
+
 			<section class="report-section report-section--muted" id="rating-guide">
 				<div class="page-container">
 					<header class="section-heading">
@@ -1670,6 +1822,7 @@ window.securityReportData = Object.freeze({
     "Medium",
     "High"
   ],
+  "duplicates": [],
   "findings": [
     {
       "category": "Data Validation",
@@ -3083,6 +3236,61 @@ window.securityReportData = Object.freeze({
 		metadata.append(item);
 	}
 
+	function buildFindingBody(finding) {
+		const body = element("div", { className: "finding__body" });
+		const impact = element("section", { className: "finding-impact" });
+		const impactText = element("p");
+		impactText.append(inlineText(finding.impact));
+		impact.append(element("h4", { text: "Security impact" }), impactText);
+		body.append(
+			impact,
+			createFindingBlock("Description", {
+				paragraphs: finding.description,
+			}),
+		);
+
+		const evidenceBlock = createEvidenceBlock(finding);
+		if (evidenceBlock) {
+			body.append(evidenceBlock);
+		}
+
+		const codeFrame = createCodeFrame(finding);
+		if (codeFrame) {
+			const sourceCode = createFindingBlock("Source code");
+			sourceCode.append(codeFrame);
+			body.append(sourceCode);
+		}
+
+		body.append(
+			createFindingBlock(
+				finding.exploitScenarios.length === 1
+					? "Exploit scenario"
+					: "Exploit scenarios",
+				{
+					items: finding.exploitScenarios,
+					ordered: finding.exploitScenarios.length > 1,
+				},
+			),
+			createFindingBlock("Required conditions", {
+				items:
+					finding.preconditions.length > 0
+						? finding.preconditions
+						: ["None recorded."],
+			}),
+			createFindingBlock(
+				finding.recommendations.length === 1
+					? "Recommendation"
+					: "Recommendations",
+				{
+					items: finding.recommendations,
+					ordered: finding.recommendations.length > 1,
+				},
+			),
+		);
+
+		return body;
+	}
+
 	function renderFindingPages() {
 		const container = byId("finding-pages");
 
@@ -3137,63 +3345,89 @@ window.securityReportData = Object.freeze({
 			);
 			header.append(location);
 
-			const body = element("div", { className: "finding__body" });
-			const impact = element("section", { className: "finding-impact" });
-			const impactText = element("p");
-			impactText.append(inlineText(finding.impact));
-			impact.append(
-				element("h4", { text: "Security impact" }),
-				impactText,
-			);
-			body.append(
-				impact,
-				createFindingBlock("Description", {
-					paragraphs: finding.description,
-				}),
-			);
-
-			const evidenceBlock = createEvidenceBlock(finding);
-			if (evidenceBlock) {
-				body.append(evidenceBlock);
-			}
-
-			const codeFrame = createCodeFrame(finding);
-			if (codeFrame) {
-				const sourceCode = createFindingBlock("Source code");
-				sourceCode.append(codeFrame);
-				body.append(sourceCode);
-			}
-
-			body.append(
-				createFindingBlock(
-					finding.exploitScenarios.length === 1
-						? "Exploit scenario"
-						: "Exploit scenarios",
-					{
-						items: finding.exploitScenarios,
-						ordered: finding.exploitScenarios.length > 1,
-					},
-				),
-				createFindingBlock("Required conditions", {
-					items:
-						finding.preconditions.length > 0
-							? finding.preconditions
-							: ["None recorded."],
-				}),
-				createFindingBlock(
-					finding.recommendations.length === 1
-						? "Recommendation"
-						: "Recommendations",
-					{
-						items: finding.recommendations,
-						ordered: finding.recommendations.length > 1,
-					},
-				),
-			);
-
-			article.append(header, body);
+			article.append(header, buildFindingBody(finding));
 			container.append(article);
 		});
+	}
+
+	const duplicates = (data.duplicates || []).map(normalizedFinding);
+
+	function renderDuplicates() {
+		const section = byId("duplicate-findings");
+		if (duplicates.length === 0) {
+			return;
+		}
+		section.hidden = false;
+
+		const count = duplicates.length;
+		byId("duplicate-intro").textContent =
+			`The duplicate scan judged ${count} verified ` +
+			`${count === 1 ? "report" : "reports"} to describe a vulnerability ` +
+			"already listed above. Each is kept here with the finding it " +
+			"duplicates and the reason.";
+
+		const container = byId("duplicate-list");
+		for (const finding of duplicates) {
+			const block = element("details", {
+				className: `duplicate ${toneClass(finding.severity)}`,
+			});
+
+			const summary = element("summary");
+			const head = element("div", { className: "duplicate__head" });
+			head.append(element("span", { className: "duplicate__id", text: finding.id }));
+			const title = element("h3", { className: "duplicate__title" });
+			title.append(inlineText(finding.title));
+			head.append(
+				title,
+				element("span", {
+					className: "duplicate__pill",
+					text: finding.severity,
+				}),
+			);
+
+			const reference = element("p", { className: "duplicate__ref" });
+			reference.append(
+				element("strong", { text: "Duplicate of" }),
+				element("span", {
+					className: "duplicate__ref-id",
+					text: finding.duplicateOfId || "an earlier finding",
+				}),
+			);
+			if (finding.duplicateOfTitle) {
+				reference.append(
+					document.createTextNode(`— ${finding.duplicateOfTitle}`),
+				);
+			}
+
+			const reason = element("p", { className: "duplicate__reason" });
+			reason.append(inlineText(finding.duplicateReasoning));
+
+			const toggle = element("span", { className: "duplicate__toggle" });
+			toggle.append(
+				element("span", {
+					className: "duplicate__toggle-label--show",
+					text: "Show full finding",
+				}),
+				element("span", {
+					className: "duplicate__toggle-label--hide",
+					text: "Hide full finding",
+				}),
+			);
+
+			summary.append(head, reference, reason, toggle);
+
+			const detail = element("div", { className: "duplicate__detail" });
+			const location = element("p", { className: "finding__location" });
+			location.append(
+				element("strong", { text: "Location: " }),
+				element("code", { text: finding.file }),
+				document.createTextNode(finding.target ? ` · ${finding.target}` : ""),
+			);
+			detail.append(location, buildFindingBody(finding));
+
+			block.append(summary, detail);
+			container.append(block);
+		}
 	}
 
 	function renderTaxonomy() {
@@ -3273,6 +3507,7 @@ window.securityReportData = Object.freeze({
 	renderFilterOptions();
 	renderFindingsTable();
 	renderFindingPages();
+	renderDuplicates();
 	renderTaxonomy();
 	renderRatingDefinitions(
 		"severity-definitions",
@@ -3286,17 +3521,18 @@ window.securityReportData = Object.freeze({
 	);
 	setupFilters();
 
-	// A collapsed block would print as a heading with nothing under it.
-	const evidenceBlocks = () =>
-		document.querySelectorAll(".finding-evidence");
+	// A collapsed block would print as a heading with nothing under it. The
+	// duplicate appendix is disclosure too, so its full detail must print.
+	const collapsibleBlocks = () =>
+		document.querySelectorAll(".finding-evidence, .duplicate");
 	window.addEventListener("beforeprint", () => {
-		for (const block of evidenceBlocks()) {
+		for (const block of collapsibleBlocks()) {
 			block.dataset.wasOpen = String(block.open);
 			block.open = true;
 		}
 	});
 	window.addEventListener("afterprint", () => {
-		for (const block of evidenceBlocks()) {
+		for (const block of collapsibleBlocks()) {
 			block.open = block.dataset.wasOpen === "true";
 		}
 	});

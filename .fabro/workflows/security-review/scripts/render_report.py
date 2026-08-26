@@ -29,7 +29,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Mapping
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, NoReturn, Optional, Sequence, Tuple
 
 
@@ -68,6 +68,8 @@ CANDIDATE_FIELDS = (
     "cwe_id",
     "snippet",
     "symbol",
+    "duplicate_of",
+    "duplicate_reasoning",
 )
 # `code` is a presentation excerpt read from the reviewed tree at bundle time.
 # It belongs to a reportable finding only; the ledger keeps the judged claim.
@@ -194,123 +196,11 @@ MODE_LABELS = {
     "changes": "Branch changes",
     "commit": "One commit",
 }
-# Canonical category slugs name the vulnerability class a researcher hunted.
-# They are part of `ruleId`, and therefore of a finding's stable identity, so
-# the report maps them to display names here instead of renaming them upstream.
-CATEGORY_DISPLAY = {
-    "auth-bypass": "Authentication",
-    "buffer-overflow": "Undefined Behavior",
-    "cleartext-transmission": "Cryptography",
-    "code-injection": "Data Validation",
-    "command-injection": "Data Validation",
-    "credential-exposure": "Data Exposure",
-    "csrf": "Access Controls",
-    "dos": "Denial of Service",
-    "double-free": "Undefined Behavior",
-    "error-message-disclosure": "Error Reporting",
-    "format-string": "Data Validation",
-    "hardcoded-secret": "Data Exposure",
-    "header-injection": "Data Validation",
-    "idor": "Access Controls",
-    "improper-authorization": "Access Controls",
-    "improper-input-validation": "Data Validation",
-    "info-disclosure": "Data Exposure",
-    "insecure-deserialization": "Data Validation",
-    "insecure-file-permissions": "Data Exposure",
-    "insufficient-logging": "Auditing and Logging",
-    "integer-overflow": "Undefined Behavior",
-    "key-nonce-reuse": "Cryptography",
-    "log-injection": "Data Validation",
-    "missing-authentication": "Authentication",
-    "null-dereference": "Undefined Behavior",
-    "open-redirect": "Data Validation",
-    "out-of-bounds-read": "Undefined Behavior",
-    "out-of-bounds-write": "Undefined Behavior",
-    "path-traversal": "Data Validation",
-    "privilege-escalation": "Access Controls",
-    "prompt-injection": "Data Validation",
-    "prototype-pollution": "Data Validation",
-    "race-condition": "Timing",
-    "redos": "Denial of Service",
-    "session-fixation": "Session Management",
-    "session-management": "Session Management",
-    "sql-injection": "Data Validation",
-    "ssrf": "Data Validation",
-    "template-injection": "Data Validation",
-    "timing-side-channel": "Timing",
-    "type-confusion": "Undefined Behavior",
-    "unpinned-dependency": "Configuration",
-    "unsafe-configuration": "Configuration",
-    "unsafe-ffi": "Undefined Behavior",
-    "uninitialized-memory": "Undefined Behavior",
-    "use-after-free": "Undefined Behavior",
-    "user-enumeration": "Data Exposure",
-    "weak-crypto": "Cryptography",
-    "weak-randomness": "Cryptography",
-    "xss": "Data Validation",
-    "xxe": "Data Validation",
-}
-CATEGORY_DEFINITIONS = (
-    (
-        "Access Controls",
-        "Authorization, ownership, and privilege boundaries that limit what an "
-        "identity can read, change, or execute.",
-    ),
-    (
-        "Auditing and Logging",
-        "Security event records, traceability, log integrity, monitoring "
-        "signals, and support for incident response.",
-    ),
-    (
-        "Authentication",
-        "Identity verification, credentials, account recovery, multi-factor "
-        "controls, and login protections.",
-    ),
-    (
-        "Configuration",
-        "Security-sensitive defaults, deployment settings, dependency "
-        "controls, and operational hardening.",
-    ),
-    (
-        "Cryptography",
-        "Encryption, hashing, random values, key handling, certificate "
-        "validation, and protected transport.",
-    ),
-    (
-        "Data Exposure",
-        "Unintended disclosure through storage, logs, interfaces, metadata, "
-        "temporary files, or error responses.",
-    ),
-    (
-        "Data Validation",
-        "Checks and transformations applied before untrusted data reaches "
-        "commands, queries, files, URLs, or templates.",
-    ),
-    (
-        "Denial of Service",
-        "Conditions that can exhaust resources, block useful work, or reduce "
-        "service availability.",
-    ),
-    (
-        "Error Reporting",
-        "Failure handling and messages that can expose internal details or "
-        "prevent safe diagnosis.",
-    ),
-    (
-        "Session Management",
-        "Session creation, storage, rotation, expiration, revocation, and "
-        "binding to an authenticated identity.",
-    ),
-    (
-        "Timing",
-        "Race conditions, time-of-check/time-of-use gaps, and observable "
-        "timing differences.",
-    ),
-    (
-        "Undefined Behavior",
-        "Memory, language, or runtime behavior that can produce unsafe "
-        "results outside intended program rules.",
-    ),
+# The vulnerability taxonomy has one definition: schemas/taxonomy.json. Slugs
+# are part of `ruleId`, and therefore of a finding's stable identity, so the
+# report maps them to display names instead of renaming them upstream.
+TAXONOMY_PATH = (
+    Path(__file__).resolve().parent.parent / "schemas" / "taxonomy.json"
 )
 SEVERITY_DEFINITIONS = (
     (
@@ -378,6 +268,36 @@ class RenderError(Exception):
 def die(message: str) -> NoReturn:
     sys.stderr.write(f"render_report.py: {message}\n")
     raise SystemExit(1)
+
+
+def load_taxonomy() -> Tuple[Dict[str, str], Tuple[Tuple[str, str], ...]]:
+    """Read the one taxonomy definition, or fail before anything is rendered."""
+    try:
+        with open(TAXONOMY_PATH, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as error:
+        die(f"taxonomy is unreadable: {error}")
+    slugs = payload.get("slugs")
+    categories = payload.get("categories")
+    if not isinstance(slugs, dict) or not slugs:
+        die("taxonomy slugs is not a non-empty object")
+    if not isinstance(categories, list) or not categories:
+        die("taxonomy categories is not a non-empty array")
+    definitions = tuple(
+        (str(entry["name"]), str(entry["description"]))
+        for entry in categories
+        if isinstance(entry, dict) and "name" in entry and "description" in entry
+    )
+    if len(definitions) != len(categories):
+        die("a taxonomy category is missing name or description")
+    names = {name for name, _ in definitions}
+    unknown = sorted({str(value) for value in slugs.values()} - names)
+    if unknown:
+        die(f"taxonomy slugs map to undefined categories: {', '.join(unknown)}")
+    return {str(key): str(value) for key, value in slugs.items()}, definitions
+
+
+CATEGORY_DISPLAY, CATEGORY_DEFINITIONS = load_taxonomy()
 
 
 def as_map(value: object) -> Optional[JsonMap]:
@@ -728,6 +648,22 @@ def canonical_code(value: object, line: int, label: str) -> Dict[str, object]:
     }
 
 
+def duplicate_reference(value: object, label: str) -> Optional[str]:
+    """Validate a finding's optional `duplicate_of` back-reference.
+
+    It is null for an ordinary finding, or the stable `findingId` of the
+    primary this finding duplicates. Cross-finding integrity — the primary
+    exists, is not this finding, and is not itself a duplicate — is checked
+    later in `validate_relationships`, once every finding has been read.
+    """
+    if value is None:
+        return None
+    text = safe_text(value, f"{label}.duplicate_of", allow_empty=False)
+    if not STABLE_FINDING_ID_RE.fullmatch(text):
+        raise RenderError(f"{label}.duplicate_of is not a stable finding id")
+    return text
+
+
 def canonical_finding(
     value: object,
     target_id: str,
@@ -819,6 +755,14 @@ def canonical_finding(
         "cwe_id": cwe or None,
         "snippet": safe_text(item.get("snippet"), f"{label}.snippet"),
         "symbol": safe_text(item.get("symbol"), f"{label}.symbol"),
+        "duplicate_of": duplicate_reference(
+            item.get("duplicate_of"),
+            label,
+        ),
+        "duplicate_reasoning": safe_text(
+            item.get("duplicate_reasoning"),
+            f"{label}.duplicate_reasoning",
+        ),
     }
     if display_id is not None:
         finding = {
@@ -1265,6 +1209,39 @@ def validate_relationships(
                 "a reportable ledger candidate differs from findings.json"
             )
 
+    # A finding flagged a duplicate must point at another reported finding that
+    # exists, is not itself, and is not also a duplicate — no chains or cycles —
+    # and must carry the reasoning the appendix shows for the demotion.
+    for finding in findings:
+        duplicate_of = finding.get("duplicate_of")
+        reasoning = str(finding.get("duplicate_reasoning") or "").strip()
+        if duplicate_of is None:
+            if reasoning:
+                raise RenderError(
+                    f"finding {finding['id']} records duplicate reasoning but "
+                    "names no primary finding"
+                )
+            continue
+        if duplicate_of == finding["findingId"]:
+            raise RenderError(
+                f"finding {finding['id']} is marked a duplicate of itself"
+            )
+        primary = findings_by_id.get(duplicate_of)
+        if primary is None:
+            raise RenderError(
+                f"finding {finding['id']} duplicates an unknown finding"
+            )
+        if primary.get("duplicate_of") is not None:
+            raise RenderError(
+                f"finding {finding['id']} duplicates a finding that is itself "
+                "a duplicate"
+            )
+        if not reasoning:
+            raise RenderError(
+                f"finding {finding['id']} is a duplicate without recorded "
+                "reasoning"
+            )
+
     votes_by_finding: Dict[object, List[Mapping[str, object]]] = {}
     vote_coordinates = set()
     for vote in votes:
@@ -1514,7 +1491,7 @@ def coverage_markdown(coverage: JsonMap) -> List[str]:
     return lines
 
 
-def finding_markdown(
+def finding_detail_markdown(
     finding: Finding,
     votes: Sequence[Mapping[str, object]],
 ) -> List[str]:
@@ -1528,18 +1505,7 @@ def finding_markdown(
     true_votes = sum(
         vote["verdict"] == "TRUE_POSITIVE" for vote in finding_votes
     )
-    title = escape_markdown(finding["title"])
     lines = [
-        (
-            f"### {finding['id']} — {title} "
-            f"({finding['severity']}, difficulty {finding['difficulty']}, "
-            f"confidence {finding['confidence']})"
-        ),
-        "",
-        f"**Stable finding ID.** {code_span(finding['findingId'])}",
-        "",
-        f"**Occurrence ID.** {code_span(finding['occurrenceId'])}",
-        "",
         "**Impact.** " + escape_markdown(finding["impact"]),
         "",
         (
@@ -1612,6 +1578,61 @@ def finding_markdown(
     return lines
 
 
+def finding_markdown(
+    finding: Finding,
+    votes: Sequence[Mapping[str, object]],
+) -> List[str]:
+    title = escape_markdown(finding["title"])
+    lines = [
+        (
+            f"### {finding['id']} — {title} "
+            f"({finding['severity']}, difficulty {finding['difficulty']}, "
+            f"confidence {finding['confidence']})"
+        ),
+        "",
+        f"**Stable finding ID.** {code_span(finding['findingId'])}",
+        "",
+        f"**Occurrence ID.** {code_span(finding['occurrenceId'])}",
+        "",
+    ]
+    lines.extend(finding_detail_markdown(finding, votes))
+    return lines
+
+
+def duplicate_markdown(
+    finding: Finding,
+    primaries_by_id: Mapping[object, Finding],
+    votes: Sequence[Mapping[str, object]],
+) -> List[str]:
+    primary = primaries_by_id.get(finding["duplicate_of"]) or {}
+    primary_label = str(primary.get("id") or "an earlier finding")
+    primary_title = escape_markdown(primary.get("title") or "unknown finding")
+    title = escape_markdown(finding["title"])
+    where = f"**Where.** {code_span(finding['file'])}:{finding['line']}"
+    if finding["symbol"]:
+        where += f" in {code_span(finding['symbol'])}"
+    # Concise by default: the label, the reason, and the location. The full
+    # verified detail stays folded in a <details> block a reader opens only
+    # when the duplicate is the one they need to inspect.
+    return [
+        f"### {finding['id']} — {title} ({finding['severity']})",
+        "",
+        f"**Duplicate of {primary_label} — {primary_title}.**",
+        "",
+        "**Why it is a duplicate.** "
+        + escape_markdown(finding["duplicate_reasoning"]),
+        "",
+        where,
+        "",
+        "<details>",
+        "<summary>Full finding detail</summary>",
+        "",
+        *finding_detail_markdown(finding, votes),
+        "</details>",
+        "",
+    ]
+
+
 def render_markdown(
     manifest: JsonMap,
     findings: Sequence[Finding],
@@ -1622,21 +1643,30 @@ def render_markdown(
     target = as_map(manifest["target"]) or {}
     completion = as_map(manifest["completion"]) or {}
     revision = as_map(manifest["revision"]) or {}
+    primaries = [finding for finding in findings if not finding["duplicate_of"]]
+    duplicates = [finding for finding in findings if finding["duplicate_of"]]
+    primaries_by_id = {finding["findingId"]: finding for finding in primaries}
     counts = {severity: 0 for severity in SEVERITIES}
-    for finding in findings:
+    for finding in primaries:
         counts[str(finding["severity"])] += 1
     revision_value = revision.get("commit") or "unversioned"
     headline = (
-        f"{len(findings)} panel-verified finding"
-        f"{'' if len(findings) == 1 else 's'}"
+        f"{len(primaries)} unique panel-verified finding"
+        f"{'' if len(primaries) == 1 else 's'}"
     )
-    if findings:
+    if primaries:
         headline += (
             f": {counts['HIGH']} high, {counts['MEDIUM']} medium, "
             f"and {counts['LOW']} low."
         )
     else:
         headline += "."
+    if duplicates:
+        headline += (
+            f" {len(duplicates)} further report"
+            f"{'' if len(duplicates) == 1 else 's'} folded into the appendix "
+            f"as duplicate{'' if len(duplicates) == 1 else 's'}."
+        )
     lines = [
         "# Security review results",
         "",
@@ -1666,9 +1696,17 @@ def render_markdown(
     ]
     lines.extend(coverage_markdown(coverage))
     lines.extend(["## Findings", ""])
-    if findings:
-        for finding in findings:
+    if primaries:
+        for finding in primaries:
             lines.extend(finding_markdown(finding, votes))
+    elif duplicates:
+        lines.extend(
+            [
+                "Every verified finding was identified as a duplicate of "
+                "another. See the appendix.",
+                "",
+            ]
+        )
     else:
         lines.extend(
             [
@@ -1676,6 +1714,24 @@ def render_markdown(
                 "",
             ]
         )
+    if duplicates:
+        lines.extend(
+            [
+                "## Appendix: duplicate findings",
+                "",
+                (
+                    f"The duplicate scan judged these {len(duplicates)} verified "
+                    f"report{'' if len(duplicates) == 1 else 's'} to describe a "
+                    "vulnerability already listed above. Each is kept for the "
+                    "record with the finding it duplicates and the reason."
+                ),
+                "",
+            ]
+        )
+        for finding in duplicates:
+            lines.extend(
+                duplicate_markdown(finding, primaries_by_id, votes)
+            )
     completed_votes = sum(vote["status"] == "completed" for vote in votes)
     lines.extend(
         [
@@ -1755,12 +1811,25 @@ def title_word(value: object) -> str:
 
 
 def display_category(slug: object) -> str:
+    """Map a canonical slug to its display name, or refuse the bundle.
+
+    There is deliberately no fallback. Title-casing an unknown slug once let a
+    taxonomy break ship inside a finished report, so an unmapped slug is a
+    refusal the run cannot miss.
+    """
     text = str(slug or "")
     mapped = CATEGORY_DISPLAY.get(text)
-    if mapped:
-        return mapped
-    words = [word for word in text.replace("_", "-").split("-") if word]
-    return " ".join(word[:1].upper() + word[1:] for word in words) or "Other"
+    if not mapped:
+        raise RenderError(
+            f"category slug {text!r} is not in the taxonomy; "
+            f"see {TAXONOMY_PATH.name}"
+        )
+    return mapped
+
+
+def rule_category(rule_id: object) -> str:
+    """The category slug is the first segment of the ruleId."""
+    return str(rule_id or "").split(".", 1)[0]
 
 
 def display_id(value: object) -> str:
@@ -1844,7 +1913,7 @@ def html_finding(
         "severity": title_word(finding["severity"]),
         "difficulty": title_word(finding["difficulty"]),
         "confidence": title_word(finding["confidence"]),
-        "category": display_category(finding["category"]),
+        "category": display_category(rule_category(finding["ruleId"])),
         "file": finding["file"],
         "line": finding["line"],
         "symbol": finding["symbol"],
@@ -1883,6 +1952,25 @@ def html_finding(
     return payload
 
 
+def html_duplicate(
+    finding: Finding,
+    primaries_by_id: Mapping[object, Finding],
+    components: Sequence[Mapping[str, object]],
+    votes: Sequence[Mapping[str, object]],
+) -> Dict[str, object]:
+    # A duplicate carries the same full payload as any finding, so the page can
+    # disclose its detail on demand, plus a back-reference to its primary and
+    # the reason it was demoted.
+    payload = html_finding(finding, components, votes)
+    primary = primaries_by_id.get(finding["duplicate_of"]) or {}
+    payload["duplicateOfId"] = (
+        display_id(primary["id"]) if primary.get("id") else ""
+    )
+    payload["duplicateOfTitle"] = str(primary.get("title") or "")
+    payload["duplicateReasoning"] = str(finding["duplicate_reasoning"] or "")
+    return payload
+
+
 def report_payload(
     manifest: JsonMap,
     findings: Sequence[Finding],
@@ -1901,6 +1989,9 @@ def report_payload(
     ]
     mode = str(request.get("mode") or "")
     completion = as_map(manifest["completion"]) or {}
+    primaries = [finding for finding in findings if not finding["duplicate_of"]]
+    duplicates = [finding for finding in findings if finding["duplicate_of"]]
+    primaries_by_id = {finding["findingId"]: finding for finding in primaries}
     return {
         "report": {
             "title": HTML_REPORT_TITLE,
@@ -1950,7 +2041,11 @@ def report_payload(
             for name, description in CATEGORY_DEFINITIONS
         ],
         "findings": [
-            html_finding(finding, components, votes) for finding in findings
+            html_finding(finding, components, votes) for finding in primaries
+        ],
+        "duplicates": [
+            html_duplicate(finding, primaries_by_id, components, votes)
+            for finding in duplicates
         ],
     }
 

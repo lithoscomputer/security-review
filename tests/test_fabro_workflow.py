@@ -28,6 +28,9 @@ GIT_WRAPPER_PATH = WORKFLOW_ROOT / "scripts/git_readonly.py"
 RENDERER_PATH = WORKFLOW_ROOT / "scripts/render_report.py"
 REPORT_SPEC_PATH = WORKFLOW_ROOT / "specs/report-spec.md"
 TEMPLATE_PATH = WORKFLOW_ROOT / "templates/report.html"
+TAXONOMY_PATH = WORKFLOW_ROOT / "schemas/taxonomy.json"
+FINDINGS_SCHEMA_PATH = WORKFLOW_ROOT / "schemas/findings.schema.json"
+CATEGORY_SLUGS_PATH = WORKFLOW_ROOT / "prompts/partials/category-slugs.md.j2"
 GRAPH_PATH = WORKFLOW_ROOT / "security-review.fabro"
 
 
@@ -123,6 +126,15 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         template = renderer.parent.parent / "templates/report.html"
         template.parent.mkdir(parents=True)
         shutil.copy(TEMPLATE_PATH, template)
+        taxonomy = self.root / DRIVER.TAXONOMY_PATH
+        taxonomy.parent.mkdir(parents=True)
+        shutil.copy(TAXONOMY_PATH, taxonomy)
+        findings_schema = self.root / DRIVER.FINDINGS_SCHEMA_PATH
+        findings_schema.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(FINDINGS_SCHEMA_PATH, findings_schema)
+        category_slugs = self.root / DRIVER.CATEGORY_SLUGS_PARTIAL
+        category_slugs.parent.mkdir(parents=True)
+        shutil.copy(CATEGORY_SLUGS_PATH, category_slugs)
         self.previous_cwd = Path.cwd()
         os.chdir(self.root)
 
@@ -224,6 +236,51 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.dedup_rank)
         return DRIVER.load_state()
 
+    def test_report_expectations_reject_missing_or_wrong_finding(self) -> None:
+        evidence = self.root / "evidence"
+        evidence.mkdir()
+        DRIVER.save_state({"evidence_dir": "evidence"})
+
+        (evidence / "findings.json").write_text("[]\n", encoding="utf-8")
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            r"expected 1 verified finding\(s\), found 0",
+        ):
+            DRIVER.verify_expectations(
+                "1",
+                "command-injection.shell-command",
+            )
+
+        (evidence / "findings.json").write_text(
+            '[{"ruleId":"sql-injection.query"}]\n',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            DRIVER.WorkflowDataError,
+            "expected verified rule 'command-injection.shell-command'",
+        ):
+            DRIVER.verify_expectations(
+                "1",
+                "command-injection.shell-command",
+            )
+
+    def test_report_expectations_accept_the_deliberate_finding(self) -> None:
+        evidence = self.root / "evidence"
+        evidence.mkdir()
+        DRIVER.save_state({"evidence_dir": "evidence"})
+        (evidence / "findings.json").write_text(
+            '[{"ruleId":"command-injection.shell-command"}]\n',
+            encoding="utf-8",
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            DRIVER.verify_expectations(
+                "1",
+                "command-injection.shell-command",
+            )
+
+        self.assertIn("Verified report expectations", output.getvalue())
+
     def test_full_max_effort_transition_chain_uses_merged_outputs(self) -> None:
         state = self.prepare()
         inventory = {
@@ -263,7 +320,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         state = DRIVER.load_state()
         research_jobs = state["phase_jobs"]["research"]
         sweep_jobs = state["phase_jobs"]["sweep"]
-        self.assertEqual(len(research_jobs), 6)
+        self.assertEqual(len(research_jobs), 8)
         self.assertEqual(len(sweep_jobs), 2)
         finding = self.finding()
         self.merge_success(
@@ -759,7 +816,7 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             2,
         )
 
-    def test_ambiguous_identity_across_root_controls_fails_closed(self) -> None:
+    def test_same_fingerprint_across_root_control_descriptions_merges(self) -> None:
         first = self.finding()
         second = self.finding()
         second["file"] = "src/other.py"
@@ -768,11 +825,10 @@ class FabroWorkflowDriverTest(unittest.TestCase):
         self.call(DRIVER.plan_matrix)
         self.merge_success("research", [{"findings": [first, second]}])
 
-        with self.assertRaisesRegex(
-            DRIVER.WorkflowDataError,
-            "ambiguous across root controls",
-        ):
-            self.call(DRIVER.dedup_rank)
+        self.call(DRIVER.dedup_rank)
+
+        state = DRIVER.load_state()
+        self.assertEqual(len(state["deduplicated_candidates"]), 1)
 
     def test_invalid_identity_slugs_are_rejected(self) -> None:
         invalid_rule = self.finding()
@@ -1556,6 +1612,96 @@ class FabroWorkflowDriverTest(unittest.TestCase):
             self.call(DRIVER.render_report)
 
 
+class GitReadonlyWrapperTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.payload = self.root / "driver-ran"
+        self.driver = self.root / "attacker-driver"
+        (self.root / "review.txt").write_text(
+            "trusted baseline\n",
+            encoding="utf-8",
+        )
+        (self.root / ".gitattributes").write_text(
+            "review.txt diff=attacker\n",
+            encoding="utf-8",
+        )
+        self.driver.write_text(
+            f"#!/bin/sh\ntouch '{self.payload}'\ncat \"$1\"\n",
+            encoding="utf-8",
+        )
+        self.driver.chmod(0o755)
+        run("git", "init", "-q", cwd=self.root)
+        run("git", "config", "user.email", "test@example.com", cwd=self.root)
+        run("git", "config", "user.name", "Test", cwd=self.root)
+        run(
+            "git",
+            "config",
+            "diff.attacker.textconv",
+            str(self.driver),
+            cwd=self.root,
+        )
+        run("git", "add", ".gitattributes", "review.txt", cwd=self.root)
+        run("git", "commit", "-qm", "fixture", cwd=self.root)
+        (self.root / "review.txt").write_text(
+            "safe working tree\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def wrapper(self, *arguments: str, isolated: bool = True, env=None):
+        command = ["python3"]
+        if isolated:
+            command.append("-I")
+        command.extend([str(GIT_WRAPPER_PATH), *arguments])
+        return subprocess.run(
+            command,
+            cwd=self.root,
+            env=env,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def test_repository_and_inherited_drivers_cannot_execute(self) -> None:
+        environment = {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "diff.attacker.textconv",
+            "GIT_CONFIG_VALUE_0": str(self.driver),
+        }
+        result = self.wrapper(
+            "diff",
+            "HEAD",
+            "--",
+            "review.txt",
+            env=environment,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("+safe working tree", result.stdout)
+        self.assertFalse(self.payload.exists())
+
+    def test_dangerous_options_and_nonisolated_python_are_rejected(self) -> None:
+        for arguments in (
+            ("show", "--textconv", "HEAD:review.txt"),
+            ("diff", "--no-inde", "left", "right"),
+            ("diff", "-Oorder", "HEAD", "--", "review.txt"),
+            ("blame", "--content=/etc/hostname", "--", "review.txt"),
+            ("show", "--show-signature", "-s", "HEAD"),
+            ("show", "/etc/passwd"),
+        ):
+            with self.subTest(arguments=arguments):
+                result = self.wrapper(*arguments)
+                self.assertEqual(result.returncode, 2, result.stderr)
+        result = self.wrapper("log", "-1", isolated=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Python isolated mode is required", result.stderr)
+        self.assertFalse(self.payload.exists())
+
+
 class FabroWorkflowStaticContractTest(unittest.TestCase):
     def test_graph_pins_all_executable_support_files(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1565,6 +1711,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             RENDERER_PATH,
             REPORT_SPEC_PATH,
             TEMPLATE_PATH,
+            TAXONOMY_PATH,
         ):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertEqual(graph.count(digest), 1, path.name)
@@ -1587,6 +1734,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ".threat-model { model: kimi-k3; reasoning_effort: low; }",
             ".research { model: kimi-k3; reasoning_effort: high; }",
             ".verification { model: kimi-k3; reasoning_effort: high; }",
+            ".dedupe { model: kimi-k3; reasoning_effort: high; }",
         ):
             self.assertIn(rule, graph)
         self.assertNotIn(".report-author", graph)
@@ -1611,6 +1759,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ("panel_verifier", 7200),
             ("repanel_verifier", 7200),
             ("redteam_verifier", 10800),
+            ("dedupe", 7200),
         ):
             self.assertIn(f'timeout="{timeout}s"', node_body(node), node)
 
@@ -1794,12 +1943,15 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "merge_sweep -> dedup_rank",
             "dedup_rank -> tally",
             "merge_panel -> tally",
-            "tally -> final_tally",
+            "tally -> dedupe_plan",
             "merge_repanel -> adversarial_plan",
-            "adversarial_plan -> final_tally",
-            "merge_redteam -> final_tally",
+            "adversarial_plan -> dedupe_plan",
+            "merge_redteam -> dedupe_plan",
+            "dedupe_plan -> final_tally",
+            "merge_dedupe -> final_tally",
             "final_tally -> render_report",
-            "render_report -> exit",
+            "render_report -> verify_expectations",
+            "verify_expectations -> exit",
         ):
             self.assertIn(f"    {edge}\n", graph)
 
@@ -1894,7 +2046,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ("sweep", "dedup_rank"),
             ("panel", "tally"),
             ("repanel", "adversarial_plan"),
-            ("redteam", "final_tally"),
+            ("redteam", "dedupe_plan"),
         ):
             self.assertIn(
                 f"    merge_{phase} -> {next_node}\n",
@@ -1913,7 +2065,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         )
         self.assertNotIn("wait_research_", graph)
         self.assertNotIn("research_retry_gate", graph)
-        self.assertEqual(graph.count("max_retries=2"), 7)
+        self.assertEqual(graph.count("max_retries=2"), 8)
 
     def test_optional_agent_failures_use_explicit_succeed_policy(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1933,11 +2085,12 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "repanel_verifier",
             "redteam",
             "redteam_verifier",
+            "dedupe",
         )
         for node in optional_nodes:
             body = graph.split(f"    {node} [", 1)[1].split("    ]", 1)[0]
             self.assertIn('on_failure="succeed"', body, node)
-        self.assertEqual(graph.count('on_failure="succeed"'), 12)
+        self.assertEqual(graph.count('on_failure="succeed"'), 14)
 
     def test_agent_failures_degrade_before_fatal_exit(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1959,7 +2112,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertIn('on_failure="exit"', graph)
         self.assertNotIn("abort", graph)
         self.assertNotIn("\n        max_retries=0", graph)
-        self.assertIn("    render_report -> exit\n", graph)
+        self.assertIn("    render_report -> verify_expectations\n", graph)
+        self.assertIn("    verify_expectations -> exit\n", graph)
         self.assertNotIn("report_author", graph)
 
     def test_nothing_enforces_the_read_only_rule(self) -> None:
@@ -1994,6 +2148,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "sweep.md.j2",
             "verify.md.j2",
             "redteam.md.j2",
+            "dedupe.md.j2",
         }
         self.assertEqual(
             {path.name for path in prompt_root.glob("*.md.j2")},
@@ -2009,6 +2164,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
                 "output-schema.md.j2",
                 "read-only-explorer.md.j2",
                 "safe-git-history.md.j2",
+                "category-slugs.md.j2",
             },
         )
 
@@ -2034,6 +2190,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "sweep.md.j2",
             "verify.md.j2",
             "redteam.md.j2",
+            "dedupe.md.j2",
         ):
             text = read_prompt_with_static_includes(
                 WORKFLOW_ROOT / "prompts" / name
@@ -2206,6 +2363,90 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             "no agent transcribes them",
         ):
             self.assertIn(rule, spec)
+
+    def test_taxonomy_contract_is_stable(self) -> None:
+        taxonomy = json.loads(TAXONOMY_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [category["name"] for category in taxonomy["categories"]],
+            [
+                "Access Controls",
+                "Auditing and Logging",
+                "Authentication",
+                "Configuration",
+                "Cryptography",
+                "Data Exposure",
+                "Data Validation",
+                "Denial of Service",
+                "Error Reporting",
+                "Session Management",
+                "Timing",
+                "Undefined Behavior",
+            ],
+        )
+        self.assertEqual(len(taxonomy["slugs"]), 55)
+        self.assertEqual(
+            taxonomy["slugs"]["supply-chain-integrity"],
+            "Configuration",
+        )
+        self.assertEqual(
+            taxonomy["slugs"]["request-smuggling"],
+            "Data Validation",
+        )
+        for removed in (
+            "dos",
+            "session-management",
+            "unpinned-dependency",
+            "unsafe-ffi",
+        ):
+            self.assertNotIn(removed, taxonomy["slugs"])
+        driver = DRIVER_PATH.read_text(encoding="utf-8")
+        for category in taxonomy["categories"]:
+            self.assertIn(category["name"], driver)
+        category_prompt = CATEGORY_SLUGS_PATH.read_text(encoding="utf-8")
+        for instruction in (
+            "Prefer the most specific applicable slug",
+            "Classify the root cause",
+            "Use the second segment to name the vulnerable control",
+        ):
+            self.assertIn(instruction, category_prompt)
+
+    def test_duplicate_scan_is_advisory_and_fails_open(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertIn("security_review.py dedupe-plan", graph)
+        self.assertIn('prompt="@prompts/dedupe.md.j2"', graph)
+        self.assertIn(
+            'dedupe_plan -> dedupe [condition="outcome=succeeded && '
+            'context.run_dedupe=true"]',
+            graph,
+        )
+        self.assertIn("    dedupe_plan -> final_tally\n", graph)
+        self.assertIn(
+            'dedupe -> merge_dedupe [condition="outcome=succeeded"]',
+            graph,
+        )
+        self.assertIn("    dedupe -> final_tally\n", graph)
+
+    def test_smoke_run_asserts_the_deliberate_finding(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        workflow = (
+            WORKFLOW_ROOT / "workflow.toml"
+        ).read_text(encoding="utf-8")
+        verify = (WORKFLOW_ROOT / "verify.toml").read_text(encoding="utf-8")
+        fixture = (
+            WORKFLOW_ROOT / "fixtures/command_injection_service.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('expected_finding_count = ""', workflow)
+        self.assertIn('expected_rule_id = ""', workflow)
+        self.assertIn('expected_finding_count = "1"', verify)
+        self.assertIn(
+            'expected_rule_id = "command-injection.shell-command"',
+            verify,
+        )
+        self.assertIn("    render_report -> verify_expectations\n", graph)
+        self.assertIn("    verify_expectations -> exit\n", graph)
+        self.assertIn('ThreadingHTTPServer(("0.0.0.0", 8080)', fixture)
+        self.assertIn('parameters["command"][0]', fixture)
+        self.assertIn("os.system(command)", fixture)
 
     def test_html_report_falls_back_to_the_finding_snippet(self) -> None:
         template = TEMPLATE_PATH.read_text(encoding="utf-8")

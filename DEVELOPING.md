@@ -24,9 +24,9 @@ Everything that a review runs lives under
 | `scripts/render_report.py` | Validates the canonical bundle and derives the Markdown, HTML, JSONL, and revision reports. |
 | `scripts/git_readonly.py` | A read-only Git entry point with external diff and text conversion drivers disabled. |
 | `templates/report.html` | The self-contained HTML report template. |
-| `prompts/*.md.j2` | MiniJinja prompt templates for inventory, threat modeling, research, sweeping, verification, and red-team work. |
-| `prompts/partials/` | Shared MiniJinja prompt content. |
-| `schemas/` | Model response schemas and versioned canonical bundle contracts. |
+| `prompts/*.md.j2` | MiniJinja prompt templates for inventory, threat modeling, research, sweeping, verification, red-team work, and advisory duplicate review. |
+| `prompts/partials/` | Shared MiniJinja prompt content, including the canonical category list. |
+| `schemas/` | Model response schemas, the vulnerability taxonomy, and versioned canonical bundle contracts. |
 | `specs/report-spec.md` | Canonical bundle relationships and deterministic report rules. |
 | `fixtures/` | The command-injection fixture used by the smoke run. |
 
@@ -111,9 +111,20 @@ Researchers name a rule and a conceptual root control. Deterministic code uses
 them to derive the fingerprint, stable `findingId`, and per-run
 `occurrenceId`.
 
-Deduplication uses the fingerprint instead of a file and line pair. If one
-identity points to different root controls, the workflow stops instead of
-merging an ambiguous result.
+Deterministic deduplication uses the fingerprint instead of a file and line
+pair. A fingerprint does not use free-text `file` or `symbol` descriptions, so
+two researchers can describe the same root control differently without
+aborting a long run.
+
+After verification, an advisory agent can mark one verified finding as a
+duplicate of another. It never deletes canonical evidence. Invalid, cyclic,
+chained, or self-referential verdicts are ignored. A failed duplicate review
+routes directly to final tally with every verified finding left primary.
+
+The vulnerability taxonomy is a closed contract. `schemas/taxonomy.json` owns
+the 12 display categories and 55 rule slugs. `prepare` checks the findings
+schema and the category prompt against it. The renderer refuses an unknown
+slug instead of inventing a display name.
 
 ### Phases are deterministic barriers
 
@@ -132,8 +143,8 @@ before the workflow continues.
 ### Integrity checks protect publication
 
 The workflow pins the SHA-256 hashes of the deterministic engine, Git wrapper,
-renderer, report specification, and report template. `prepare` checks these
-hashes before the review starts.
+renderer, report specification, report template, and taxonomy. `prepare`
+checks these hashes before the review starts.
 
 `prepare` also records a digest of the target tree. Publication steps check the
 digest again. The workflow refuses to publish a report if the tree changed

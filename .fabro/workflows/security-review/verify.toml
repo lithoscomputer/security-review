@@ -9,13 +9,18 @@ goal = "Verify the security-review workflow against its deliberate command-injec
 [run.inputs]
 mode = "scan"
 effort = "low"
-scope = ".fabro/workflows/security-review/fixtures/command_injection.py"
+scope = ".fabro/workflows/security-review/fixtures/command_injection_service.py"
 base = ""
 commit = ""
 range = ""
 focus = ""
+expected_finding_count = "1"
+expected_rule_id = "command-injection.shell-command"
 
 [run.run_branch]
+enabled = false
+
+[run.pull_request]
 enabled = false
 
 [run.model.fallbacks]
@@ -47,12 +52,13 @@ include = [
 [environments.security-review]
 provider = "daytona"
 
-# The scan's agents search the tree constantly. buildpack-deps:noble, the
-# Daytona default base, ships grep but not ripgrep, which respects .gitignore
+# The scan's agents search the tree constantly. The mirrored buildpack-deps
+# noble image is the Daytona default base. It ships grep but not ripgrep,
+# which respects .gitignore
 # and is far faster on a large repository.
 [environments.security-review.image]
 dockerfile = """
-FROM buildpack-deps:noble
+FROM ghcr.io/lithoscomputer/docker-mirror/buildpack-deps:noble@sha256:1fdce57bbb1105e0e515f6523bd0c3eb1df8b601847cfea140483672f6484afa
 RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
 """
 

@@ -11,7 +11,6 @@
           "line",
           "ruleId",
           "identity",
-          "category",
           "severity",
           "difficulty",
           "confidence",
@@ -31,7 +30,7 @@
           "ruleId": {
             "type": "string",
             "maxLength": 160,
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+            "pattern": "^(?:auth-bypass|buffer-overflow|cleartext-transmission|code-injection|command-injection|credential-exposure|csrf|double-free|error-message-disclosure|fail-open|format-string|hardcoded-secret|header-injection|idor|improper-authorization|improper-input-validation|info-disclosure|insecure-deserialization|insecure-file-permissions|insufficient-logging|integer-overflow|key-nonce-reuse|log-injection|missing-authentication|null-dereference|open-redirect|out-of-bounds-read|out-of-bounds-write|path-traversal|privilege-escalation|prompt-injection|prototype-pollution|race-condition|redos|request-smuggling|resource-exhaustion|session-fixation|session-lifecycle|sql-injection|ssrf|supply-chain-integrity|template-injection|timing-side-channel|type-confusion|uninitialized-memory|unrestricted-file-upload|unsafe-configuration|use-after-free|user-enumeration|weak-authentication|weak-crypto|weak-randomness|workflow-bypass|xss|xxe)\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
           },
           "identity": {
             "type": "object",
@@ -50,7 +49,6 @@
               }
             }
           },
-          "category": { "type": "string" },
           "severity": {
             "type": "string",
             "enum": ["HIGH", "MEDIUM", "LOW"]

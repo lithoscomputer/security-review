@@ -91,6 +91,8 @@ def build_finding(renderer, index: int, source: Dict[str, Any]) -> Dict[str, Any
         "cwe_id": source["cwe_id"],
         "snippet": source["snippet"],
         "symbol": source["symbol"],
+        "duplicate_of": None,
+        "duplicate_reasoning": "",
         "code": code,
     }
 

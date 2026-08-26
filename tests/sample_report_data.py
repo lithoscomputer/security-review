@@ -591,7 +591,7 @@ FINDINGS = (
         ),
     },
     {
-        "ruleId": "unpinned-dependency.release-action",
+        "ruleId": "supply-chain-integrity.release-action",
         "anchor": "release-action-reference",
         "title": "Release workflow uses an unpinned third-party action",
         "severity": "LOW",

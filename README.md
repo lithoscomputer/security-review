@@ -130,6 +130,7 @@ cap:
 | Panel | 120 minutes | 24 |
 | Repanel | 120 minutes | 24 |
 | Red team | 180 minutes | 24 |
+| Duplicate review | 120 minutes | 1 |
 
 The workflow also has a four-hour stall timeout. Any workflow event resets
 that timer.
@@ -137,6 +138,12 @@ that timer.
 A deterministic stage failure stops the run at that failed stage. Agent
 failures that the workflow tolerates reduce recorded coverage. An inventory
 failure falls back to a whole-target review plan.
+
+After verification, one advisory duplicate review compares surviving findings
+by root cause. It never deletes a finding from the canonical evidence. The
+reports move confirmed duplicates to an appendix and keep their primary
+finding in the headline counts. If this agent fails or returns an invalid
+answer, the workflow publishes every verified finding as a primary.
 
 Use `low` for a quick or narrow check. Use `medium` for a routine repository
 review. Use `high` or `max` when you want more independent coverage and accept
@@ -186,6 +193,11 @@ commit unless you remove that file. Fabro publishes all security-review
 artifacts under this one result directory.
 
 ### Ratings and finding IDs
+
+The workflow uses a closed taxonomy of 55 rule slugs grouped under 12 display
+categories. Researchers choose a `ruleId`; deterministic code derives the
+category from its first segment. The schema, prompt, renderer, and
+`schemas/taxonomy.json` must agree before a run starts.
 
 - Severity describes the impact if an attacker exploits a finding.
 - Difficulty describes the access, knowledge, and effort needed for
