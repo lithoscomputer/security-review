@@ -899,6 +899,16 @@ def prepare(args: argparse.Namespace) -> None:
 
 
 def assess_change() -> None:
+    """Read the generator's own account of what it did. No Git, no base.
+
+    This step spends its single `stdin_source` on the generator's output, so it
+    could only get a base commit by reading the state file — and the state file
+    is in the checkout the generator can write. A forged base there would make
+    a real change measure as empty, and every decision drawn from it would be
+    the attacker's to choose. So this step draws none: it records what the
+    generator said, and `pin_review` measures the tree against the base carried
+    in the run context.
+    """
     state = guard()
     if state.get("status") == "skipped_stale":
         raise WorkflowDataError("a stale finding reached assess-change")
@@ -914,6 +924,7 @@ def assess_change() -> None:
         state["summary"] = summary
     if behaviour_change:
         state["behaviour_change"] = behaviour_change
+    state["owner_question"] = question or None
 
     if not worktree_is_clean():
         # Fabro's checkpoint stages and commits everything before this runs, so
@@ -922,91 +933,38 @@ def assess_change() -> None:
             "the working tree was not clean after the generator's checkpoint"
         ]
 
-    base = state["base"]
-    entries = changed_entries(base)
-    state["changed_paths"] = display_entries(entries)
-    state["changed_path_set"] = sorted(
-        set(entry_paths(entries))
-    )
-    paths = entry_paths(entries)
-
-    violations = protected_path_violations(paths)
-    if violations:
-        state["status"] = "declined"
-        state["decline_reason"] = (
-            "The attempt changed this workflow's own support files "
-            f"({', '.join(violations[:5])}). No legitimate fix edits the engine "
-            "that judges it, so the unit is declined and the change discarded."
-        )
-        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
-            f"patch touched protected paths: {', '.join(violations[:5])}"
-        ]
-        save_state(state)
-        emit(has_change=False, owner_question=False, declined=True)
-        return
-
     if refusal:
         state["status"] = "declined"
         state["decline_reason"] = f"The generator refused: {refusal}"
         save_state(state)
-        emit(has_change=False, owner_question=False, declined=True)
+        emit(declined=True)
         return
 
-    if question and not entries:
-        if state.get("owner_question_used"):
-            state["status"] = "declined"
-            state["decline_reason"] = (
-                "The generator asked a second owner question instead of "
-                "implementing the answer to the first. One question is the "
-                "budget, so the unit is declined."
-            )
-            save_state(state)
-            emit(has_change=False, owner_question=False, declined=True)
-            return
-        state["owner_question_used"] = True
-        state["owner_question"] = question
-        state["status"] = "awaiting_owner"
-        save_state(state)
-        emit(has_change=False, owner_question=True, declined=False)
-        return
-
-    if not entries:
-        state["status"] = "declined"
-        state["decline_reason"] = (
-            "The generator changed nothing and asked nothing. Its account: "
-            + (summary or "no summary returned")
-        )
-        save_state(state)
-        emit(has_change=False, owner_question=False, declined=True)
-        return
-
-    # Routing only. `pin_review` re-derives all of this from the trusted base
-    # before anything is reviewed, so a forged base here can misroute a run but
-    # cannot decide what is published.
-    state["status"] = "verifying"
-    state["diffstat"] = diffstat(base)
+    state["status"] = "measuring"
     save_state(state)
-    emit(has_change=True, owner_question=False, declined=False)
+    emit(declined=False)
 
 
 def pin_review() -> None:
-    """Re-derive the change from the trusted base, then pin it.
+    """Measure the change against the trusted base, then pin it.
 
-    `assess_change` works from the state file so it can read the generator's
-    output on its own stdin, which leaves its base forgeable. This step takes
-    the base from the run context instead and redoes every judgement that can
-    reach publication: what the change actually contains, whether it touches
-    anything it must not, and the fingerprint `finalize` will hold it to.
+    Every decision that can reach publication is made here, from the base
+    commit `prepare` put into Fabro's run context — never from the state file
+    in the writable checkout. That covers what the change contains, whether it
+    touches anything it must not, whether there is a change at all, and the
+    fingerprint `finalize` will hold the delivered bytes to.
+
+    The generator's own account (its refusal, its question) is read from the
+    state file, because it is the generator's to make either way: at worst it
+    asks a human unnecessarily or fails to. It cannot publish anything.
     """
     state = guard()
     base = read_trusted_base()
     if state.get("base") != base:
-        # Not fatal on its own — the trusted value simply wins — but a run
-        # whose state disagrees with the context has been edited.
         state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
             f"the recorded base disagreed with the trusted base {base[:12]}…"
         ]
-        state["base"] = base
+    state["base"] = base
 
     entries = changed_entries(base)
     state["changed_paths"] = display_entries(entries)
@@ -1025,35 +983,44 @@ def pin_review() -> None:
             f"patch touched protected paths: {', '.join(violations[:5])}"
         ]
         save_state(state)
-        emit(pin_declined=True)
+        emit(pin_next="decline")
         return
 
-    if not entries:
+    payload = diff_bytes(base) if entries else b""
+    if not entries or not payload.strip():
+        question = clean_text(state.get("owner_question"), 2000)
+        if question:
+            if state.get("owner_question_used"):
+                state["status"] = "declined"
+                state["decline_reason"] = (
+                    "The generator asked a second owner question instead of "
+                    "implementing the answer to the first. One question is the "
+                    "budget, so the unit is declined."
+                )
+                save_state(state)
+                emit(pin_next="decline")
+                return
+            state["owner_question_used"] = True
+            state["status"] = "awaiting_owner"
+            save_state(state)
+            emit(pin_next="ask")
+            return
+
         state["status"] = "declined"
         state["decline_reason"] = (
             "Measured against the run's own base commit, the attempt changed "
-            "nothing. Nothing is delivered."
+            "nothing. The generator's account: "
+            + (clean_text(state.get("summary"), 2000) or "no summary returned")
         )
         save_state(state)
-        emit(pin_declined=True)
-        return
-
-    payload = diff_bytes(base)
-    if not payload.strip():
-        state["status"] = "declined"
-        state["decline_reason"] = (
-            "The attempt produced an empty diff against the run's own base "
-            "commit. Nothing is delivered."
-        )
-        save_state(state)
-        emit(pin_declined=True)
+        emit(pin_next="decline")
         return
 
     state["status"] = "verifying"
     state["reviewed_diff_sha256"] = sha256_bytes(payload)
     save_state(state)
     emit(
-        pin_declined=False,
+        pin_next="verify",
         review_pin=build_review_pin(base, payload, state["changed_paths"]),
     )
 

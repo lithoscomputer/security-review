@@ -170,10 +170,11 @@ each read it back through `stdin_source`. A base forged in the state file makes
 a real change measure as empty, which routes to a decline; a decline that
 restored to that forged base would leave the change in the run branch and hand
 publication a non-empty diff, so a declined run would open a pull request for
-an unreviewed patch. `assess_change` is the exception — its stdin is spent on
-the generator's output — so it decides routing only, and `pin_review` re-derives
-the changed set, the protected-path check, and the fingerprint from the trusted
-base before any reviewer runs.
+an unreviewed patch. `assess_change` spends its stdin on the
+generator's output, so rather than read a base from the state file it reads
+none and runs no Git at all: it records what the generator said. Every
+measurement — the changed set, the protected-path check, the fingerprint, and
+which way the run goes — belongs to `pin_review`, from the trusted base.
 
 That distinction is the point, and it is easy to undo by accident: the engine's
 state file lives in the checkout the generator can write, so **nothing that

@@ -228,9 +228,11 @@ class Workspace:
         payload = {"summary": "fixed", "changedFiles": ["app.py"]}
         payload.update(result)
         assessed = self.context(self.engine("assess-change", json.dumps(payload)))
-        if assessed.get("has_change"):
-            self.pin()
-        return assessed
+        if assessed.get("declined"):
+            return assessed
+        # The graph always continues into pin_review, which measures the tree
+        # against the trusted base and decides where the run goes.
+        return self.pin()
 
 
 class WorkspaceTest(unittest.TestCase):
@@ -292,7 +294,7 @@ class ChangedSetTests(WorkspaceTest):
         # The regression this guards: a staged (--cached) diff is empty by the
         # time the engine looks, because Fabro already committed the tree.
         context = self.workspace.generate()
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
         self.assertEqual(self.workspace.state()["changed_paths"], ["M app.py"])
 
     def test_added_deleted_and_renamed_paths_are_all_seen(self) -> None:
@@ -301,7 +303,7 @@ class ChangedSetTests(WorkspaceTest):
         (workspace.path / "app.py").write_text(FIXED_SOURCE, encoding="utf-8")
         git("mv", "app.py", "renamed.py", cwd=workspace.path)
         context = workspace.generate(source=None)
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
         entries = " ".join(workspace.state()["changed_paths"])
         self.assertIn("added.py", entries)
         self.assertIn("renamed.py", entries)
@@ -310,31 +312,30 @@ class ChangedSetTests(WorkspaceTest):
         workspace = self.workspace
         os.chmod(workspace.path / "app.py", 0o755)
         context = workspace.generate(source=None)
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
 
     def test_symlink_is_reported_as_a_changed_path(self) -> None:
         workspace = self.workspace
         (workspace.path / "link.py").symlink_to("app.py")
         context = workspace.generate(source=None)
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
         self.assertIn("link.py", " ".join(workspace.state()["changed_paths"]))
 
     def test_generator_claim_of_changes_cannot_invent_one(self) -> None:
         context = self.workspace.generate(
             source=None, changedFiles=["app.py", "invented.py"]
         )
-        self.assertFalse(context["has_change"])
+        self.assertNotEqual(context["pin_next"], "verify")
         self.assertEqual(self.workspace.state()["status"], "declined")
 
     def test_no_change_and_no_question_declines(self) -> None:
         context = self.workspace.generate(source=None, summary="I changed nothing")
-        self.assertFalse(context["has_change"])
-        self.assertFalse(context["owner_question"])
+        self.assertEqual(context["pin_next"], "decline")
         self.assertIn("changed nothing", self.workspace.state()["decline_reason"])
 
     def test_refusal_declines(self) -> None:
         context = self.workspace.generate(source=None, refusal="dispatch was malformed")
-        self.assertTrue(context["declined"])
+        self.assertTrue(context["declined"])  # assess_change stops at a refusal
         self.assertIn("refused", self.workspace.state()["decline_reason"])
 
 
@@ -353,7 +354,7 @@ class TamperingTests(WorkspaceTest):
             engine.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8"
         )
         context = workspace.generate(source=None)
-        self.assertTrue(context["declined"])
+        self.assertEqual(context["pin_next"], "decline")
         state = workspace.state()
         self.assertIn("support files", state["decline_reason"])
         self.assertTrue(state["tampering_signals"])
@@ -368,7 +369,7 @@ class TamperingTests(WorkspaceTest):
         fixtures.mkdir(parents=True, exist_ok=True)
         (fixtures / "command_injection.py").write_text("x = 1\n", encoding="utf-8")
         context = workspace.generate(source=None)
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
 
     def test_engine_edited_after_prepare_aborts_the_next_node(self) -> None:
         """The per-node hash check, as the graph runs it."""
@@ -686,15 +687,23 @@ class ForgedBaseTests(WorkspaceTest):
         self.workspace.checkpoint("generate")
         # 2: the base is rewritten to HEAD, so the change measures as empty.
         self.forge_base_to_head()
-        # 4: assess_change sees nothing and routes to a decline.
-        assessed = self.workspace.context(
+        # 4: the change can no longer be hidden. assess_change measures
+        # nothing at all, and pin_review measures against the trusted base, so
+        # the forged value has nothing left to lie to.
+        self.workspace.context(
             self.workspace.engine(
                 "assess-change", json.dumps({"summary": "nothing to do"})
             )
         )
-        self.assertFalse(assessed["has_change"])
+        measured = self.workspace.pin()
+        self.assertEqual(
+            measured["pin_next"],
+            "verify",
+            "a forged base hid a real change from the run",
+        )
 
-        # 5: the decline restores against the trusted base, not the forged one.
+        # 5: and a decline, however it is reached, restores against the
+        # trusted base rather than the forged one.
         result = self.workspace.engine("no-patch", self.workspace.base)
         self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
         self.workspace.checkpoint("no_patch")
@@ -731,7 +740,7 @@ class ForgedBaseTests(WorkspaceTest):
         self.workspace.generate()
         self.forge_base_to_head()
         context = self.workspace.pin()
-        self.assertFalse(context["pin_declined"])
+        self.assertEqual(context["pin_next"], "verify")
         pin = json.loads(context["review_pin"])
         self.assertEqual(pin["base"], self.workspace.base)
         self.assertEqual(self.workspace.state()["base"], self.workspace.base)
@@ -747,7 +756,7 @@ class ForgedBaseTests(WorkspaceTest):
         self.workspace.checkpoint("generate")
         self.forge_base_to_head()
         context = self.workspace.pin()
-        self.assertTrue(context["pin_declined"])
+        self.assertEqual(context["pin_next"], "decline")
         self.assertIn("support files", self.workspace.state()["decline_reason"])
 
     def test_a_missing_trusted_base_refuses_rather_than_guessing(self) -> None:
@@ -758,6 +767,47 @@ class ForgedBaseTests(WorkspaceTest):
                 self.assertIn(
                     "did not reach this step", result.stderr.decode("utf-8")
                 )
+
+    def test_no_step_that_can_reach_publication_reads_the_state_base(self) -> None:
+        """The rule, asserted against the code rather than trusted to review.
+
+        `assess_change` reports what the generator said and measures nothing,
+        so it has no base to forge. Every step that restores the tree, decides
+        routing, or publishes takes the base from the run context.
+        """
+        source = ENGINE_PATH.read_text(encoding="utf-8")
+        for name in ("assess_change", "revise", "no_patch", "pin_review"):
+            body = re.search(
+                r"\ndef " + name + r"\(\) -> None:\n(.*?)(?=\ndef )",
+                source,
+                flags=re.S,
+            )
+            assert body, f"{name} not found"
+            with self.subTest(step=name):
+                # Reading a base out of state is the hazard. Writing the
+                # trusted value back into state is the correction.
+                self.assertIsNone(
+                    re.search(r'=\s*state(?:\["base"\]|\.get\("base"\))', body.group(1)),
+                    f"{name} reads its base from the writable checkout",
+                )
+        for name in ("revise", "no_patch", "pin_review"):
+            body = re.search(
+                r"\ndef " + name + r"\(\) -> None:\n(.*?)(?=\ndef )",
+                source,
+                flags=re.S,
+            )
+            with self.subTest(step=name, expects="trusted base"):
+                self.assertIn("read_trusted_base()", body.group(1))
+
+    def test_assess_change_runs_no_git_at_all(self) -> None:
+        source = ENGINE_PATH.read_text(encoding="utf-8")
+        body = re.search(
+            r"\ndef assess_change\(\) -> None:\n(.*?)(?=\ndef )", source, flags=re.S
+        )
+        assert body
+        for forbidden in ("changed_entries(", "diff_bytes(", "diffstat("):
+            with self.subTest(call=forbidden):
+                self.assertNotIn(forbidden, body.group(1))
 
     def test_the_graph_feeds_the_trusted_base_to_every_such_step(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -822,7 +872,7 @@ class AwkwardFilenameTests(WorkspaceTest):
         (self.workspace.path / "src").mkdir()
         (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
         context = self.workspace.generate(source=None)
-        self.assertTrue(context["has_change"])
+        self.assertEqual(context["pin_next"], "verify")
         self.assertIn(awkward, self.workspace.state()["changed_path_set"])
 
     def test_a_backslash_is_not_a_directory_separator(self) -> None:
@@ -900,20 +950,19 @@ class OwnerGateTests(WorkspaceTest):
         context = self.workspace.generate(
             source=None, ownerQuestion="Should legacy callers keep working?"
         )
-        self.assertTrue(context["owner_question"])
+        self.assertEqual(context["pin_next"], "ask")
         self.assertTrue(self.workspace.state()["owner_question_used"])
 
     def test_second_question_declines_rather_than_asking_again(self) -> None:
         self.workspace.generate(source=None, ownerQuestion="first?")
         context = self.workspace.generate(source=None, ownerQuestion="second?")
-        self.assertFalse(context["owner_question"])
-        self.assertTrue(context["declined"])
+        self.assertEqual(context["pin_next"], "decline")
         self.assertIn("second owner question", self.workspace.state()["decline_reason"])
 
     def test_a_question_alongside_a_change_is_treated_as_the_change(self) -> None:
         context = self.workspace.generate(ownerQuestion="but also, should I?")
-        self.assertTrue(context["has_change"])
-        self.assertFalse(context["owner_question"])
+        self.assertEqual(context["pin_next"], "verify")
+        self.assertNotEqual(context["pin_next"], "ask")
 
 
 class DeliveryTests(WorkspaceTest):

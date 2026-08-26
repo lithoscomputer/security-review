@@ -115,13 +115,13 @@ base would leave the change sitting in the run branch, giving publication a
 non-empty diff to open a pull request from. A declined run would publish an
 unreviewed patch. The trusted base is what makes a decline real.
 
-`assess_change` is the one step that still works from the state file, because
-its single `stdin_source` is spent on the generator's output. It decides
-routing only: `pin_review` runs immediately after it and re-derives the changed
-set, the protected-path check, and the fingerprint from the trusted base before
-any reviewer sees the change. A forged base at `assess_change` can therefore
-misroute a run — into a decline that then cleans up correctly — but cannot
-decide what is published.
+`assess_change` spends its single `stdin_source` on the generator's output, so
+it could only obtain a base by reading the state file. It therefore obtains
+none: it records what the generator said — its summary, its refusal, its
+question — and runs no Git at all. Every measurement belongs to `pin_review`,
+which reads the trusted base and decides where the run goes through one routing
+key. There is no step left that measures the tree against a value an agent
+could choose.
 
 `finalize` therefore trusts the pin over the state file. It refuses to publish
 if the state file's base or fingerprint disagrees with the pin — a disagreement
