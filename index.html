@@ -537,7 +537,8 @@
               Shape decision: <code>low</code> effort, a small diff (≤ 5 files and ≤ 300 lines at
               <code>medium</code>), or a small scope (≤ 5 files at <code>medium</code>) collapses the run
               to a <b>single-researcher</b> shape. Everything else runs the full <b>component-matrix</b>.
-              Any deterministic failure from here on routes to <b>abort</b>, which stops the run.
+              Any deterministic failure from here on stops the run at the failed step unless that
+              step has an explicit recovery route.
             </p>
           </div>
         </details>

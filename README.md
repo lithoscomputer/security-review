@@ -134,6 +134,10 @@ cap:
 The workflow also has a four-hour stall timeout. Any workflow event resets
 that timer.
 
+A deterministic stage failure stops the run at that failed stage. Agent
+failures that the workflow tolerates reduce recorded coverage. An inventory
+failure falls back to a whole-target review plan.
+
 Use `low` for a quick or narrow check. Use `medium` for a routine repository
 review. Use `high` or `max` when you want more independent coverage and accept
 the added time and model use.

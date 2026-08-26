@@ -1724,7 +1724,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             graph,
         )
         self.assertIn(
-            'inventory -> merge_inventory [condition="outcome=succeeded"]',
+            "    inventory -> merge_inventory\n",
             graph,
         )
         for prompt in (WORKFLOW_ROOT / "prompts").glob("*.md.j2"):
@@ -1735,7 +1735,9 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
     def test_routing_fails_fast_without_routing_only_gate_nodes(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertNotIn("goal_gate=true", graph)
-        self.assertNotIn("abort ->", graph)
+        self.assertIn('on_failure="exit"', graph)
+        self.assertNotIn("    abort [", graph)
+        self.assertNotIn(" -> abort", graph)
         for gate in (
             "target_gate",
             "inventory_gate",
@@ -1754,12 +1756,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             'context.empty_target=true"]',
             'prepare -> inventory [condition="outcome=succeeded && '
             'context.empty_target=false && context.use_inventory=true"]',
-            'prepare -> plan_matrix [condition="outcome=succeeded && '
-            'context.empty_target=false && context.use_inventory=false"]',
             'merge_inventory -> inventory [condition="outcome=succeeded && '
             'context.inventory_correction=true"]',
-            'merge_inventory -> plan_matrix [condition="outcome=succeeded && '
-            'context.inventory_correction=false"]',
             'plan_matrix -> threat_models [condition="outcome=succeeded && '
             'context.run_threat_models=true"]',
             'plan_matrix -> research [condition="outcome=succeeded && '
@@ -1767,55 +1765,43 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             'plan_matrix -> sweep [condition="outcome=succeeded && '
             'context.run_threat_models=false && context.run_research=false && '
             'context.run_sweeps=true"]',
-            'plan_matrix -> dedup_rank [condition="outcome=succeeded && '
-            'context.run_threat_models=false && context.run_research=false && '
-            'context.run_sweeps=false"]',
             'zip_cells -> research [condition="outcome=succeeded && '
             'context.run_research=true"]',
             'zip_cells -> sweep [condition="outcome=succeeded && '
             'context.run_research=false && context.run_sweeps=true"]',
-            'zip_cells -> dedup_rank [condition="outcome=succeeded && '
-            'context.run_research=false && context.run_sweeps=false"]',
             'merge_research -> sweep [condition="outcome=succeeded && '
             'context.run_sweeps=true"]',
-            'merge_research -> dedup_rank [condition="outcome=succeeded && '
-            'context.run_sweeps=false"]',
             'dedup_rank -> panel [condition="outcome=succeeded && '
             'context.run_panel=true"]',
-            'dedup_rank -> tally [condition="outcome=succeeded && '
-            'context.run_panel=false"]',
             'tally -> repanel [condition="outcome=succeeded && '
             'context.max_effort=true && context.run_repanel=true"]',
             'tally -> adversarial_plan [condition="outcome=succeeded && '
             'context.max_effort=true && context.run_repanel=false"]',
-            'tally -> final_tally [condition="outcome=succeeded && '
-            'context.max_effort=false"]',
             'adversarial_plan -> redteam [condition="outcome=succeeded && '
             'context.run_redteam=true"]',
-            'adversarial_plan -> final_tally [condition="outcome=succeeded && '
-            'context.run_redteam=false"]',
         ):
             self.assertIn(edge, graph)
 
-        for source in (
-            "prepare",
-            "inventory_failed",
-            "merge_inventory",
-            "plan_matrix",
-            "merge_threat",
-            "zip_cells",
-            "merge_research",
-            "merge_sweep",
-            "dedup_rank",
-            "merge_panel",
-            "tally",
-            "merge_repanel",
-            "adversarial_plan",
-            "merge_redteam",
-            "final_tally",
-            "render_report",
+        for edge in (
+            "prepare -> plan_matrix",
+            "inventory -> merge_inventory",
+            "inventory_failed -> plan_matrix",
+            "merge_inventory -> plan_matrix",
+            "plan_matrix -> dedup_rank",
+            "merge_threat -> zip_cells",
+            "zip_cells -> dedup_rank",
+            "merge_research -> dedup_rank",
+            "merge_sweep -> dedup_rank",
+            "dedup_rank -> tally",
+            "merge_panel -> tally",
+            "tally -> final_tally",
+            "merge_repanel -> adversarial_plan",
+            "adversarial_plan -> final_tally",
+            "merge_redteam -> final_tally",
+            "final_tally -> render_report",
+            "render_report -> exit",
         ):
-            self.assertIn(f"    {source} -> abort\n", graph)
+            self.assertIn(f"    {edge}\n", graph)
 
     def test_graph_has_one_execution_path_per_role(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
@@ -1826,7 +1812,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             'context.run_panel=true"]',
             'tally -> repanel [condition="outcome=succeeded && '
             'context.max_effort=true && context.run_repanel=true"]',
-            'final_tally -> render_report [condition="outcome=succeeded"]',
+            "final_tally -> render_report",
         ):
             self.assertIn(edge, graph)
         for node in (
@@ -1911,8 +1897,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             ("redteam", "final_tally"),
         ):
             self.assertIn(
-                f'merge_{phase} -> {next_node} '
-                '[condition="outcome=succeeded"]',
+                f"    merge_{phase} -> {next_node}\n",
                 graph,
             )
             self.assertNotIn(f"wait_{phase}_", graph)
@@ -1923,8 +1908,7 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             graph,
         )
         self.assertIn(
-            'merge_research -> dedup_rank [condition="outcome=succeeded && '
-            'context.run_sweeps=false"]',
+            "    merge_research -> dedup_rank\n",
             graph,
         )
         self.assertNotIn("wait_research_", graph)
@@ -1953,25 +1937,27 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
             self.assertIn('on_failure="succeed"', body, node)
         self.assertEqual(graph.count('on_failure="succeed"'), 12)
 
-    def test_agent_failures_degrade_before_aborting(self) -> None:
+    def test_agent_failures_degrade_before_fatal_exit(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         inventory = graph.split("    inventory [", 1)[1].split(
             "    ]",
             1,
         )[0]
         self.assertNotIn("auto_status=true", inventory)
-        self.assertIn("    inventory -> inventory_failed\n", graph)
         self.assertIn(
-            'inventory_failed -> plan_matrix [condition="outcome=succeeded"]',
+            'inventory -> inventory_failed [condition="outcome!=succeeded"]',
+            graph,
+        )
+        self.assertIn("    inventory -> merge_inventory\n", graph)
+        self.assertIn(
+            "    inventory_failed -> plan_matrix\n",
             graph,
         )
         self.assertIn("security_review.py inventory-failed", graph)
-        self.assertNotIn("    inventory -> abort\n", graph)
+        self.assertIn('on_failure="exit"', graph)
+        self.assertNotIn("abort", graph)
         self.assertNotIn("\n        max_retries=0", graph)
-        self.assertIn(
-            'render_report -> abort',
-            graph,
-        )
+        self.assertIn("    render_report -> exit\n", graph)
         self.assertNotIn("report_author", graph)
 
     def test_nothing_enforces_the_read_only_rule(self) -> None:

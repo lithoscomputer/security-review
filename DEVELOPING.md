@@ -122,6 +122,12 @@ limit. A deterministic merge step normalizes agent output and records missing
 responses. A missing response reduces coverage instead of changing vote
 arithmetic.
 
+The graph uses `on_failure="exit"`. A failed node stops unless an explicit
+recovery edge matches. Keep `outcome=succeeded` on each non-default conditional
+edge so stale context cannot become a recovery route. An unconditional default
+edge is safe because Fabro skips it after a failure. Inventory is the exception:
+its explicit failure edge records the fallback before the workflow continues.
+
 ### Integrity checks protect publication
 
 The workflow pins the SHA-256 hashes of the deterministic engine, Git wrapper,

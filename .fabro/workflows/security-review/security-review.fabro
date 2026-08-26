@@ -3,6 +3,7 @@ digraph SecurityReview {
         goal="Perform an adversarial, read-only security review of this repository and report only panel-verified findings.",
         default_max_retries=0,
         default_fidelity="compact",
+        on_failure="exit",
         stall_timeout="14400s",
         model_stylesheet="
             * { model: kimi-k3; reasoning_effort: low; }
@@ -16,12 +17,6 @@ digraph SecurityReview {
 
     start [shape=Mdiamond, label="Start"]
     exit  [shape=Msquare, label="Exit"]
-    abort [
-        shape=parallelogram,
-        label="Abort after fatal deterministic failure",
-        timeout="10s",
-        script="echo 'Security-review workflow stopped after a fatal deterministic failure.' >&2; exit 1"
-    ]
 
     prepare [
         shape=parallelogram,
@@ -280,69 +275,53 @@ digraph SecurityReview {
     start -> prepare
     prepare -> exit [condition="outcome=succeeded && context.empty_target=true"]
     prepare -> inventory [condition="outcome=succeeded && context.empty_target=false && context.use_inventory=true"]
-    prepare -> plan_matrix [condition="outcome=succeeded && context.empty_target=false && context.use_inventory=false"]
-    prepare -> abort
+    prepare -> plan_matrix
 
-    inventory -> merge_inventory [condition="outcome=succeeded"]
-    inventory -> inventory_failed
-    inventory_failed -> plan_matrix [condition="outcome=succeeded"]
-    inventory_failed -> abort
+    inventory -> inventory_failed [condition="outcome!=succeeded"]
+    inventory -> merge_inventory
+    inventory_failed -> plan_matrix
     merge_inventory -> inventory [condition="outcome=succeeded && context.inventory_correction=true"]
-    merge_inventory -> plan_matrix [condition="outcome=succeeded && context.inventory_correction=false"]
-    merge_inventory -> abort
+    merge_inventory -> plan_matrix
 
     plan_matrix -> threat_models [condition="outcome=succeeded && context.run_threat_models=true"]
     plan_matrix -> research [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=true"]
     plan_matrix -> sweep [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=false && context.run_sweeps=true"]
-    plan_matrix -> dedup_rank [condition="outcome=succeeded && context.run_threat_models=false && context.run_research=false && context.run_sweeps=false"]
-    plan_matrix -> abort
+    plan_matrix -> dedup_rank
     threat_models -> threat_model [fidelity="truncate"]
     threat_model -> threat_join -> merge_threat
-    merge_threat -> zip_cells [condition="outcome=succeeded"]
-    merge_threat -> abort
+    merge_threat -> zip_cells
     zip_cells -> research [condition="outcome=succeeded && context.run_research=true"]
     zip_cells -> sweep [condition="outcome=succeeded && context.run_research=false && context.run_sweeps=true"]
-    zip_cells -> dedup_rank [condition="outcome=succeeded && context.run_research=false && context.run_sweeps=false"]
-    zip_cells -> abort
+    zip_cells -> dedup_rank
 
     research -> researcher [fidelity="truncate"]
     researcher -> research_join -> merge_research
     merge_research -> sweep [condition="outcome=succeeded && context.run_sweeps=true"]
-    merge_research -> dedup_rank [condition="outcome=succeeded && context.run_sweeps=false"]
-    merge_research -> abort
+    merge_research -> dedup_rank
 
     sweep -> sweeper [fidelity="truncate"]
     sweeper -> sweep_join -> merge_sweep
-    merge_sweep -> dedup_rank [condition="outcome=succeeded"]
-    merge_sweep -> abort
+    merge_sweep -> dedup_rank
 
     dedup_rank -> panel [condition="outcome=succeeded && context.run_panel=true"]
-    dedup_rank -> tally [condition="outcome=succeeded && context.run_panel=false"]
-    dedup_rank -> abort
+    dedup_rank -> tally
     panel -> panel_verifier [fidelity="truncate"]
     panel_verifier -> panel_join -> merge_panel
-    merge_panel -> tally [condition="outcome=succeeded"]
-    merge_panel -> abort
+    merge_panel -> tally
 
     tally -> repanel [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=true"]
     tally -> adversarial_plan [condition="outcome=succeeded && context.max_effort=true && context.run_repanel=false"]
-    tally -> final_tally [condition="outcome=succeeded && context.max_effort=false"]
-    tally -> abort
+    tally -> final_tally
     repanel -> repanel_verifier [fidelity="truncate"]
     repanel_verifier -> repanel_join -> merge_repanel
-    merge_repanel -> adversarial_plan [condition="outcome=succeeded"]
-    merge_repanel -> abort
+    merge_repanel -> adversarial_plan
 
     adversarial_plan -> redteam [condition="outcome=succeeded && context.run_redteam=true"]
-    adversarial_plan -> final_tally [condition="outcome=succeeded && context.run_redteam=false"]
-    adversarial_plan -> abort
+    adversarial_plan -> final_tally
     redteam -> redteam_verifier [fidelity="truncate"]
     redteam_verifier -> redteam_join -> merge_redteam
-    merge_redteam -> final_tally [condition="outcome=succeeded"]
-    merge_redteam -> abort
+    merge_redteam -> final_tally
 
-    final_tally -> render_report [condition="outcome=succeeded"]
-    final_tally -> abort
-    render_report -> exit [condition="outcome=succeeded"]
-    render_report -> abort
+    final_tally -> render_report
+    render_report -> exit
 }
