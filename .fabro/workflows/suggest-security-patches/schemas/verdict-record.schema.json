@@ -29,6 +29,11 @@
       "pattern": "^[0-9a-f]{64}$",
       "description": "SHA-256 of patch.diff, tying the reviewed bytes to the artifact and the PR change."
     },
+    "reviewedDiffSha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the change as it stood when review began. Equal to patchSha256 on a written patch; a run where they could differ is stopped rather than published."
+    },
     "summary": { "type": ["string", "null"] },
     "claims": {
       "type": ["object", "null"],

@@ -61,7 +61,8 @@ weight:
 | `untested` | Always `true` |
 | `testsRun` | Always the same sentence — this workflow runs no tests |
 | `changedPaths` | The engine's Git-derived changed set, in name-status form |
-| `reviewedPaths` | The verifier's own list, cross-checked against `changedPaths` |
+| `reviewedPaths` | The verifier's own list of touched paths, cross-checked against the engine's set |
+| `reviewedDiffSha256` | SHA-256 of the change as it stood when review began |
 | `tamperingSignals` | Anything the integrity checks noticed, even on a successful run |
 
 **Review confidence and testing are separate fields, deliberately.** A
@@ -78,9 +79,26 @@ diff would be empty. The set is derived from `git diff <base>..HEAD
 --name-status`. The generator's `changedFiles` is context for the reviewer and
 is never the record.
 
-**The verifier's paths must match.** If the verifier's `reviewedPaths` and the
-engine's derived set disagree, the run stops rather than delivering bytes that
-were not the bytes reviewed.
+**The verifier's paths must match, and silence is not agreement.** The
+comparison is unconditional and exact: the verifier reports every path the
+change touches as a bare repository-relative path, and a disagreement — or an
+empty list, or a summary phrase in place of paths — stops the run. A check that
+skipped itself when the reviewer said nothing would pass exactly the cases it
+exists to catch.
+
+Both sides are read NUL-delimited (`git diff --name-status -z`,
+`git ls-files -z`). A filename may contain a space, a tab, or a newline, and
+splitting Git's human-readable output on whitespace would corrupt precisely the
+paths an attacker would choose.
+
+**The delivered bytes must be the reviewed bytes.** Every node is followed by a
+checkpoint that commits whatever the tree holds — a reviewer's writes included.
+Reviewers are told to inspect and not modify, but an instruction is not a
+control: without one, a reviewer's own checkpoint could fold new content into
+the patch *after* review had passed on it. So the change is fingerprinted with
+SHA-256 the moment review begins, and that fingerprint is re-checked before the
+verdict is read, before the adversarial result is read, and once more at
+delivery. A mismatch stops the run; nothing is published.
 
 **A patch touching the workflow's own support directory is declined.** No
 legitimate fix edits the engine that judges it. This rule cannot cover `.git/`,
@@ -94,9 +112,14 @@ revision round and the decline path restore the base tree in place —
 `git restore --source=<base> --staged --worktree -- .` then `git clean -fd` —
 and let the next checkpoint record the restoration as a forward commit.
 
-**A decline must prove an empty tree.** After restoring, the engine asserts that
-the base-to-HEAD diff is empty *and* `git status --porcelain` reports nothing,
-and fails the run if either does not hold. That invariant is the only thing
+**A decline must prove an empty tree.** After restoring, the engine asserts
+that the working tree and index hold exactly the base content and that no
+leftover file survives — ignored files included, since `git clean -fd` alone
+would keep them and a "fresh" attempt would inherit whatever a rejected one
+left in a cache or build directory. The sweep is `git clean -fdx`, excluding
+only the engine's own runtime state, and the check that follows uses
+`git ls-files --others` *without* `--exclude-standard` so an ignored leftover
+cannot pass unseen. That invariant is the only thing
 standing between a rejected attempt and an opened pull request, because Fabro
 skips pull-request creation exactly when the final diff is empty.
 

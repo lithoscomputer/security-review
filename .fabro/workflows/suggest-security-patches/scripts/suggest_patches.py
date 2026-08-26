@@ -235,33 +235,46 @@ def worktree_is_clean() -> bool:
     return status is not None and status.strip() == ""
 
 
-def changed_paths(base: str) -> List[str]:
-    """The authoritative changed set, in name-status form.
+def changed_entries(base: str) -> List[Tuple[str, List[str]]]:
+    """The authoritative changed set: (status, paths) per entry.
 
     Derived from committed history, because Fabro checkpoints after every node:
     by the time this runs, the generator's work is a commit, and a staged diff
     would be empty.
+
+    Read NUL-delimited. A filename may contain spaces, tabs, or newlines, and
+    splitting Git's human-readable output on whitespace would corrupt exactly
+    the paths an attacker would choose.
     """
-    raw = git_text(
+    result = git(
         "diff",
         "--name-status",
         "--find-renames=50%",
         "--no-ext-diff",
         "--no-textconv",
+        "-z",
         f"{base}..HEAD",
         check=True,
     )
-    if raw is None:
-        raise WorkflowDataError("could not derive the changed set from Git")
-    entries: List[str] = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
+    tokens = result.stdout.decode("utf-8", "surrogateescape").split("\0")
+    entries: List[Tuple[str, List[str]]] = []
+    index = 0
+    while index < len(tokens):
+        status = tokens[index]
+        index += 1
+        if not status:
             continue
-        entry = " ".join(line.split("\t"))
-        if all(is_engine_runtime(path) for path in paths_from_name_status([entry])):
+        # Rename and copy entries carry two paths; everything else carries one.
+        wanted = 2 if status[0] in ("R", "C") else 1
+        paths = tokens[index : index + wanted]
+        index += wanted
+        if len(paths) < wanted or not all(paths):
+            raise WorkflowDataError(
+                f"Git reported a {status!r} change with no path"
+            )
+        if all(is_engine_runtime(path) for path in paths):
             continue
-        entries.append(entry)
+        entries.append((status, paths))
     return entries
 
 
@@ -272,13 +285,23 @@ def is_engine_runtime(path: str) -> bool:
     return normalized.startswith(RUNTIME_PREFIX)
 
 
-def paths_from_name_status(entries: Sequence[str]) -> List[str]:
+def display_entries(entries: Sequence[Tuple[str, List[str]]]) -> List[str]:
+    """Name-status form, for the record a person reads."""
+    return [f"{status} {' -> '.join(paths)}" for status, paths in entries]
+
+
+def entry_paths(entries: Sequence[Tuple[str, List[str]]]) -> List[str]:
     paths: List[str] = []
-    for entry in entries:
-        parts = entry.split()
-        if len(parts) >= 2:
-            paths.extend(parts[1:])
+    for _, entry in entries:
+        paths.extend(entry)
     return paths
+
+
+def normalize_compare_path(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
 
 
 def diffstat(base: str) -> str:
@@ -292,13 +315,43 @@ def diffstat(base: str) -> str:
     return clean_text(value or "", 4000)
 
 
+def diff_bytes(base: str) -> bytes:
+    """The change, under the one command contract every product uses."""
+    return git("diff", *DIFF_FLAGS, base, "HEAD", check=True).stdout
+
+
 def capture_diff(base: str, destination: Path) -> bytes:
     """Write the reviewed diff byte-faithfully and return its bytes."""
-    result = git("diff", *DIFF_FLAGS, base, "HEAD", check=True)
-    payload = result.stdout
+    payload = diff_bytes(base)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(payload)
     return payload
+
+
+def assert_diff_unchanged(state: Mapping[str, Any], stage: str) -> None:
+    """The bytes delivered must be the bytes that were reviewed.
+
+    Every node is followed by a checkpoint that commits whatever the tree
+    holds, reviewers included. A reviewer is told to inspect and not modify,
+    but an instruction is not a control: if one writes to the tree, its
+    checkpoint would fold that content into the patch after review had passed.
+    So the change is fingerprinted before review and re-checked at every stage
+    that follows, up to the moment of delivery.
+    """
+    expected = state.get("reviewed_diff_sha256")
+    if not expected:
+        raise WorkflowDataError(
+            f"{stage}: the change was never fingerprinted, so the reviewed "
+            "bytes cannot be confirmed"
+        )
+    actual = sha256_bytes(diff_bytes(state["base"]))
+    if actual != expected:
+        raise WorkflowDataError(
+            f"{stage}: the change is not what was reviewed "
+            f"(expected {expected[:12]}…, found {actual[:12]}…). Something "
+            "wrote to the tree after the change was fingerprinted, so nothing "
+            "is delivered."
+        )
 
 
 def restore_base_tree(base: str) -> None:
@@ -310,17 +363,27 @@ def restore_base_tree(base: str) -> None:
     next checkpoint record the restoration as a forward commit instead.
     """
     git("restore", "--source", base, "--staged", "--worktree", "--", ".", check=True)
-    # `-e` keeps the engine's own state from being swept away mid-run. Ignored
-    # files are already safe without `-x`; this holds even where the target
-    # repository lacks the workflow's .gitignore.
-    git("clean", "-fd", "-e", RUNTIME_PREFIX.rstrip("/"), check=True)
+    # `-x` removes ignored files too. Without it a rejected attempt could leave
+    # a build artifact, cache, or anything else the repository ignores, and the
+    # next "fresh" attempt would inherit it. `-e` keeps the engine's own state,
+    # which is the one thing here that must survive the sweep.
+    git("clean", "-fdx", "-e", RUNTIME_PREFIX.rstrip("/"), check=True)
 
 
-def untracked_paths() -> List[str]:
-    raw = git_text("ls-files", "--others", "--exclude-standard")
-    if not raw:
-        return []
-    return [line for line in raw.splitlines() if line.strip()]
+def leftover_paths() -> List[str]:
+    """Untracked files after a restore, ignored ones included.
+
+    `--exclude-standard` is deliberately absent: an ignored leftover is exactly
+    the kind a `git status` check would miss and a fresh attempt would inherit.
+    The engine's own runtime state is the only expected survivor.
+    """
+    result = git("ls-files", "--others", "-z")
+    tokens = result.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return [
+        token
+        for token in tokens
+        if token.strip() and not is_engine_runtime(token)
+    ]
 
 
 def content_matches_base(base: str) -> bool:
@@ -684,6 +747,7 @@ def build_record(state: Mapping[str, Any], status: str) -> Dict[str, Any]:
         "revisionUsed": bool(state.get("revision_used")),
         "ownerQuestionUsed": bool(state.get("owner_question_used")),
         "patchSha256": state.get("patch_sha256"),
+        "reviewedDiffSha256": state.get("reviewed_diff_sha256"),
         "tamperingSignals": state.get("tampering_signals") or [],
     }
     return record
@@ -772,9 +836,12 @@ def assess_change() -> None:
         ]
 
     base = state["base"]
-    entries = changed_paths(base)
-    state["changed_paths"] = entries
-    paths = paths_from_name_status(entries)
+    entries = changed_entries(base)
+    state["changed_paths"] = display_entries(entries)
+    state["changed_path_set"] = sorted(
+        {normalize_compare_path(path) for path in entry_paths(entries)}
+    )
+    paths = entry_paths(entries)
 
     violations = protected_path_violations(paths)
     if violations:
@@ -828,12 +895,17 @@ def assess_change() -> None:
 
     state["status"] = "verifying"
     state["diffstat"] = diffstat(base)
+    # Pin the reviewed bytes before any reviewer runs. Every stage after this
+    # one re-checks the fingerprint, so nothing a reviewer writes can be folded
+    # into the patch by its own checkpoint.
+    state["reviewed_diff_sha256"] = sha256_bytes(diff_bytes(base))
     save_state(state)
     emit(has_change=True, owner_question=False, declined=False)
 
 
 def merge_verdict() -> None:
     state = guard()
+    assert_diff_unchanged(state, "verify")
     raw = read_stdin_text()
     result = parse_agent_json(raw, "verify")
 
@@ -859,11 +931,9 @@ def merge_verdict() -> None:
     state["claims"] = normalized
 
     reviewed = [
-        one_line(entry, 500)
-        for entry in (result.get("reviewedPaths") or [])
-        if isinstance(entry, str)
+        entry for entry in (result.get("reviewedPaths") or []) if isinstance(entry, str)
     ]
-    state["reviewed_paths"] = reviewed
+    state["reviewed_paths"] = [one_line(entry, 500) for entry in reviewed]
 
     objections = [
         clean_text(entry, 2000)
@@ -903,12 +973,22 @@ def merge_verdict() -> None:
         emit(verdict_pass=False, retry=True, declined=False)
         return
 
-    # Cross-check: the bytes we are about to deliver must be the bytes reviewed.
-    reviewed_paths = set(paths_from_name_status(reviewed))
-    derived_paths = set(paths_from_name_status(state.get("changed_paths") or []))
-    if reviewed_paths and reviewed_paths != derived_paths:
-        only_reviewer = sorted(reviewed_paths - derived_paths)[:5]
-        only_engine = sorted(derived_paths - reviewed_paths)[:5]
+    # Cross-check: what was reviewed must be exactly what the change contains.
+    # Unconditional, because an empty or unparseable list is not evidence of
+    # agreement — it is the absence of evidence, and a PASS that carries no
+    # path list must not slip through as though it had matched.
+    reviewed_set = {
+        normalize_compare_path(entry) for entry in reviewed if entry.strip()
+    }
+    derived_set = set(state.get("changed_path_set") or [])
+    if not reviewed_set:
+        raise WorkflowDataError(
+            "the verifier returned a PASS with no reviewed paths, so there is "
+            "nothing to check the change against"
+        )
+    if reviewed_set != derived_set:
+        only_reviewer = sorted(reviewed_set - derived_set)[:5]
+        only_engine = sorted(derived_set - reviewed_set)[:5]
         raise WorkflowDataError(
             "the verifier reviewed a different set of paths than the change "
             f"contains (reviewer only: {only_reviewer}; change only: {only_engine})"
@@ -921,6 +1001,7 @@ def merge_verdict() -> None:
 
 def merge_adversarial() -> None:
     state = guard()
+    assert_diff_unchanged(state, "adversarial")
     raw = read_stdin_text()
     result = parse_agent_json(raw, "adversarial")
 
@@ -964,7 +1045,7 @@ def revise() -> None:
     state = guard()
     base = state["base"]
     restore_base_tree(base)
-    leftovers = untracked_paths()
+    leftovers = leftover_paths()
     if not content_matches_base(base) or leftovers:
         raise WorkflowDataError(
             "the workspace did not return to the base revision before a fresh "
@@ -975,8 +1056,10 @@ def revise() -> None:
     state["claims"] = None
     state["reviewed_paths"] = []
     state["changed_paths"] = []
+    state["changed_path_set"] = []
     state["diffstat"] = None
     state["adversarial"] = None
+    state["reviewed_diff_sha256"] = None
     save_state(state)
     emit(owner_question=False)
 
@@ -984,6 +1067,8 @@ def revise() -> None:
 def finalize() -> None:
     state = guard()
     base = state["base"]
+    # The last opportunity to catch a write that landed after review.
+    assert_diff_unchanged(state, "finalize")
     directory = products_directory(state)
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -993,6 +1078,10 @@ def finalize() -> None:
             "the change produced an empty diff at the point of delivery"
         )
     state["patch_sha256"] = sha256_bytes(payload)
+    if state["patch_sha256"] != state.get("reviewed_diff_sha256"):
+        raise WorkflowDataError(
+            "the delivered bytes are not the reviewed bytes"
+        )
     state["status"] = "patch_written"
 
     record = build_record(state, "patch_written")
@@ -1018,7 +1107,7 @@ def no_patch() -> None:
         state["decline_reason"] = "The run ended without a reviewed patch."
 
     restore_base_tree(base)
-    leftovers = untracked_paths()
+    leftovers = leftover_paths()
     if not content_matches_base(base) or leftovers:
         # This invariant is what keeps a declined run from opening a pull
         # request: Fabro skips PR creation only when the final diff is empty.

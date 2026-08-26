@@ -87,7 +87,7 @@ PASSING_VERDICT = {
             "evidence": "app.py:9, the documented report still runs",
         },
     },
-    "reviewedPaths": ["M app.py"],
+    "reviewedPaths": ["app.py"],
 }
 
 CLEAN_ADVERSARIAL = {
@@ -442,7 +442,7 @@ class VerdictTests(WorkspaceTest):
 
     def test_reviewed_paths_must_match_the_derived_set(self) -> None:
         payload = json.loads(json.dumps(PASSING_VERDICT))
-        payload["reviewedPaths"] = ["M some_other_file.py"]
+        payload["reviewedPaths"] = ["some_other_file.py"]
         result = self.workspace.engine("merge-verdict", json.dumps(payload))
         self.assertEqual(result.returncode, 2)
         self.assertIn("different set of paths", result.stderr.decode("utf-8"))
@@ -455,6 +455,131 @@ class VerdictTests(WorkspaceTest):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("omitted the targeted claim", result.stderr.decode("utf-8"))
+
+
+class ReviewedBytesTests(WorkspaceTest):
+    """The delivered bytes must be the bytes that were reviewed.
+
+    Every node is followed by a checkpoint that commits whatever the tree
+    holds. A reviewer is told not to modify anything, but an instruction is not
+    a control: without the fingerprint, a reviewer's own checkpoint would fold
+    its writes into the patch after review had already passed.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+
+    def test_fingerprint_is_taken_before_any_reviewer_runs(self) -> None:
+        self.assertRegex(
+            self.workspace.state()["reviewed_diff_sha256"], r"^[0-9a-f]{64}$"
+        )
+
+    def test_a_write_during_verify_stops_the_run(self) -> None:
+        (self.workspace.path / "smuggled.py").write_text(
+            "BACKDOOR = True\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("verify")
+        result = self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
+
+    def test_a_write_during_the_adversarial_pass_stops_the_run(self) -> None:
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        (self.workspace.path / "app.py").write_text(
+            FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("adversarial")
+        result = self.workspace.engine(
+            "merge-adversarial", json.dumps(CLEAN_ADVERSARIAL)
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
+
+    def test_a_write_after_the_adversarial_pass_stops_delivery(self) -> None:
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        (self.workspace.path / "app.py").write_text(
+            FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("late")
+        result = self.workspace.engine("finalize")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
+        self.assertFalse(sorted(self.workspace.path.glob("SECURITY-PATCH-*")))
+
+    def test_delivered_patch_hash_equals_the_reviewed_hash(self) -> None:
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        self.workspace.engine("finalize")
+        record = json.loads(
+            (self.workspace.products() / "verdict.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(record["patchSha256"], record["reviewedDiffSha256"])
+
+
+class ReviewedPathsTests(WorkspaceTest):
+    """The path cross-check must not pass by saying nothing."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+
+    def test_empty_reviewed_paths_is_refused(self) -> None:
+        payload = {**PASSING_VERDICT, "reviewedPaths": []}
+        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no reviewed paths", result.stderr.decode("utf-8"))
+
+    def test_a_summary_phrase_is_not_a_path_list(self) -> None:
+        payload = {**PASSING_VERDICT, "reviewedPaths": ["reviewed everything"]}
+        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
+
+    def test_bare_paths_match_the_derived_set(self) -> None:
+        payload = {**PASSING_VERDICT, "reviewedPaths": ["app.py"]}
+        context = self.workspace.context(
+            self.workspace.engine("merge-verdict", json.dumps(payload))
+        )
+        self.assertTrue(context["verdict_pass"])
+
+    def test_the_schema_refuses_an_empty_list(self) -> None:
+        schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/patch-verdict.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(schema["properties"]["reviewedPaths"]["minItems"], 1)
+
+
+class AwkwardFilenameTests(WorkspaceTest):
+    """Paths a reviewer would quote and a naive parser would corrupt."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def test_a_filename_with_spaces_survives_the_changed_set(self) -> None:
+        awkward = "src/report generator.py"
+        (self.workspace.path / "src").mkdir()
+        (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
+        context = self.workspace.generate(source=None)
+        self.assertTrue(context["has_change"])
+        self.assertIn(awkward, self.workspace.state()["changed_path_set"])
+
+    def test_a_reviewer_can_match_a_spaced_filename_exactly(self) -> None:
+        awkward = "src/report generator.py"
+        (self.workspace.path / "src").mkdir()
+        (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
+        self.workspace.generate(source=FIXED_SOURCE)
+        payload = {**PASSING_VERDICT, "reviewedPaths": ["app.py", awkward]}
+        context = self.workspace.context(
+            self.workspace.engine("merge-verdict", json.dumps(payload))
+        )
+        self.assertTrue(context["verdict_pass"])
 
 
 class AdversarialTests(WorkspaceTest):
@@ -593,6 +718,38 @@ class DeclineTests(WorkspaceTest):
         self.decline()
         self.assertFalse((self.workspace.path / "stray.txt").exists())
 
+    def test_decline_removes_ignored_leftovers_too(self) -> None:
+        # An ignored leftover is the one a `git status` check would miss and a
+        # "fresh" attempt would silently inherit.
+        (self.workspace.path / ".gitignore").write_text(
+            "build/\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("ignore-rule")
+        build = self.workspace.path / "build"
+        build.mkdir()
+        (build / "cached.bin").write_text("from the rejected attempt", encoding="utf-8")
+        self.decline()
+        self.assertFalse(build.exists(), "an ignored leftover survived the decline")
+
+    def test_revise_removes_ignored_leftovers_before_a_fresh_attempt(self) -> None:
+        (self.workspace.path / ".gitignore").write_text(
+            "build/\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("ignore-rule")
+        build = self.workspace.path / "build"
+        build.mkdir()
+        (build / "cached.bin").write_text("from the rejected attempt", encoding="utf-8")
+        self.workspace.engine("revise")
+        self.assertFalse(build.exists(), "a fresh attempt inherited a leftover")
+
+    def test_the_engines_own_state_survives_the_sweep(self) -> None:
+        self.decline()
+        state_path = (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+        )
+        self.assertTrue(state_path.is_file(), "the engine swept away its own state")
+
     def test_decline_never_rewinds_the_pushed_branch(self) -> None:
         before = git(
             "rev-parse", "HEAD", cwd=self.workspace.path
@@ -685,6 +842,60 @@ class GoalHelperTests(unittest.TestCase):
         self.write(self.finding())
         with self.assertRaises(GOAL_HELPER.GoalError):
             GOAL_HELPER.select([self.finding()], "all")
+
+
+class GitWrapperTests(unittest.TestCase):
+    """The wrapper's hardening is positional, so re-enabling flags must fail.
+
+    Both workflows ship a copy, and a gap in either is a gap. Git lets a later
+    flag override an earlier one, so `--no-textconv ... --textconv` restores a
+    driver the repository chose and runs it.
+    """
+
+    WRAPPERS = (
+        WORKFLOW_ROOT / "scripts/git_readonly.py",
+        REPOSITORY_ROOT / ".fabro/workflows/security-review/scripts/git_readonly.py",
+    )
+
+    def wrapper_modules(self):
+        for index, path in enumerate(self.WRAPPERS):
+            yield path, load_module(f"fabro_git_wrapper_{index}", path)
+
+    def test_flags_that_re_enable_driver_commands_are_refused(self) -> None:
+        for path, module in self.wrapper_modules():
+            for argument in ("--textconv", "--ext-diff"):
+                with self.subTest(wrapper=path.parent.parent.name, argument=argument):
+                    with self.assertRaises(module.GitWrapperError):
+                        module.validate_arguments(["diff", argument])
+
+    def test_reading_outside_the_repository_is_refused(self) -> None:
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                with self.assertRaises(module.GitWrapperError):
+                    module.validate_arguments(
+                        ["diff", "--no-index", "/etc/passwd", "/etc/hosts"]
+                    )
+
+    def test_an_equals_form_is_refused_the_same_way(self) -> None:
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                with self.assertRaises(module.GitWrapperError):
+                    module.validate_arguments(["diff", "--textconv=anything"])
+
+    def test_ordinary_history_reading_still_works(self) -> None:
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                command = module.build_command(["log", "-n", "1"])
+                self.assertIn("--no-ext-diff", command)
+                self.assertIn("--no-textconv", command)
+
+    def test_an_inherited_external_diff_driver_is_cleared(self) -> None:
+        for path, _ in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                self.assertIn(
+                    '"GIT_EXTERNAL_DIFF": ""',
+                    path.read_text(encoding="utf-8"),
+                )
 
 
 class GraphAndConfigurationTests(unittest.TestCase):

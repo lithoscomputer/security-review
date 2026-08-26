@@ -22,12 +22,20 @@ ALLOWED_SUBCOMMANDS = {
     "log",
     "show",
 }
+# The hardening flags this wrapper adds are positional: Git lets a later flag
+# override an earlier one, so an argument that re-enables what we disabled must
+# be refused outright rather than merely not requested.
+#   --textconv / --ext-diff re-enable driver commands a repository can choose.
+#   --no-index makes diff read any two paths on the filesystem, repository or
+#   not, which is the whole boundary this wrapper exists to hold.
 FORBIDDEN_ARGUMENTS = {
     "--config-env",
     "--exec-path",
     "--ext-diff",
+    "--no-index",
     "--output",
     "--paginate",
+    "--textconv",
     "--upload-pack",
     "--write",
     "-c",
@@ -88,6 +96,10 @@ def main(argv: Sequence[str]) -> int:
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_PAGER": "cat",
             "PAGER": "cat",
+            # An inherited external diff driver would run a command of the
+            # repository's choosing; --no-ext-diff covers the flag, this covers
+            # the environment.
+            "GIT_EXTERNAL_DIFF": "",
         }
     )
     try:
