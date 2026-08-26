@@ -69,8 +69,38 @@ def validate_arguments(argv: Sequence[str]) -> List[str]:
         option_name = argument.split("=", 1)[0]
         if option_name in FORBIDDEN_ARGUMENTS:
             raise GitWrapperError(f"Git option is not allowed: {option_name!r}")
+        reject_operand_outside_repository(argument)
         validated.append(argument)
     return [subcommand, *validated]
+
+
+def reject_operand_outside_repository(argument: str) -> None:
+    """Keep every operand inside the repository.
+
+    Refusing the explicit `--no-index` flag is not enough: `git diff` enters
+    no-index mode on its own when handed filesystem paths, so
+    `git diff /etc/passwd /etc/hosts` would print both files without the flag
+    ever appearing. Revisions are never absolute and never contain a `..` path
+    segment (a `A..B` range is one segment, not a traversal), so refusing those
+    two shapes costs nothing legitimate.
+    """
+    if argument.startswith("-"):
+        return
+    if argument.startswith("/") or argument.startswith("\\\\"):
+        raise GitWrapperError(
+            f"Git operand must be inside the repository: {argument!r}"
+        )
+    segments = argument.split("/")
+    if ".." not in segments:
+        return
+    root = Path.cwd().resolve()
+    try:
+        resolved = (root / argument).resolve()
+        resolved.relative_to(root)
+    except (ValueError, OSError) as error:
+        raise GitWrapperError(
+            f"Git operand must be inside the repository: {argument!r}"
+        ) from error
 
 
 def build_command(argv: Sequence[str]) -> List[str]:

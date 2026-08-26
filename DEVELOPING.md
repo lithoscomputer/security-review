@@ -137,12 +137,42 @@ during the review.
 The generator can write anywhere in the checkout, so nothing downstream of it
 takes the tree at face value.
 
+Paths are compared exactly as Git spells them, read NUL-delimited
+(`git diff --name-status -z`, `git ls-files -z`). Do not trim them or rewrite
+separators before comparing: `a\b.py` and `a/b.py` are different files on
+Linux, surrounding whitespace is a legal part of a name, and normalizing would
+let a path the reviewer never looked at satisfy the check for one it did. The
+read-only Git wrapper is strict for a related reason — its hardening flags are
+positional, so `--textconv` and `--no-index` are refused outright, and bare
+filesystem operands are rejected because `git diff` enters no-index mode on its
+own when handed two paths.
+
 The changed set comes from Git — `git diff <base>..HEAD --name-status` — never
 from the generator's `changedFiles`. Fabro checkpoints after every node, which
 means it has already staged and committed the generator's work before the
 engine looks; a staged (`--cached`) diff would be empty. The verifier's
 `reviewedPaths` is cross-checked against that derived set, and a disagreement
 stops the run rather than delivering bytes nobody reviewed.
+
+The delivered bytes must be the reviewed bytes, and the expected value has to
+live somewhere the agents cannot reach. Every node is followed by a checkpoint
+that commits whatever the tree holds, reviewers included, so a reviewer that
+wrote to the tree would otherwise have its writes folded into the patch after
+review had already passed. The change is fingerprinted when review begins and
+the fingerprint is emitted into **Fabro's run context** as `review_pin` —
+server-side, outside the sandbox — and read back by `finalize` through
+`stdin_source`. `finalize` trusts the pin over the state file and refuses to
+publish if the two disagree.
+
+That distinction is the point, and it is easy to undo by accident: the engine's
+state file lives in the checkout the generator can write, so **nothing that
+decides what gets published may be trusted from it**. The two merge steps do
+run an early fingerprint check against the state file; it is named
+`advisory_diff_check` and commented as a convenience, not a boundary. Keep it
+that way. Note the residual, too: the claims text and summary in the products
+are still state-derived, bounded only by the fact that routing runs on
+context flags Fabro holds. `stdin_source` carries one key, which is why there
+is not a second trusted channel.
 
 Support files are re-checked at every deterministic node, not once. Each node's
 `script` line repeats the SHA-256 check before running the engine, because a
@@ -155,7 +185,7 @@ bookkeeping, neither part of the patch nor evidence of tampering.
 Restoration never rewrites history. Fabro pushes the run branch after every
 checkpoint, so `reset --hard` would strand the local branch behind its remote.
 Both the revision round and the decline path restore in place with
-`git restore --source=<base> --staged --worktree` and `git clean -fd`, letting
+`git restore --source=<base> --staged --worktree` and `git clean -fdx`, letting
 the next checkpoint record the restoration as a forward commit. A decline then
 asserts the content matches the base and no untracked file survives; that
 invariant is the only thing between a rejected attempt and an opened pull

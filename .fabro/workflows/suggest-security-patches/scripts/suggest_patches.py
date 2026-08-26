@@ -297,11 +297,13 @@ def entry_paths(entries: Sequence[Tuple[str, List[str]]]) -> List[str]:
     return paths
 
 
-def normalize_compare_path(value: str) -> str:
-    normalized = value.strip().replace("\\", "/")
-    while normalized.startswith("./"):
-        normalized = normalized[2:]
-    return normalized
+# Paths are compared exactly as Git spells them. No trimming, no separator
+# rewriting: on Linux `a\b.py` and `a/b.py` are two different files, and
+# leading or trailing whitespace is a legal part of a filename. Normalizing
+# here would let two distinct paths compare equal, which is the whole thing the
+# comparison exists to prevent. (`is_engine_runtime` normalizes on purpose —
+# matching liberally is right when the answer is "refuse", wrong when the
+# answer is "these agree".)
 
 
 def diffstat(base: str) -> str:
@@ -328,29 +330,89 @@ def capture_diff(base: str, destination: Path) -> bytes:
     return payload
 
 
-def assert_diff_unchanged(state: Mapping[str, Any], stage: str) -> None:
-    """The bytes delivered must be the bytes that were reviewed.
+def build_review_pin(base: str, payload: bytes) -> str:
+    """The trusted anchor for everything delivered.
+
+    Emitted into Fabro's run context, which lives on the server: unlike this
+    program's state file, it sits outside the checkout and no agent in the
+    sandbox can reach it. `finalize` reads it back through `stdin_source` and
+    trusts it over anything on disk.
+    """
+    return json.dumps(
+        {
+            "base": base,
+            "review_commit": resolve_head(),
+            "diff_sha256": sha256_bytes(payload),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def parse_review_pin(raw: str) -> Dict[str, str]:
+    text = raw.strip()
+    if not text:
+        raise WorkflowDataError(
+            "the review pin did not reach this step. It is carried in the run "
+            "context, so a missing pin means the node was wired without its "
+            "stdin_source, not that a patch is merely unverified"
+        )
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise WorkflowDataError(f"the review pin is not JSON: {error}") from error
+    if not isinstance(value, dict):
+        raise WorkflowDataError("the review pin must be a JSON object")
+    pin = {
+        "base": str(value.get("base", "")),
+        "review_commit": str(value.get("review_commit", "")),
+        "diff_sha256": str(value.get("diff_sha256", "")),
+    }
+    if not COMMIT_PATTERN.match(pin["base"]):
+        raise WorkflowDataError("the review pin carries no base commit")
+    if not re.fullmatch(r"[0-9a-f]{64}", pin["diff_sha256"]):
+        raise WorkflowDataError("the review pin carries no diff fingerprint")
+    return pin
+
+
+def assert_pinned_bytes(pin: Mapping[str, str]) -> bytes:
+    """Confirm the tree still holds exactly the change that was reviewed.
 
     Every node is followed by a checkpoint that commits whatever the tree
     holds, reviewers included. A reviewer is told to inspect and not modify,
-    but an instruction is not a control: if one writes to the tree, its
-    checkpoint would fold that content into the patch after review had passed.
-    So the change is fingerprinted before review and re-checked at every stage
-    that follows, up to the moment of delivery.
+    but an instruction is not a control: without this check, a reviewer's own
+    checkpoint would fold its writes into the patch after review had passed on
+    it. The expected value comes from the run context rather than from this
+    program's state file, because the state file lives in the checkout the
+    agents can write.
+    """
+    payload = diff_bytes(pin["base"])
+    actual = sha256_bytes(payload)
+    if actual != pin["diff_sha256"]:
+        raise WorkflowDataError(
+            "the change is not what was reviewed (expected "
+            f"{pin['diff_sha256'][:12]}…, found {actual[:12]}…). Something "
+            "wrote to the tree after review, so nothing is delivered."
+        )
+    return payload
+
+
+def advisory_diff_check(state: Mapping[str, Any], stage: str) -> None:
+    """An early, best-effort version of the check `finalize` makes for real.
+
+    This one reads the expected fingerprint from the state file, which an agent
+    with write access to the checkout could rewrite alongside the change it is
+    smuggling. It is therefore a convenience that fails fast on an honest
+    mistake, never a boundary. The boundary is `assert_pinned_bytes`, whose
+    expected value comes from the run context.
     """
     expected = state.get("reviewed_diff_sha256")
     if not expected:
+        return
+    if sha256_bytes(diff_bytes(state["base"])) != expected:
         raise WorkflowDataError(
-            f"{stage}: the change was never fingerprinted, so the reviewed "
-            "bytes cannot be confirmed"
-        )
-    actual = sha256_bytes(diff_bytes(state["base"]))
-    if actual != expected:
-        raise WorkflowDataError(
-            f"{stage}: the change is not what was reviewed "
-            f"(expected {expected[:12]}…, found {actual[:12]}…). Something "
-            "wrote to the tree after the change was fingerprinted, so nothing "
-            "is delivered."
+            f"{stage}: the change is not what was reviewed. Something wrote to "
+            "the tree after the change was fingerprinted."
         )
 
 
@@ -839,7 +901,7 @@ def assess_change() -> None:
     entries = changed_entries(base)
     state["changed_paths"] = display_entries(entries)
     state["changed_path_set"] = sorted(
-        {normalize_compare_path(path) for path in entry_paths(entries)}
+        set(entry_paths(entries))
     )
     paths = entry_paths(entries)
 
@@ -895,17 +957,25 @@ def assess_change() -> None:
 
     state["status"] = "verifying"
     state["diffstat"] = diffstat(base)
-    # Pin the reviewed bytes before any reviewer runs. Every stage after this
-    # one re-checks the fingerprint, so nothing a reviewer writes can be folded
-    # into the patch by its own checkpoint.
-    state["reviewed_diff_sha256"] = sha256_bytes(diff_bytes(base))
+    # Pin the reviewed bytes before any reviewer runs, and put the pin in the
+    # run context rather than only in the state file: the context is
+    # server-side, so it is the one record here that an agent with write access
+    # to this checkout cannot edit to match a change it made afterwards.
+    payload = diff_bytes(base)
+    pin = build_review_pin(base, payload)
+    state["reviewed_diff_sha256"] = sha256_bytes(payload)
     save_state(state)
-    emit(has_change=True, owner_question=False, declined=False)
+    emit(
+        has_change=True,
+        owner_question=False,
+        declined=False,
+        review_pin=pin,
+    )
 
 
 def merge_verdict() -> None:
     state = guard()
-    assert_diff_unchanged(state, "verify")
+    advisory_diff_check(state, "verify")
     raw = read_stdin_text()
     result = parse_agent_json(raw, "verify")
 
@@ -977,9 +1047,7 @@ def merge_verdict() -> None:
     # Unconditional, because an empty or unparseable list is not evidence of
     # agreement — it is the absence of evidence, and a PASS that carries no
     # path list must not slip through as though it had matched.
-    reviewed_set = {
-        normalize_compare_path(entry) for entry in reviewed if entry.strip()
-    }
+    reviewed_set = {entry for entry in reviewed if entry}
     derived_set = set(state.get("changed_path_set") or [])
     if not reviewed_set:
         raise WorkflowDataError(
@@ -1001,7 +1069,7 @@ def merge_verdict() -> None:
 
 def merge_adversarial() -> None:
     state = guard()
-    assert_diff_unchanged(state, "adversarial")
+    advisory_diff_check(state, "adversarial")
     raw = read_stdin_text()
     result = parse_agent_json(raw, "adversarial")
 
@@ -1066,22 +1134,35 @@ def revise() -> None:
 
 def finalize() -> None:
     state = guard()
-    base = state["base"]
-    # The last opportunity to catch a write that landed after review.
-    assert_diff_unchanged(state, "finalize")
-    directory = products_directory(state)
-    directory.mkdir(parents=True, exist_ok=True)
+    # The pin arrives from the run context, not from the state file, and
+    # everything published is derived from it. A state file that disagrees with
+    # it has been edited, which is a stop rather than a decline.
+    pin = parse_review_pin(read_stdin_text())
+    if state.get("base") != pin["base"]:
+        raise WorkflowDataError(
+            "the recorded base does not match the pinned base, so the state "
+            "file was changed during the run; nothing is delivered"
+        )
+    if state.get("reviewed_diff_sha256") != pin["diff_sha256"]:
+        raise WorkflowDataError(
+            "the recorded fingerprint does not match the pinned fingerprint, "
+            "so the state file was changed during the run; nothing is delivered"
+        )
 
-    payload = capture_diff(base, directory / "patch.diff")
+    base = pin["base"]
+    payload = assert_pinned_bytes(pin)
     if not payload.strip():
         raise WorkflowDataError(
             "the change produced an empty diff at the point of delivery"
         )
+
+    directory = products_directory(state)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "patch.diff").write_bytes(payload)
+
+    state["base"] = base
     state["patch_sha256"] = sha256_bytes(payload)
-    if state["patch_sha256"] != state.get("reviewed_diff_sha256"):
-        raise WorkflowDataError(
-            "the delivered bytes are not the reviewed bytes"
-        )
+    state["reviewed_diff_sha256"] = pin["diff_sha256"]
     state["status"] = "patch_written"
 
     record = build_record(state, "patch_written")

@@ -111,6 +111,7 @@ class Workspace:
 
     def __init__(self, directory: Path) -> None:
         self.path = directory
+        self.context_updates: dict = {}
         git("init", "-q", ".", cwd=directory)
         git("config", "user.email", "test@example.invalid", cwd=directory)
         git("config", "user.name", "Test", cwd=directory)
@@ -152,6 +153,12 @@ class Workspace:
             cwd=self.path,
         )
 
+    def review_pin(self) -> str:
+        """What Fabro's context would hand back to finalize via stdin_source."""
+        pin = self.context_updates.get("review_pin")
+        assert pin, "assess-change never emitted a review pin"
+        return pin
+
     def engine(self, command: str, stdin: str = "") -> subprocess.CompletedProcess:
         return subprocess.run(
             [
@@ -169,7 +176,10 @@ class Workspace:
         payload = result.stdout.decode("utf-8").strip().splitlines()
         for line in reversed(payload):
             if line.startswith("{"):
-                return json.loads(line)["context_updates"]
+                updates = json.loads(line)["context_updates"]
+                # Fabro merges each node's updates into one run context.
+                self.context_updates.update(updates)
+                return updates
         raise AssertionError(f"no routing output: {result.stdout!r} {result.stderr!r}")
 
     def state(self) -> dict:
@@ -504,7 +514,7 @@ class ReviewedBytesTests(WorkspaceTest):
             FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
         )
         self.workspace.checkpoint("late")
-        result = self.workspace.engine("finalize")
+        result = self.workspace.engine("finalize", self.workspace.review_pin())
         self.assertEqual(result.returncode, 2)
         self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
         self.assertFalse(sorted(self.workspace.path.glob("SECURITY-PATCH-*")))
@@ -512,11 +522,117 @@ class ReviewedBytesTests(WorkspaceTest):
     def test_delivered_patch_hash_equals_the_reviewed_hash(self) -> None:
         self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
         self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
-        self.workspace.engine("finalize")
+        self.workspace.engine("finalize", self.workspace.review_pin())
         record = json.loads(
             (self.workspace.products() / "verdict.json").read_text(encoding="utf-8")
         )
         self.assertEqual(record["patchSha256"], record["reviewedDiffSha256"])
+
+
+class TrustedPinTests(WorkspaceTest):
+    """The expected value must live where agents cannot edit it.
+
+    The state file sits in the checkout the generator can write, so a
+    fingerprint kept only there could be rewritten to match a change made
+    afterwards. The pin travels through Fabro's run context instead, which is
+    server-side, and finalize trusts it over anything on disk.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+
+    def rewrite_state(self, **fields) -> None:
+        path = (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+        )
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state.update(fields)
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def smuggle(self) -> None:
+        (self.workspace.path / "app.py").write_text(
+            FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("smuggle")
+
+    def test_the_pin_is_emitted_into_context(self) -> None:
+        pin = json.loads(self.workspace.review_pin())
+        self.assertEqual(pin["base"], self.workspace.base)
+        self.assertRegex(pin["diff_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_rewriting_the_state_fingerprint_does_not_help(self) -> None:
+        """The attack the review described, end to end."""
+        pin = self.workspace.review_pin()
+        self.smuggle()
+        # The agent updates the state file so its own check would pass.
+        forged = ENGINE.sha256_bytes(
+            subprocess.run(
+                [
+                    "git",
+                    "diff",
+                    "--binary",
+                    "--full-index",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--src-prefix=a/",
+                    "--dst-prefix=b/",
+                    self.workspace.base,
+                    "HEAD",
+                ],
+                cwd=self.workspace.path,
+                check=True,
+                stdout=subprocess.PIPE,
+            ).stdout
+        )
+        self.rewrite_state(reviewed_diff_sha256=forged)
+
+        result = self.workspace.engine("finalize", pin)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("state file was changed", result.stderr.decode("utf-8"))
+        self.assertFalse(sorted(self.workspace.path.glob("SECURITY-PATCH-*")))
+
+    def test_rewriting_the_state_base_does_not_help(self) -> None:
+        pin = self.workspace.review_pin()
+        self.rewrite_state(base="0" * 40)
+        result = self.workspace.engine("finalize", pin)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("state file was changed", result.stderr.decode("utf-8"))
+
+    def test_a_smuggled_change_is_caught_against_the_pin(self) -> None:
+        pin = self.workspace.review_pin()
+        self.smuggle()
+        result = self.workspace.engine("finalize", pin)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
+
+    def test_a_missing_pin_refuses_rather_than_publishing(self) -> None:
+        result = self.workspace.engine("finalize", "")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("did not reach this step", result.stderr.decode("utf-8"))
+
+    def test_a_forged_pin_must_still_match_the_tree(self) -> None:
+        # A pin an agent invented cannot describe the tree it did not review.
+        forged = json.dumps(
+            {
+                "base": self.workspace.base,
+                "review_commit": self.workspace.base,
+                "diff_sha256": "0" * 64,
+            }
+        )
+        result = self.workspace.engine("finalize", forged)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("state file was changed", result.stderr.decode("utf-8"))
+
+    def test_the_graph_feeds_finalize_from_context(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        node = re.search(r"    finalize \[(.*?)\n    \]", graph, flags=re.S)
+        assert node
+        self.assertIn('stdin_source="context.review_pin"', node.group(1))
 
 
 class ReviewedPathsTests(WorkspaceTest):
@@ -569,6 +685,28 @@ class AwkwardFilenameTests(WorkspaceTest):
         context = self.workspace.generate(source=None)
         self.assertTrue(context["has_change"])
         self.assertIn(awkward, self.workspace.state()["changed_path_set"])
+
+    def test_a_backslash_is_not_a_directory_separator(self) -> None:
+        r"""On Linux `a\b.py` and `a/b.py` are two different files.
+
+        Rewriting separators before comparing would let a path the reviewer
+        never looked at satisfy the check for one it did.
+        """
+        awkward = "weird\\name.py"
+        (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
+        self.workspace.generate(source=None)
+        payload = {**PASSING_VERDICT, "reviewedPaths": ["weird/name.py"]}
+        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
+
+    def test_surrounding_whitespace_is_part_of_the_name(self) -> None:
+        awkward = " leading.py"
+        (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
+        self.workspace.generate(source=None)
+        payload = {**PASSING_VERDICT, "reviewedPaths": ["leading.py"]}
+        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        self.assertEqual(result.returncode, 2)
 
     def test_a_reviewer_can_match_a_spaced_filename_exactly(self) -> None:
         awkward = "src/report generator.py"
@@ -648,7 +786,7 @@ class DeliveryTests(WorkspaceTest):
         self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
 
     def test_products_carry_the_record_and_the_bytes(self) -> None:
-        self.workspace.engine("finalize")
+        self.workspace.engine("finalize", self.workspace.review_pin())
         products = self.workspace.products()
         record = json.loads((products / "verdict.json").read_text(encoding="utf-8"))
         payload = (products / "patch.diff").read_bytes()
@@ -662,7 +800,7 @@ class DeliveryTests(WorkspaceTest):
         self.assertEqual(record["testsRun"], ENGINE.TESTS_RUN_TEXT)
 
     def test_patch_applies_to_the_recorded_base(self) -> None:
-        self.workspace.engine("finalize")
+        self.workspace.engine("finalize", self.workspace.review_pin())
         products = self.workspace.products()
         git("checkout", "-q", self.workspace.base, "--", "app.py", cwd=self.workspace.path)
         subprocess.run(
@@ -674,7 +812,7 @@ class DeliveryTests(WorkspaceTest):
         )
 
     def test_the_note_leads_with_the_absence_of_tests(self) -> None:
-        self.workspace.engine("finalize")
+        self.workspace.engine("finalize", self.workspace.review_pin())
         note = (self.workspace.products() / "PATCH.md").read_text(encoding="utf-8")
         heading, remainder = note.split("\n", 1)
         self.assertIn("Reviewed patch", heading)
@@ -875,6 +1013,30 @@ class GitWrapperTests(unittest.TestCase):
                     module.validate_arguments(
                         ["diff", "--no-index", "/etc/passwd", "/etc/hosts"]
                     )
+
+    def test_bare_filesystem_operands_are_refused(self) -> None:
+        """Git enters no-index mode on its own, with no flag to blocklist.
+
+        `git diff /etc/passwd /etc/hosts` printed both files before this check
+        existed, so refusing the explicit --no-index flag was not enough.
+        """
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                with self.assertRaises(module.GitWrapperError):
+                    module.validate_arguments(["diff", "/etc/passwd", "/etc/hosts"])
+
+    def test_relative_escapes_are_refused(self) -> None:
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                with self.assertRaises(module.GitWrapperError):
+                    module.validate_arguments(["show", "../../../../etc/passwd"])
+
+    def test_revision_ranges_are_not_mistaken_for_traversal(self) -> None:
+        # `A..B` is one path segment, not a parent reference.
+        for path, module in self.wrapper_modules():
+            with self.subTest(wrapper=path.parent.parent.name):
+                module.validate_arguments(["diff", "HEAD~2..HEAD"])
+                module.validate_arguments(["log", "origin/main..HEAD"])
 
     def test_an_equals_form_is_refused_the_same_way(self) -> None:
         for path, module in self.wrapper_modules():

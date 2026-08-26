@@ -91,14 +91,37 @@ Both sides are read NUL-delimited (`git diff --name-status -z`,
 splitting Git's human-readable output on whitespace would corrupt precisely the
 paths an attacker would choose.
 
-**The delivered bytes must be the reviewed bytes.** Every node is followed by a
-checkpoint that commits whatever the tree holds — a reviewer's writes included.
-Reviewers are told to inspect and not modify, but an instruction is not a
-control: without one, a reviewer's own checkpoint could fold new content into
-the patch *after* review had passed on it. So the change is fingerprinted with
-SHA-256 the moment review begins, and that fingerprint is re-checked before the
-verdict is read, before the adversarial result is read, and once more at
-delivery. A mismatch stops the run; nothing is published.
+**The delivered bytes must be the reviewed bytes, and the expected value must
+live where agents cannot reach it.** Every node is followed by a checkpoint
+that commits whatever the tree holds — a reviewer's writes included. Reviewers
+are told to inspect and not modify, but an instruction is not a control:
+without one, a reviewer's own checkpoint could fold new content into the patch
+*after* review had passed on it.
+
+So the change is fingerprinted with SHA-256 the moment review begins, and the
+fingerprint is emitted into **Fabro's run context** as the `review_pin`, along
+with the base commit. That distinction is the whole point: this engine's state
+file lives in the checkout the generator can write, so a fingerprint stored
+only there could be rewritten to match a change made afterwards. Run context is
+held by the Fabro server, outside the sandbox, and reaches `finalize` through
+`stdin_source`.
+
+`finalize` therefore trusts the pin over the state file. It refuses to publish
+if the state file's base or fingerprint disagrees with the pin — a disagreement
+means the file was edited during the run — and it derives the patch from the
+pinned base and checks the result against the pinned fingerprint. A mismatch
+stops the run; nothing is published. The earlier checks at the two merge steps
+read the state file instead and are labelled in the code as advisory: they fail
+fast on an honest mistake and are not a boundary.
+
+**What remains state-derived.** The claims text, the summary, and the finding
+fields in the products are read from the state file, so a reviewer agent that
+wrote to the checkout could make a product misreport them. The bound on that is
+routing: whether a run reaches `finalize` at all is decided by context flags
+Fabro holds server-side, so a rejected or unsure verdict cannot be edited into
+a published patch — only the wording of an already-passing one. Closing this
+fully would need a second trusted channel into `finalize`, and `stdin_source`
+carries exactly one.
 
 **A patch touching the workflow's own support directory is declined.** No
 legitimate fix edits the engine that judges it. This rule cannot cover `.git/`,
@@ -109,7 +132,8 @@ whose contents are never tracked and so appear in neither the diff nor
 checkpoint, so a `reset --hard` would leave the local branch behind its pushed
 remote and the next non-force push would fail as non-fast-forward. Both the
 revision round and the decline path restore the base tree in place —
-`git restore --source=<base> --staged --worktree -- .` then `git clean -fd` —
+`git restore --source=<base> --staged --worktree -- .` then
+`git clean -fdx` (excluding only the engine's own runtime state) —
 and let the next checkpoint record the restoration as a forward commit.
 
 **A decline must prove an empty tree.** After restoring, the engine asserts
