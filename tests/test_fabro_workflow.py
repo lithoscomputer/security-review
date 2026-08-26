@@ -1736,7 +1736,6 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertNotIn("goal_gate=true", graph)
         self.assertNotIn("abort ->", graph)
-        self.assertNotIn("on_failure=", graph)
         for gate in (
             "target_gate",
             "inventory_gate",
@@ -1931,6 +1930,28 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
         self.assertNotIn("wait_research_", graph)
         self.assertNotIn("research_retry_gate", graph)
         self.assertEqual(graph.count("max_retries=2"), 7)
+
+    def test_optional_agent_failures_use_explicit_succeed_policy(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("auto_status", graph)
+        optional_nodes = (
+            "threat_models",
+            "threat_model",
+            "research",
+            "researcher",
+            "sweep",
+            "sweeper",
+            "panel",
+            "panel_verifier",
+            "repanel",
+            "repanel_verifier",
+            "redteam",
+            "redteam_verifier",
+        )
+        for node in optional_nodes:
+            body = graph.split(f"    {node} [", 1)[1].split("    ]", 1)[0]
+            self.assertIn('on_failure="succeed"', body, node)
+        self.assertEqual(graph.count('on_failure="succeed"'), 12)
 
     def test_agent_failures_degrade_before_aborting(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")

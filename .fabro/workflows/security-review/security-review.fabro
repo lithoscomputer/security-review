@@ -72,7 +72,7 @@ digraph SecurityReview {
         label="Threat models",
         for_each="context.threat_jobs",
         max_parallel=12,
-        auto_status=true
+        on_failure="succeed"
     ]
     threat_model [
         label="Threat-model component",
@@ -81,7 +81,7 @@ digraph SecurityReview {
         output_schema="@schemas/threat-model.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="7200s",
         project_memory=false
     ]
@@ -107,7 +107,7 @@ digraph SecurityReview {
         label="Research",
         for_each="context.research_jobs",
         max_parallel=24,
-        auto_status=true
+        on_failure="succeed"
     ]
     researcher [
         label="Research component and category",
@@ -116,7 +116,7 @@ digraph SecurityReview {
         output_schema="@schemas/findings.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="10800s",
         project_memory=false
     ]
@@ -134,7 +134,7 @@ digraph SecurityReview {
         label="Gap-fill sweeps",
         for_each="context.sweep_jobs",
         max_parallel=12,
-        auto_status=true
+        on_failure="succeed"
     ]
     sweeper [
         label="Gap-fill sweep",
@@ -143,7 +143,7 @@ digraph SecurityReview {
         output_schema="@schemas/findings.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="10800s",
         project_memory=false
     ]
@@ -169,7 +169,7 @@ digraph SecurityReview {
         label="Three-lens panel",
         for_each="context.verification_jobs",
         max_parallel=24,
-        auto_status=true
+        on_failure="succeed"
     ]
     panel_verifier [
         label="Verify candidate",
@@ -178,7 +178,7 @@ digraph SecurityReview {
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="7200s",
         project_memory=false
     ]
@@ -204,7 +204,7 @@ digraph SecurityReview {
         label="Repanel marginal keeps",
         for_each="context.repanel_jobs",
         max_parallel=24,
-        auto_status=true
+        on_failure="succeed"
     ]
     repanel_verifier [
         label="Recheck marginal candidate",
@@ -213,7 +213,7 @@ digraph SecurityReview {
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="7200s",
         project_memory=false
     ]
@@ -239,7 +239,7 @@ digraph SecurityReview {
         label="Red-team every survivor",
         for_each="context.redteam_jobs",
         max_parallel=24,
-        auto_status=true
+        on_failure="succeed"
     ]
     redteam_verifier [
         label="Red-team candidate",
@@ -248,7 +248,7 @@ digraph SecurityReview {
         output_schema="@schemas/verdict.schema.json",
         output_retries=2,
         max_retries=2,
-        auto_status=true,
+        on_failure="succeed",
         timeout="10800s",
         project_memory=false
     ]
