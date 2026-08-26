@@ -223,6 +223,9 @@ three claims, and a third agent attacks the change on its own. A single
 objection buys one revision round; a second declines. Every product calls the
 result a **reviewed patch** — never verified or tested.
 
+A failed generator, verifier, or adversarial agent declines the patch. A failed
+deterministic stage stops at that stage. Neither failure can publish a patch.
+
 ### Run it
 
 Build the goal from a report, then run:

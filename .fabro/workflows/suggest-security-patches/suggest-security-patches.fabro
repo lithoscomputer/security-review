@@ -3,6 +3,7 @@ digraph SuggestSecurityPatches {
         goal="Fix one security finding in this repository and deliver the change as a reviewed patch.",
         default_max_retries=0,
         default_fidelity="compact",
+        on_failure="exit",
         stall_timeout="14400s",
         model_stylesheet="
             * { model: kimi-k3; reasoning_effort: low; }
@@ -14,12 +15,6 @@ digraph SuggestSecurityPatches {
 
     start [shape=Mdiamond, label="Start"]
     exit  [shape=Msquare, label="Exit"]
-    abort [
-        shape=parallelogram,
-        label="Abort after fatal deterministic failure",
-        timeout="10s",
-        script="echo 'suggest-security-patches stopped after a fatal deterministic failure.' >&2; exit 1"
-    ]
 
     // Every deterministic node re-checks the support files it executes before
     // running them. The generator can write to this checkout, so a one-time
@@ -42,6 +37,7 @@ digraph SuggestSecurityPatches {
         output_schema="@schemas/generate.schema.json",
         output_retries=2,
         max_retries=2,
+        on_failure="route",
         timeout="10800s",
         fidelity="compact",
         project_memory=false,
@@ -91,6 +87,7 @@ digraph SuggestSecurityPatches {
         output_schema="@schemas/patch-verdict.schema.json",
         output_retries=2,
         max_retries=2,
+        on_failure="route",
         timeout="10800s",
         project_memory=false,
         max_visits=2
@@ -112,6 +109,7 @@ digraph SuggestSecurityPatches {
         output_schema="@schemas/adversarial.schema.json",
         output_retries=2,
         max_retries=2,
+        on_failure="route",
         timeout="10800s",
         project_memory=false,
         max_visits=2
@@ -158,8 +156,7 @@ digraph SuggestSecurityPatches {
 
     start -> prepare
     prepare -> generate [condition="outcome=succeeded && context.finding_located=true"]
-    prepare -> no_patch [condition="outcome=succeeded && context.finding_located=false"]
-    prepare -> abort
+    prepare -> no_patch
 
     generate -> assess_change [condition="outcome=succeeded"]
     generate -> no_patch
@@ -168,8 +165,7 @@ digraph SuggestSecurityPatches {
     // the tree against the base carried in the run context and decides where
     // the run goes. One routing key, so the three outcomes cannot overlap.
     assess_change -> no_patch [condition="outcome=succeeded && context.declined=true"]
-    assess_change -> pin_review [condition="outcome=succeeded && context.declined=false"]
-    assess_change -> abort
+    assess_change -> pin_review
 
     // Both ways out of the gate that are not an answer are routed by
     // condition, the first and most deterministic step of Fabro's transition
@@ -183,30 +179,24 @@ digraph SuggestSecurityPatches {
 
     pin_review -> verify [condition="outcome=succeeded && context.pin_next=verify"]
     pin_review -> owner_gate [condition="outcome=succeeded && context.pin_next=ask"]
-    pin_review -> no_patch [condition="outcome=succeeded && context.pin_next=decline"]
-    pin_review -> abort
+    pin_review -> no_patch
 
     verify -> merge_verdict [condition="outcome=succeeded"]
     verify -> no_patch
 
     merge_verdict -> adversarial [condition="outcome=succeeded && context.verdict_pass=true"]
     merge_verdict -> revise [condition="outcome=succeeded && context.retry=true"]
-    merge_verdict -> no_patch [condition="outcome=succeeded && context.declined=true"]
-    merge_verdict -> abort
+    merge_verdict -> no_patch
 
     adversarial -> merge_adversarial [condition="outcome=succeeded"]
     adversarial -> no_patch
 
     merge_adversarial -> finalize [condition="outcome=succeeded && context.adversarial_clean=true"]
     merge_adversarial -> revise [condition="outcome=succeeded && context.retry=true"]
-    merge_adversarial -> no_patch [condition="outcome=succeeded && context.declined=true"]
-    merge_adversarial -> abort
+    merge_adversarial -> no_patch
 
-    revise -> generate [condition="outcome=succeeded"]
-    revise -> abort
+    revise -> generate
 
-    finalize -> exit [condition="outcome=succeeded"]
-    finalize -> abort
-    no_patch -> exit [condition="outcome=succeeded"]
-    no_patch -> abort
+    finalize -> exit
+    no_patch -> exit
 }

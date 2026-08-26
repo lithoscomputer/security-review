@@ -1284,6 +1284,7 @@ result file and do not add narration.</pre>
       produces a fix, opened as a draft pull request against the branch the run cloned.
       One finding per run, one pull request per run. It writes to its sandbox checkout,
       which the review never does, so its rules are about not trusting its own tree.
+      A failed agent declines the patch; a failed deterministic step stops the run.
     </p>
 
     <div class="ladder">

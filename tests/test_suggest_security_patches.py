@@ -1291,10 +1291,44 @@ class GraphAndConfigurationTests(unittest.TestCase):
         assert node
         self.assertIn("max_visits=3", node.group(1))
 
-    def test_every_terminal_path_reaches_exit_or_abort(self) -> None:
+    def test_native_failure_policies_preserve_agent_declines(self) -> None:
+        self.assertIn('on_failure="exit"', self.graph)
+        self.assertNotIn("    abort [", self.graph)
+        self.assertNotIn(" -> abort", self.graph)
+
+        for node in ("generate", "verify", "adversarial"):
+            match = re.search(
+                r"    " + node + r" \[(.*?)\n    \]",
+                self.graph,
+                flags=re.S,
+            )
+            assert match
+            self.assertIn('on_failure="route"', match.group(1), node)
+            self.assertIn(
+                f'{node} -> '
+                + {
+                    "generate": "assess_change",
+                    "verify": "merge_verdict",
+                    "adversarial": "merge_adversarial",
+                }[node]
+                + ' [condition="outcome=succeeded"]',
+                self.graph,
+            )
+            self.assertIn(f"    {node} -> no_patch\n", self.graph)
+
+        for edge in (
+            "prepare -> no_patch",
+            "assess_change -> pin_review",
+            "pin_review -> no_patch",
+            "merge_verdict -> no_patch",
+            "merge_adversarial -> no_patch",
+            "revise -> generate",
+        ):
+            self.assertIn(f"    {edge}\n", self.graph)
+
+    def test_every_terminal_path_reaches_exit(self) -> None:
         for node in ("finalize", "no_patch"):
-            self.assertIn(f"{node} -> exit", self.graph)
-            self.assertIn(f"{node} -> abort", self.graph)
+            self.assertIn(f"    {node} -> exit\n", self.graph)
 
     def test_configurations_disable_repository_hooks_at_checkpoint(self) -> None:
         for name in CONFIGS:

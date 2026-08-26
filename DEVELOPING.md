@@ -122,11 +122,12 @@ limit. A deterministic merge step normalizes agent output and records missing
 responses. A missing response reduces coverage instead of changing vote
 arithmetic.
 
-The graph uses `on_failure="exit"`. A failed node stops unless an explicit
-recovery edge matches. Keep `outcome=succeeded` on each non-default conditional
-edge so stale context cannot become a recovery route. An unconditional default
-edge is safe because Fabro skips it after a failure. Inventory is the exception:
-its explicit failure edge records the fallback before the workflow continues.
+The `security-review` graph uses `on_failure="exit"`. A failed node stops unless
+an explicit recovery edge matches. Keep `outcome=succeeded` on each non-default
+conditional edge so stale context cannot become a recovery route. An
+unconditional default edge is safe because Fabro skips it after a failure.
+Inventory is the exception: its explicit failure edge records the fallback
+before the workflow continues.
 
 ### Integrity checks protect publication
 
@@ -142,6 +143,11 @@ during the review.
 
 The generator can write anywhere in the checkout, so nothing downstream of it
 takes the tree at face value.
+
+The patch graph also uses `on_failure="exit"`. Its `generate`, `verify`, and
+`adversarial` nodes override that policy with `on_failure="route"` because an
+agent failure must take the `no_patch` edge. Deterministic failures still stop
+at the failed node.
 
 Paths are compared exactly as Git spells them, read NUL-delimited
 (`git diff --name-status -z`, `git ls-files -z`). Do not trim them or rewrite
