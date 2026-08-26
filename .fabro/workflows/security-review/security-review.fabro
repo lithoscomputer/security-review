@@ -34,7 +34,6 @@ digraph SecurityReview {
         output_retries=2,
         max_retries=2,
         timeout="3600s",
-        fidelity="compact",
         project_memory=false,
         max_visits=2
     ]

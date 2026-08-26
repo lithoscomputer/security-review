@@ -1918,6 +1918,8 @@ class FabroWorkflowStaticContractTest(unittest.TestCase):
     def test_optional_agent_failures_use_explicit_succeed_policy(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
         self.assertNotIn("auto_status", graph)
+        inventory = graph.split("    inventory [", 1)[1].split("    ]", 1)[0]
+        self.assertNotIn('fidelity="compact"', inventory)
         optional_nodes = (
             "threat_models",
             "threat_model",

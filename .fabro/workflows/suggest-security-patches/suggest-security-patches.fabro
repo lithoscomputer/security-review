@@ -39,7 +39,6 @@ digraph SuggestSecurityPatches {
         max_retries=2,
         on_failure="route",
         timeout="10800s",
-        fidelity="compact",
         project_memory=false,
         max_visits=3
     ]

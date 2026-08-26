@@ -1290,6 +1290,7 @@ class GraphAndConfigurationTests(unittest.TestCase):
         node = re.search(r"    generate \[(.*?)\n    \]", self.graph, flags=re.S)
         assert node
         self.assertIn("max_visits=3", node.group(1))
+        self.assertNotIn('fidelity="compact"', node.group(1))
 
     def test_native_failure_policies_preserve_agent_declines(self) -> None:
         self.assertIn('on_failure="exit"', self.graph)
