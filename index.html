@@ -1305,7 +1305,7 @@ result file and do not add narration.</pre>
       produces a fix, opened as a draft pull request against the branch the run cloned.
       One finding per run, one pull request per run. It writes to its sandbox checkout,
       which the review never does, so its rules are about not trusting its own tree.
-      A failed agent declines the patch; a failed deterministic step stops the run.
+      A failed stage exits the run and cannot publish a patch.
     </p>
 
     <div class="ladder">
@@ -1314,22 +1314,32 @@ result file and do not add narration.</pre>
         <span class="what">Validates the finding — it arrives as the run's goal, one JSONL record — and locates the flagged code at HEAD by <em>snippet</em> and <em>symbol</em> content, never by line number. Code that has changed since the scan is declined, not patched blind.</span>
       </div>
       <div class="rung">
-        <span class="votes">generate</span>
-        <span class="what">Implements the root-cause fix, one idea per diff. If the fix needs a decision only the owner can make, it changes nothing and asks — once.</span>
+        <span class="votes">plan</span>
+        <span class="what">GPT Sol at max reasoning traces the root cause, exploit path, trust boundary, compatibility risks, and smallest implementation. A second GPT Sol agent reviews and repairs that plan before code changes. The plan can ask the owner one question.</span>
       </div>
       <div class="rung">
-        <span class="votes">assess</span>
-        <span class="what">Deterministic. Derives the changed set from Git, not from the generator's account of it. Fabro has already committed the work by now, so a staged diff would be empty.</span>
+        <span class="votes">implement</span>
+        <span class="what">GPT Sol at high reasoning implements the reviewed plan. It makes the smallest sound change and preserves unrelated behavior.</span>
       </div>
       <div class="rung">
-        <span class="votes">verify</span>
-        <span class="what">An independent reviewer reads the diff and states three claims: targeted, no new vulnerability, behaviour unchanged. Its path list is cross-checked against the engine's.</span>
+        <span class="votes">assess + pin</span>
+        <span class="what">Deterministic. Derives the changed set from Git, rejects protected workflow changes, and pins the exact diff against the trusted server-side base before review.</span>
       </div>
       <div class="rung">
-        <span class="votes">attack</span>
-        <span class="what">A third agent sees only the bare diff and answers one question: what can an attacker do with this change that they could not do before it?</span>
+        <span class="votes">6 reviews</span>
+        <span class="what">Six GPT Sol agents at high reasoning run in parallel: exploit closure, new attack paths, compatibility and behavior, completeness and evidence, design economy, and performance and lifetime. The completeness path list must match Git exactly.</span>
+      </div>
+      <div class="rung">
+        <span class="votes">consolidate</span>
+        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane findings without launching more reviewers. It returns exactly one outcome: clean, fix, or decline.</span>
       </div>
     </div>
+
+    <p class="lede" style="margin-top:22px">
+      Every agent uses GPT Sol. Fallbacks try Opus first, then Moonshot and
+      OpenRouter Kimi K3. Fixup uses xhigh reasoning; Kimi K3 does not support
+      xhigh, so Opus is its only effective fallback.
+    </p>
 
     <p class="lede" style="margin-top:22px">
       What each outcome does:
@@ -1340,16 +1350,16 @@ result file and do not add narration.</pre>
         <span class="what">The patch is earned. A draft pull request carries the fix; the artifacts carry the record — claims, evidence, base commit, and the patch's SHA-256.</span>
       </div>
       <div class="rung marginal">
-        <span class="votes">1 objection</span>
-        <span class="what">One revision round. The tree is restored to the base <em>in place</em> — never with a reset, which would strand the pushed branch — and a fresh attempt begins with the objections.</span>
+        <span class="votes">1 fix</span>
+        <span class="what">One focused GPT Sol fixup at xhigh reasoning addresses the consolidated findings in the current patch. All six review lanes then run again.</span>
       </div>
       <div class="rung dropped">
-        <span class="votes">2 objections</span>
-        <span class="what">Declined. No pull request. The note names the blocking claim and carries the report's original recommendation.</span>
+        <span class="votes">2nd blocker</span>
+        <span class="what">Declined. No second fixup and no pull request. The note records the consolidated blocker and the report's original recommendation.</span>
       </div>
       <div class="rung dropped">
-        <span class="votes">any UNSURE</span>
-        <span class="what">Declined immediately, with no revision round. A point the reviewer could not establish by reading is not something a fresh attempt can fix.</span>
+        <span class="votes">decline</span>
+        <span class="what">The consolidator found no safe automated repair. The run restores the final tree to the base and writes a decline bundle.</span>
       </div>
       <div class="rung dropped">
         <span class="votes">tampering</span>
@@ -1363,7 +1373,7 @@ result file and do not add narration.</pre>
     <div class="ladder">
       <div class="rung marginal">
         <span class="votes">no tests</span>
-        <span class="what">It runs none. Every claim rests on reading the change and its callers, and every product says so — the label is <em>reviewed patch</em>, never verified or tested. Wire your own verification between the verify and finalize nodes.</span>
+        <span class="what">It runs none. Every claim rests on reading the change and its callers, and every product says so — the label is <em>reviewed patch</em>, never verified or tested. Wire deterministic verification into the clean route between consolidation and finalization.</span>
       </div>
       <div class="rung marginal">
         <span class="votes">not private</span>

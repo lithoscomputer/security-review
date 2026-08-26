@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reviewed security patch plan",
+  "type": "object",
+  "required": [
+    "rootCause",
+    "exploitPath",
+    "trustBoundary",
+    "implementationSteps",
+    "expectedFiles",
+    "compatibilityRisks",
+    "validationPlan",
+    "ownerQuestion",
+    "declineReason"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rootCause": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "exploitPath": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "trustBoundary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "implementationSteps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "expectedFiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "compatibilityRisks": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "validationPlan": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "ownerQuestion": { "type": ["string", "null"], "maxLength": 2000 },
+    "declineReason": { "type": ["string", "null"], "maxLength": 2000 }
+  }
+}

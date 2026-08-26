@@ -35,7 +35,12 @@ exclude_globs = [
 ]
 
 [run.model.fallbacks]
-"kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", "claude-opus-5"]
+"gpt-sol" = [
+  "anthropic:claude-opus-5",
+  "openrouter:claude-opus-5",
+  "moonshot:kimi-k3",
+  "openrouter:kimi-k3",
+]
 
 [run.environment]
 id = "suggest-security-patches"

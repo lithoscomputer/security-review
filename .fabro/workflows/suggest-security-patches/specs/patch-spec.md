@@ -1,9 +1,9 @@
 # Patch products specification
 
 What one `suggest-security-patches` run leaves behind, and the rules the
-deterministic engine follows to produce it. Agents generate, review, and attack
-the change; `suggest_patches.py` decides everything that follows from what they
-return and writes every file. No model writes a product.
+deterministic engine follows to produce it. Agents plan, review the plan,
+implement, review in six lanes, consolidate, and perform at most one fixup.
+`suggest_patches.py` owns routing and writes every product.
 
 This mirrors the scan workflow's `report-spec.md`: the model judges, the code
 decides, so no reviewed byte and no confidence claim is ever re-typed by a
@@ -58,10 +58,13 @@ weight:
 | `base` | The 40-hex commit every reviewed byte applies to |
 | `patchSha256` | SHA-256 of `patch.diff`, or null on a decline |
 | `claims` | Review confidence only: `targeted`, `noNewVulnerability`, `behaviourUnchanged`, each `{state, evidence}` |
+| `reviewLanes` | The latest six focused review results |
+| `consolidation` | The final `clean`, `fix`, or `decline` decision and verified findings |
+| `reviewRound` | `1` initially or `2` after the one allowed fixup |
 | `untested` | Always `true` |
 | `testsRun` | Always the same sentence — this workflow runs no tests |
 | `changedPaths` | The engine's Git-derived changed set, in name-status form |
-| `reviewedPaths` | The verifier's own list of touched paths, cross-checked against the engine's set |
+| `reviewedPaths` | The completeness review's touched paths, cross-checked against the engine's set |
 | `reviewedDiffSha256` | SHA-256 of the change as it stood when review began |
 | `tamperingSignals` | Anything the integrity checks noticed, even on a successful run |
 
@@ -72,19 +75,21 @@ runs the project. Any product that blurs the two is wrong.
 
 ## Rules the engine follows
 
-**The changed set comes from Git, never from the generator.** Fabro checkpoints
-after every node — it stages and commits the tree before the next node starts —
-so by the time the engine looks, the generator's work is a commit and a staged
-diff would be empty. The set is derived from `git diff <base>..HEAD
---name-status`. The generator's `changedFiles` is context for the reviewer and
-is never the record.
+**The workflow plans before it edits.** Planning and plan review are mandatory.
+The reviewer returns a complete repaired plan. One owner question is allowed
+before implementation. The engine confirms that planning left the checkout at
+the trusted base. If no safe plan exists, the run declines.
 
-**The verifier's paths must match, and silence is not agreement.** The
-comparison is unconditional and exact: the verifier reports every path the
-change touches as a bare repository-relative path, and a disagreement — or an
-empty list, or a summary phrase in place of paths — stops the run. A check that
-skipped itself when the reviewer said nothing would pass exactly the cases it
-exists to catch.
+**The changed set comes from Git, never from an implementer.** Fabro checkpoints
+after every node — it stages and commits the tree before the next node starts —
+so by the time the engine looks, the implementer's work is a commit and a staged
+diff would be empty. The set is derived from `git diff <base>..HEAD
+--name-status`. The implementer's `changedFiles` is advisory and never the
+record.
+
+**The completeness review's paths must match.** The comparison is exact. The
+reviewer reports every path the change touches as a bare repository-relative
+path. A disagreement or empty list stops the run.
 
 Both sides are read NUL-delimited (`git diff --name-status -z`,
 `git ls-files -z`). A filename may contain a space, a tab, or a newline, and
@@ -101,24 +106,25 @@ without one, a reviewer's own checkpoint could fold new content into the patch
 So the change is fingerprinted with SHA-256 the moment review begins, and the
 fingerprint is emitted into **Fabro's run context** as the `review_pin`, along
 with the base commit. That distinction is the whole point: this engine's state
-file lives in the checkout the generator can write, so a fingerprint stored
+file lives in the checkout the implementers can write, so a fingerprint stored
 only there could be rewritten to match a change made afterwards. Run context is
 held by the Fabro server, outside the sandbox, and reaches `finalize` through
 `stdin_source`.
 
 **Every step whose outcome can reach publication reads the base from the run
-context.** `prepare` emits `patch_base`; `pin_review`, `revise`, and `no_patch`
-each take it back through `stdin_source`. This is not belt-and-braces. A base
+context.** `prepare` emits `patch_base`; `check_plan_clean`, `pin_review`, and
+`no_patch` each take it back through `stdin_source`. This is not
+belt-and-braces. A base
 forged in the state file makes a real change measure as no change at all, which
 routes the run to a decline — and a decline that restored to that same forged
 base would leave the change sitting in the run branch, giving publication a
 non-empty diff to open a pull request from. A declined run would publish an
 unreviewed patch. The trusted base is what makes a decline real.
 
-`assess_change` spends its single `stdin_source` on the generator's output, so
+`assess_change` spends its single `stdin_source` on an implementer's output, so
 it could only obtain a base by reading the state file. It therefore obtains
-none: it records what the generator said — its summary, its refusal, its
-question — and runs no Git at all. Every measurement belongs to `pin_review`,
+none: it records the summary and refusal and performs no trusted measurement.
+Every publication measurement belongs to `pin_review`,
 which reads the trusted base and decides where the run goes through one routing
 key. There is no step left that measures the tree against a value an agent
 could choose.
@@ -127,19 +133,19 @@ could choose.
 if the state file's base or fingerprint disagrees with the pin — a disagreement
 means the file was edited during the run — and it derives the patch from the
 pinned base and checks the result against the pinned fingerprint. A mismatch
-stops the run; nothing is published. The earlier checks at the two merge steps
+stops the run; nothing is published. Earlier review checks
 read the state file instead and are labelled in the code as advisory: they fail
 fast on an honest mistake and are not a boundary.
 
-**What remains state-derived.** The claims text, the summary, the reviewer's
-own `reviewedPaths`, and the finding fields in the products are read from the
+**What remains state-derived.** The claims text, review summaries, the
+completeness review's `reviewedPaths`, and the finding fields are read from the
 state file, so a reviewer agent that wrote to the checkout could make a product
 misreport them. (The published `changedPaths` is not among them: it comes from
 the pin, so what a reader is told the patch touches is derived from the trusted
 base.) A reviewer forging its own claim record is in any case forging something
-it already controls through its verdict. The bound on that is
+it already controls through its review result. The bound on that is
 routing: whether a run reaches `finalize` at all is decided by context flags
-Fabro holds server-side, so a rejected or unsure verdict cannot be edited into
+Fabro holds server-side, so a declined review cannot be edited into
 a published patch — only the wording of an already-passing one. Closing this
 fully would need a second trusted channel into `finalize`, and `stdin_source`
 carries exactly one.
@@ -149,20 +155,26 @@ legitimate fix edits the engine that judges it. This rule cannot cover `.git/`,
 whose contents are never tracked and so appear in neither the diff nor
 `git status`; hook and repository configuration is inspected directly instead.
 
+**One fixup is allowed.** Six review lanes run in parallel: exploit closure,
+new attack paths, compatibility and behavior, patch completeness and evidence,
+design economy, and performance and lifetime. One consolidator returns
+`clean`, `fix`, or `decline`. A `fix` updates the current patch in place and
+runs all six lanes again. A verified second-round finding declines the patch.
+A server-side `fixup_used` flag prevents a second repair cycle. A surviving
+form of the original exploit is always blocking.
+
 **Restoration never rewrites history.** Fabro pushes the run branch after every
 checkpoint, so a `reset --hard` would leave the local branch behind its pushed
-remote and the next non-force push would fail as non-fast-forward. Both the
-revision round and the decline path restore the base tree in place —
+remote and the next non-force push would fail as non-fast-forward. The decline
+path restores the base tree in place —
 `git restore --source=<base> --staged --worktree -- .` then
 `git clean -fdx` (excluding only the engine's own runtime state) —
-and let the next checkpoint record the restoration as a forward commit.
+and lets the next checkpoint record the restoration as a forward commit.
 
 **A decline must prove an empty tree.** After restoring, the engine asserts
 that the working tree and index hold exactly the base content and that no
-leftover file survives — ignored files included, since `git clean -fd` alone
-would keep them and a "fresh" attempt would inherit whatever a rejected one
-left in a cache or build directory. The sweep is `git clean -fdx`, excluding
-only the engine's own runtime state, and the check that follows uses
+leftover file survives, including ignored files. The sweep is `git clean -fdx`,
+excluding only the engine's own runtime state, and the check that follows uses
 `git ls-files --others` *without* `--exclude-standard` so an ignored leftover
 cannot pass unseen. That invariant is the only thing
 standing between a rejected attempt and an opened pull request, because Fabro
@@ -178,7 +190,7 @@ documents rather than one it can remove.
 
 The run stops, with a message naming the problem, when: the goal is not one
 finding object; a finding id is malformed; a `file` path is absolute or escapes
-the repository; a pinned support file changed during the run; the verifier's
-paths disagree with the derived set; the delivered diff is empty at
+the repository; a pinned support file changed during the run; the completeness
+review's paths disagree with the derived set; the delivered diff is empty at
 `finalize`; or a decline cannot prove a clean tree. A refusal is corrected and
 the run repeated — never worked around.

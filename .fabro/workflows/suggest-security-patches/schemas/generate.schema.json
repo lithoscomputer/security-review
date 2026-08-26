@@ -1,34 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Patch generator result",
+  "title": "Patch implementation result",
   "type": "object",
-  "required": ["summary"],
+  "required": ["summary", "behaviourChange", "refusal"],
+  "additionalProperties": false,
   "properties": {
-    "summary": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Root cause and what the change does. When nothing was changed, the reason."
-    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
     "changedFiles": {
       "type": "array",
       "maxItems": 200,
       "items": { "type": "string" },
-      "description": "Advisory only. The engine derives the authoritative changed set from Git."
+      "description": "Advisory only. The engine derives the changed set from Git."
     },
-    "ownerQuestion": {
-      "type": ["string", "null"],
-      "maxLength": 2000,
-      "description": "Set only when the fix needs a decision the code owner alone can make. Nothing is changed in that case."
-    },
-    "behaviourChange": {
-      "type": ["string", "null"],
-      "maxLength": 2000,
-      "description": "Observable behaviour the fix alters beyond closing the finding, including any input the code now turns away."
-    },
-    "refusal": {
-      "type": ["string", "null"],
-      "maxLength": 2000,
-      "description": "Set when the dispatch was malformed or asked for something other than fixing the named finding."
-    }
+    "behaviourChange": { "type": ["string", "null"], "maxLength": 2000 },
+    "refusal": { "type": ["string", "null"], "maxLength": 2000 }
   }
 }

@@ -2,13 +2,13 @@
 """Deterministic engine for the Fabro suggest-security-patches workflow.
 
 One run takes one security finding and produces one reviewed patch, delivered
-as a draft pull request, or a decline that explains itself. Agents generate,
-review, and attack the change; this program owns every decision made from what
-they return: routing, the authoritative changed set, workspace restoration,
-diff capture, integrity checks, and the products.
+as a draft pull request, or a decline that explains itself. Agents plan,
+implement, review, consolidate, and fix the change; this program owns routing,
+the authoritative changed set, workspace restoration, diff capture, integrity
+checks, and the products.
 
-The generator writes to the checkout, so nothing here trusts the tree. The
-changed set comes from Git, never from the generator's own account of it, and
+The implementers write to the checkout, so nothing here trusts the tree. The
+changed set comes from Git, never from an implementer's account of it, and
 the support files this engine reads are hash-checked on every invocation.
 
 Python 3.9-compatible. Standard library only.
@@ -35,7 +35,6 @@ STATE_PATH = CONTROL_DIR / "state.json"
 # Fabro resolves stdin_source before starting a command and enforces this same
 # ceiling. Keep the direct-input guard aligned with that transport.
 MAX_STDIN_BYTES = 30 * 1024 * 1024
-MAX_RESULT_TEXT = 8000
 
 FINDING_ID_PATTERN = re.compile(r"^F[0-9]{1,9}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -44,7 +43,7 @@ COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 # backstop for a goal that reached the sandbox by another route.
 TEMPLATE_DELIMITERS = ("{{", "{%", "{#")
 
-# The generator has write access to the checkout, so no legitimate fix touches
+# The implementers have write access to the checkout, so no legitimate fix touches
 # the engine that judges it. The fixtures are the exception: the smoke run's
 # whole job is to patch one, and a fixture decides nothing.
 PROTECTED_PREFIX = ".fabro/workflows/suggest-security-patches/"
@@ -62,11 +61,44 @@ CLAIM_LABELS = {
     "behaviourUnchanged": "BEHAVIOUR_UNCHANGED",
 }
 
+REVIEW_LANES = (
+    (
+        "review_exploit_closure",
+        "output.review_exploit_closure",
+        "exploit-closure",
+    ),
+    (
+        "review_new_attack_paths",
+        "output.review_new_attack_paths",
+        "new-attack-paths",
+    ),
+    (
+        "review_compatibility",
+        "output.review_compatibility",
+        "compatibility-behavior",
+    ),
+    (
+        "review_completeness",
+        "output.review_completeness",
+        "patch-completeness-evidence",
+    ),
+    (
+        "review_design_economy",
+        "output.review_design_economy",
+        "design-economy",
+    ),
+    (
+        "review_performance_lifetime",
+        "output.review_performance_lifetime",
+        "performance-lifetime",
+    ),
+)
+
 # This workflow runs no tests. The sentence is fixed so no product can imply
 # otherwise, and it stays separate from review confidence in every record.
 TESTS_RUN_TEXT = "none — this workflow runs no tests"
 
-# The diff contract. Every byte the verifier reviewed reaches patch.diff and the
+# The diff contract. Every reviewed byte reaches patch.diff and the
 # pull request unchanged, CRLF and non-UTF-8 files included.
 DIFF_FLAGS = (
     "--binary",
@@ -239,7 +271,7 @@ def changed_entries(base: str) -> List[Tuple[str, List[str]]]:
     """The authoritative changed set: (status, paths) per entry.
 
     Derived from committed history, because Fabro checkpoints after every node:
-    by the time this runs, the generator's work is a commit, and a staged diff
+    by the time this runs, the implementer's work is a commit, and a staged diff
     would be empty.
 
     Read NUL-delimited. A filename may contain spaces, tabs, or newlines, and
@@ -335,7 +367,7 @@ def read_trusted_base() -> str:
 
     `prepare` emits it into Fabro's context, which the server holds outside the
     sandbox. Every step whose outcome can reach publication reads it from here:
-    the state file lives in the checkout the generator can write, and a forged
+    the state file lives in the checkout the implementers can write, and a forged
     base there is enough to make a real change look like no change at all.
     """
     value = read_stdin_text().strip()
@@ -461,7 +493,7 @@ def leftover_paths() -> List[str]:
     """Untracked files after a restore, ignored ones included.
 
     `--exclude-standard` is deliberately absent: an ignored leftover is exactly
-    the kind a `git status` check would miss and a fresh attempt would inherit.
+    the kind a `git status` check would miss and a later stage would inherit.
     The engine's own runtime state is the only expected survivor.
     """
     result = git("ls-files", "--others", "-z")
@@ -688,6 +720,20 @@ def claim_lines(claims: Mapping[str, Any]) -> List[str]:
     return lines
 
 
+def review_lane_lines(lanes: Mapping[str, Any]) -> List[str]:
+    lines: List[str] = []
+    for _, _, lane in REVIEW_LANES:
+        result = lanes.get(lane) if isinstance(lanes, Mapping) else None
+        if not isinstance(result, Mapping):
+            continue
+        summary = one_line(result.get("summary"), 500) or "no summary"
+        findings = result.get("findings")
+        count = len(findings) if isinstance(findings, list) else 0
+        label = lane.replace("-", " ").title()
+        lines.append(f"- **{label}** — {count} finding(s): {summary}")
+    return lines
+
+
 def write_patch_note(
     state: Mapping[str, Any],
     directory: Path,
@@ -715,17 +761,16 @@ def write_patch_note(
         "",
     ]
     lines.extend(claim_lines(record.get("claims") or {}))
+    lines.extend(["", "## Review lanes", ""])
+    lines.extend(review_lane_lines(record.get("reviewLanes") or {}))
     lines.extend(
         [
             "",
             f"- Tests run: {TESTS_RUN_TEXT}",
             "",
-            "## Adversarial pass",
+            "## Consolidation",
             "",
-            clean_text(
-                (record.get("adversarial") or {}).get("reasoning"),
-                4000,
-            )
+            clean_text((record.get("consolidation") or {}).get("summary"), 4000)
             or "_not recorded_",
             "",
             "## Changed files",
@@ -816,7 +861,7 @@ def write_decline_note(
 def build_record(state: Mapping[str, Any], status: str) -> Dict[str, Any]:
     finding = state["finding"]
     record: Dict[str, Any] = {
-        "recordVersion": 1,
+        "recordVersion": 2,
         "id": finding["id"],
         "title": finding["title"],
         "status": status,
@@ -829,6 +874,9 @@ def build_record(state: Mapping[str, Any], status: str) -> Dict[str, Any]:
         "changedPaths": state.get("changed_paths") or [],
         "diffstat": state.get("diffstat"),
         "adversarial": state.get("adversarial"),
+        "reviewLanes": state.get("review_lanes"),
+        "consolidation": state.get("consolidation"),
+        "reviewRound": state.get("review_round", 0),
         "declineReason": state.get("decline_reason"),
         "recommendation": finding.get("recommendation"),
         "revisionUsed": bool(state.get("revision_used")),
@@ -872,6 +920,7 @@ def prepare(args: argparse.Namespace) -> None:
         "products_dir": f"{PRODUCTS_PREFIX}{now_stamp()}",
         "owner_question_used": False,
         "revision_used": False,
+        "review_round": 0,
         "tampering_signals": hooks["deviation"],
     }
 
@@ -887,55 +936,105 @@ def prepare(args: argparse.Namespace) -> None:
         emit(finding_located=False, finding_id=finding["id"], patch_base=base)
         return
 
-    state["status"] = "generating"
+    state["status"] = "planning"
     state["location_reason"] = reason
     save_state(state)
     emit(
         finding_located=True,
         finding_id=finding["id"],
         patch_base=base,
-        owner_question=False,
+        fixup_used=False,
     )
 
 
-def assess_change() -> None:
-    """Read the generator's own account of what it did. No Git, no base.
+def route_plan() -> None:
+    state = guard()
+    result = parse_agent_json(read_stdin_text(), "review-plan")
+    decline = clean_text(result.get("declineReason"), 2000)
+    question = clean_text(result.get("ownerQuestion"), 2000)
 
-    This step spends its single `stdin_source` on the generator's output, so it
+    if decline:
+        state["status"] = "declined"
+        state["decline_reason"] = f"Plan review declined the patch: {decline}"
+        save_state(state)
+        emit(plan_next="decline")
+        return
+
+    if question:
+        if state.get("owner_question_used"):
+            state["status"] = "declined"
+            state["decline_reason"] = (
+                "The reviewed plan still needed an owner decision after the "
+                "workflow used its one question."
+            )
+            save_state(state)
+            emit(plan_next="decline")
+            return
+        state["owner_question_used"] = True
+        state["owner_question"] = question
+        state["status"] = "awaiting_owner"
+        save_state(state)
+        emit(plan_next="ask", owner_question=question)
+        return
+
+    state["approved_plan"] = result
+    state["status"] = "implementing"
+    save_state(state)
+    emit(plan_next="implement")
+
+
+def check_plan_clean() -> None:
+    state = guard()
+    base = read_trusted_base()
+    state["base"] = base
+    leftovers = leftover_paths()
+    if not content_matches_base(base) or leftovers:
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "Planning changed the checkout. Planning and plan review are "
+            "read-only, so the run declined before implementation."
+        )
+        save_state(state)
+        emit(plan_tree_clean=False)
+        return
+    save_state(state)
+    emit(plan_tree_clean=True)
+
+
+def assess_change() -> None:
+    """Read an implementer's account before the trusted Git measurement.
+
+    This step spends its single `stdin_source` on the implementer's output, so it
     could only get a base commit by reading the state file — and the state file
-    is in the checkout the generator can write. A forged base there would make
+    is in the checkout the implementer can write. A forged base there would make
     a real change measure as empty, and every decision drawn from it would be
     the attacker's to choose. So this step draws none: it records what the
-    generator said, and `pin_review` measures the tree against the base carried
+    implementer said, and `pin_review` measures the tree against the base carried
     in the run context.
     """
     state = guard()
     if state.get("status") == "skipped_stale":
         raise WorkflowDataError("a stale finding reached assess-change")
 
-    raw = read_stdin_text()
-    result = parse_agent_json(raw, "generate")
+    result = parse_agent_json(read_stdin_text(), "implementation")
 
     refusal = clean_text(result.get("refusal"), 2000)
     summary = clean_text(result.get("summary"), 4000)
-    question = clean_text(result.get("ownerQuestion"), 2000)
     behaviour_change = clean_text(result.get("behaviourChange"), 2000)
     if summary:
         state["summary"] = summary
     if behaviour_change:
         state["behaviour_change"] = behaviour_change
-    state["owner_question"] = question or None
-
     if not worktree_is_clean():
         # Fabro's checkpoint stages and commits everything before this runs, so
         # a dirty tree means something wrote afterwards.
         state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
-            "the working tree was not clean after the generator's checkpoint"
+            "the working tree was not clean after the implementer's checkpoint"
         ]
 
     if refusal:
         state["status"] = "declined"
-        state["decline_reason"] = f"The generator refused: {refusal}"
+        state["decline_reason"] = f"The implementer refused: {refusal}"
         save_state(state)
         emit(declined=True)
         return
@@ -954,9 +1053,8 @@ def pin_review() -> None:
     touches anything it must not, whether there is a change at all, and the
     fingerprint `finalize` will hold the delivered bytes to.
 
-    The generator's own account (its refusal, its question) is read from the
-    state file, because it is the generator's to make either way: at worst it
-    asks a human unnecessarily or fails to. It cannot publish anything.
+    The implementer's own account is read from the state file. It cannot
+    decide what is published.
     """
     state = guard()
     base = read_trusted_base()
@@ -988,203 +1086,204 @@ def pin_review() -> None:
 
     payload = diff_bytes(base) if entries else b""
     if not entries or not payload.strip():
-        question = clean_text(state.get("owner_question"), 2000)
-        if question:
-            if state.get("owner_question_used"):
-                state["status"] = "declined"
-                state["decline_reason"] = (
-                    "The generator asked a second owner question instead of "
-                    "implementing the answer to the first. One question is the "
-                    "budget, so the unit is declined."
-                )
-                save_state(state)
-                emit(pin_next="decline")
-                return
-            state["owner_question_used"] = True
-            state["status"] = "awaiting_owner"
-            save_state(state)
-            emit(pin_next="ask")
-            return
-
         state["status"] = "declined"
         state["decline_reason"] = (
             "Measured against the run's own base commit, the attempt changed "
-            "nothing. The generator's account: "
+            "nothing. The implementer's account: "
             + (clean_text(state.get("summary"), 2000) or "no summary returned")
         )
         save_state(state)
         emit(pin_next="decline")
         return
 
-    state["status"] = "verifying"
-    state["reviewed_diff_sha256"] = sha256_bytes(payload)
+    fingerprint = sha256_bytes(payload)
+    if (
+        state.get("revision_used")
+        and state.get("reviewed_diff_sha256") == fingerprint
+    ):
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The fixup left the rejected patch unchanged, so a second review "
+            "would repeat the same result."
+        )
+        save_state(state)
+        emit(pin_next="decline")
+        return
+
+    state["status"] = "reviewing"
+    state["reviewed_diff_sha256"] = fingerprint
+    state["review_lanes"] = None
+    state["consolidation"] = None
     save_state(state)
     emit(
-        pin_next="verify",
+        pin_next="review",
         review_pin=build_review_pin(base, payload, state["changed_paths"]),
     )
 
 
-def merge_verdict() -> None:
+def parse_review_results(raw: str) -> Dict[str, Dict[str, Any]]:
+    try:
+        results = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise WorkflowDataError(f"parallel review results are not JSON: {error}") from error
+    if not isinstance(results, list):
+        raise WorkflowDataError("parallel review results must be an array")
+
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        branch_id = result.get("id")
+        if isinstance(branch_id, str):
+            if branch_id in by_id:
+                raise WorkflowDataError(f"parallel review repeated {branch_id}")
+            by_id[branch_id] = result
+
+    lanes: Dict[str, Dict[str, Any]] = {}
+    for branch_id, output_key, lane in REVIEW_LANES:
+        result = by_id.get(branch_id)
+        if result is None or result.get("status") != "succeeded":
+            raise WorkflowDataError(f"required review did not succeed: {branch_id}")
+        context = result.get("context_updates")
+        output = context.get(output_key) if isinstance(context, dict) else None
+        if not isinstance(output, dict):
+            raise WorkflowDataError(f"required review has no output: {branch_id}")
+        findings = output.get("findings")
+        if not isinstance(findings, list):
+            raise WorkflowDataError(f"required review output is malformed: {branch_id}")
+        lanes[lane] = {
+            "summary": clean_text(output.get("summary"), 4000),
+            "findings": findings,
+        }
+        if lane == "patch-completeness-evidence":
+            reviewed = output.get("reviewedPaths")
+            if not isinstance(reviewed, list) or not reviewed:
+                raise WorkflowDataError("the completeness review returned no paths")
+            lanes[lane]["reviewedPaths"] = reviewed
+    return lanes
+
+
+def record_reviews() -> None:
     state = guard()
-    advisory_diff_check(state, "verify")
-    raw = read_stdin_text()
-    result = parse_agent_json(raw, "verify")
+    advisory_diff_check(state, "review fan-out")
+    lanes = parse_review_results(read_stdin_text())
 
-    verdict = str(result.get("verdict", "")).strip().upper()
-    claims = result.get("claims")
-    if not isinstance(claims, Mapping):
-        raise WorkflowDataError("the verifier returned no claims")
-
-    normalized: Dict[str, Any] = {}
-    unsure: List[str] = []
-    not_confident: List[str] = []
-    for key in CLAIM_KEYS:
-        claim = claims.get(key)
-        if not isinstance(claim, Mapping):
-            raise WorkflowDataError(f"the verifier omitted the {key} claim")
-        claim_state = str(claim.get("state", "")).strip().upper()
-        evidence = one_line(claim.get("evidence"), 1000)
-        normalized[key] = {"state": claim_state, "evidence": evidence}
-        if claim_state == "UNSURE":
-            unsure.append(CLAIM_LABELS[key])
-        elif claim_state != "CONFIDENT":
-            not_confident.append(CLAIM_LABELS[key])
-    state["claims"] = normalized
-
+    completeness = lanes["patch-completeness-evidence"]
     reviewed = [
-        entry for entry in (result.get("reviewedPaths") or []) if isinstance(entry, str)
+        path
+        for path in completeness["reviewedPaths"]
+        if isinstance(path, str) and path
     ]
-    state["reviewed_paths"] = [one_line(entry, 500) for entry in reviewed]
-
-    objections = [
-        clean_text(entry, 2000)
-        for entry in (result.get("objections") or [])
-        if isinstance(entry, str) and entry.strip()
-    ]
-
-    if unsure:
-        # Absent evidence is a real answer. There is nothing a fresh attempt can
-        # do about a point the verifier could not establish by reading.
-        state["status"] = "declined"
-        state["decline_reason"] = (
-            "The verifier could not establish "
-            + ", ".join(unsure)
-            + " even by reading, so no patch was written. "
-            + (objections[0] if objections else "")
-        ).strip()
-        save_state(state)
-        emit(verdict_pass=False, retry=False, declined=True)
-        return
-
-    if verdict != "PASS" or not_confident:
-        blocked = ", ".join(not_confident) if not_confident else "the verifier"
-        if state.get("revision_used"):
-            state["status"] = "declined"
-            state["decline_reason"] = (
-                f"A second review round still objected ({blocked}). "
-                + (objections[0] if objections else "")
-            ).strip()
-            save_state(state)
-            emit(verdict_pass=False, retry=False, declined=True)
-            return
-        state["revision_used"] = True
-        state["objections"] = objections or [f"{blocked} was not satisfied"]
-        state["status"] = "revising"
-        save_state(state)
-        emit(verdict_pass=False, retry=True, declined=False)
-        return
-
-    # Cross-check: what was reviewed must be exactly what the change contains.
-    # Unconditional, because an empty or unparseable list is not evidence of
-    # agreement — it is the absence of evidence, and a PASS that carries no
-    # path list must not slip through as though it had matched.
-    reviewed_set = {entry for entry in reviewed if entry}
+    reviewed_set = set(reviewed)
     derived_set = set(state.get("changed_path_set") or [])
-    if not reviewed_set:
-        raise WorkflowDataError(
-            "the verifier returned a PASS with no reviewed paths, so there is "
-            "nothing to check the change against"
-        )
     if reviewed_set != derived_set:
         only_reviewer = sorted(reviewed_set - derived_set)[:5]
         only_engine = sorted(derived_set - reviewed_set)[:5]
         raise WorkflowDataError(
-            "the verifier reviewed a different set of paths than the change "
-            f"contains (reviewer only: {only_reviewer}; change only: {only_engine})"
+            "the completeness review covered a different path set "
+            f"(reviewer only: {only_reviewer}; change only: {only_engine})"
         )
 
-    state["status"] = "adversarial"
+    round_number = 2 if state.get("revision_used") else 1
+    state["review_round"] = round_number
+    state["review_lanes"] = lanes
+    state["reviewed_paths"] = reviewed
+    state["status"] = "consolidating"
     save_state(state)
-    emit(verdict_pass=True, retry=False, declined=False)
+    emit(review_round=round_number, reviews_recorded=True)
 
 
-def merge_adversarial() -> None:
+def merge_consolidation() -> None:
     state = guard()
-    advisory_diff_check(state, "adversarial")
-    raw = read_stdin_text()
-    result = parse_agent_json(raw, "adversarial")
+    advisory_diff_check(state, "review consolidation")
+    result = parse_agent_json(read_stdin_text(), "review consolidation")
+    outcome = str(result.get("outcome", "")).strip().lower()
+    summary = clean_text(result.get("summary"), 4000)
+    findings = result.get("findings")
+    if outcome not in ("clean", "fix", "decline") or not isinstance(findings, list):
+        raise WorkflowDataError("review consolidation returned an invalid outcome")
+    if outcome == "clean" and findings:
+        raise WorkflowDataError("a clean consolidation cannot retain findings")
+    if outcome == "fix" and not findings:
+        raise WorkflowDataError("a fix consolidation must retain findings")
 
-    introduces = bool(result.get("introducesNewAttackPath"))
-    reasoning = clean_text(result.get("reasoning"), MAX_RESULT_TEXT)
-    attack_path = clean_text(result.get("attackPath"), 4000)
+    state["consolidation"] = {
+        "outcome": outcome,
+        "summary": summary,
+        "findings": findings,
+    }
+    verified_lanes = {
+        finding.get("lane")
+        for finding in findings
+        if isinstance(finding, Mapping) and isinstance(finding.get("lane"), str)
+    }
+    lanes = state.get("review_lanes") or {}
+
+    def claim(lane: str) -> Dict[str, str]:
+        lane_result = lanes.get(lane) if isinstance(lanes, Mapping) else None
+        evidence = (
+            one_line(lane_result.get("summary"), 1000)
+            if isinstance(lane_result, Mapping)
+            else summary
+        )
+        return {
+            "state": "NOT_CONFIDENT" if lane in verified_lanes else "CONFIDENT",
+            "evidence": evidence,
+        }
+
+    state["claims"] = {
+        "targeted": claim("patch-completeness-evidence"),
+        "noNewVulnerability": claim("new-attack-paths"),
+        "behaviourUnchanged": claim("compatibility-behavior"),
+    }
     state["adversarial"] = {
-        "introducesNewAttackPath": introduces,
-        "reasoning": reasoning,
-        "attackPath": attack_path or None,
+        "introducesNewAttackPath": "new-attack-paths" in verified_lanes,
+        "reasoning": claim("new-attack-paths")["evidence"],
+        "attackPath": None,
     }
 
-    if not introduces:
+    if outcome == "clean":
         state["status"] = "finalizing"
         save_state(state)
-        emit(adversarial_clean=True, retry=False, declined=False)
+        emit(review_next="clean")
         return
 
-    objection = attack_path or reasoning or "a new attack path was found"
-    if state.get("revision_used"):
+    if outcome == "decline":
         state["status"] = "declined"
-        state["decline_reason"] = (
-            "The adversarial pass found a new attack path in the revised change: "
-            + objection
-        )
+        state["decline_reason"] = summary or "No safe automated fix exists."
         save_state(state)
-        emit(adversarial_clean=False, retry=False, declined=True)
+        emit(review_next="decline")
         return
 
-    state["revision_used"] = True
-    state["objections"] = [
-        "The change introduces a new attack path that did not exist before it: "
-        + objection
-    ]
-    state["status"] = "revising"
+    state["objections"] = findings
+    state["status"] = "awaiting_review_fixup"
     save_state(state)
-    emit(adversarial_clean=False, retry=True, declined=False)
+    emit(review_next="fix")
 
 
-def revise() -> None:
+def mark_fixup() -> None:
     state = guard()
-    # Trusted, not state-derived: restoring to a forged base would leave the
-    # rejected attempt in the tree and call it a fresh start.
-    base = read_trusted_base()
-    state["base"] = base
-    restore_base_tree(base)
-    leftovers = leftover_paths()
-    if not content_matches_base(base) or leftovers:
-        raise WorkflowDataError(
-            "the workspace did not return to the base revision before a fresh "
-            "attempt"
-            + (f" (left behind: {', '.join(leftovers[:5])})" if leftovers else "")
-        )
-    state["status"] = "generating"
-    state["claims"] = None
-    state["reviewed_paths"] = []
-    state["changed_paths"] = []
-    state["changed_path_set"] = []
-    state["diffstat"] = None
-    state["adversarial"] = None
-    state["reviewed_diff_sha256"] = None
+    state["revision_used"] = True
+    state["status"] = "fixing_review_findings"
     save_state(state)
-    emit(owner_question=False)
+    emit(fixup_used=True)
+
+
+def decline_repeat_fix() -> None:
+    state = guard()
+    consolidation = state.get("consolidation")
+    summary = (
+        clean_text(consolidation.get("summary"), 4000)
+        if isinstance(consolidation, Mapping)
+        else ""
+    )
+    state["status"] = "declined"
+    state["decline_reason"] = (
+        "The second review still found a blocking issue. "
+        + (summary or "The patch did not earn a clean second review.")
+    )
+    save_state(state)
+    emit(repeat_fix_declined=True)
 
 
 def finalize() -> None:
@@ -1290,11 +1389,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("prepare")
     for name in (
+        "route-plan",
+        "check-plan-clean",
         "assess-change",
         "pin-review",
-        "merge-verdict",
-        "merge-adversarial",
-        "revise",
+        "record-reviews",
+        "merge-consolidation",
+        "mark-fixup",
+        "decline-repeat-fix",
         "finalize",
         "no-patch",
     ):
@@ -1306,11 +1408,14 @@ def main(argv: Sequence[str]) -> int:
     args = build_parser().parse_args(argv)
     commands = {
         "prepare": lambda: prepare(args),
+        "route-plan": route_plan,
+        "check-plan-clean": check_plan_clean,
         "assess-change": assess_change,
         "pin-review": pin_review,
-        "merge-verdict": merge_verdict,
-        "merge-adversarial": merge_adversarial,
-        "revise": revise,
+        "record-reviews": record_reviews,
+        "merge-consolidation": merge_consolidation,
+        "mark-fixup": mark_fixup,
+        "decline-repeat-fix": decline_repeat_fix,
         "finalize": finalize,
         "no-patch": no_patch,
     }

@@ -9,10 +9,11 @@
     "status",
     "base",
     "untested",
-    "testsRun"
+    "testsRun",
+    "reviewRound"
   ],
   "properties": {
-    "recordVersion": { "type": "integer", "const": 1 },
+    "recordVersion": { "type": "integer", "const": 2 },
     "id": { "type": "string", "pattern": "^F[0-9]{1,9}$" },
     "title": { "type": "string" },
     "status": {
@@ -58,6 +59,15 @@
     },
     "diffstat": { "type": ["string", "null"] },
     "adversarial": { "type": ["object", "null"] },
+    "reviewLanes": {
+      "type": ["object", "null"],
+      "description": "The latest six focused review results."
+    },
+    "consolidation": {
+      "type": ["object", "null"],
+      "description": "The latest clean, fix, or decline review decision."
+    },
+    "reviewRound": { "type": "integer", "minimum": 0, "maximum": 2 },
     "declineReason": { "type": ["string", "null"] },
     "recommendation": { "type": ["string", "null"] },
     "revisionUsed": { "type": "boolean" },

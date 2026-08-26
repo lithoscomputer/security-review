@@ -28,7 +28,7 @@ FIXTURE_FINDING = WORKFLOW_ROOT / "fixtures/finding-command-injection.json"
 CONFIGS = ("workflow.toml", "workflow-embargo.toml", "verify.toml")
 
 # The files every deterministic node must hash-check before it runs. The
-# generator can write to the checkout, so a single check in prepare would not
+# implementer can write to the checkout, so a single check in prepare would not
 # survive its node.
 PINNED_SUPPORT_FILES = (
     "scripts/suggest_patches.py",
@@ -74,25 +74,29 @@ def run_report() -> None:
     subprocess.run(argv, shell=False, check=True)
 '''
 
-PASSING_VERDICT = {
-    "verdict": "PASS",
-    "claims": {
-        "targeted": {"state": "CONFIDENT", "evidence": "one hunk in app.py"},
-        "noNewVulnerability": {
-            "state": "CONFIDENT",
-            "evidence": "argv comes from a fixed dict",
-        },
-        "behaviourUnchanged": {
-            "state": "CONFIDENT",
-            "evidence": "app.py:9, the documented report still runs",
-        },
-    },
-    "reviewedPaths": ["app.py"],
+APPROVED_PLAN = {
+    "rootCause": "Caller-controlled text reaches os.system.",
+    "exploitPath": "run_report reads input and passes it to a shell.",
+    "trustBoundary": "Interactive input crosses into command execution.",
+    "implementationSteps": ["Replace the shell call with a fixed argv map."],
+    "expectedFiles": ["app.py"],
+    "compatibilityRisks": "Unknown report names will be rejected.",
+    "validationPlan": "Review the changed path and its callers.",
+    "ownerQuestion": None,
+    "declineReason": None,
 }
 
-CLEAN_ADVERSARIAL = {
-    "introducesNewAttackPath": False,
-    "reasoning": "No caller-controlled value reaches subprocess.",
+CLEAN_CONSOLIDATION = {
+    "outcome": "clean",
+    "summary": "All six review lanes found the patch acceptable.",
+    "findings": [],
+}
+
+BLOCKING_FINDING = {
+    "lane": "exploit-closure",
+    "issue": "The original exploit remains reachable.",
+    "evidence": "app.py still passes input to a shell.",
+    "requiredChange": "Remove the remaining shell execution path.",
 }
 
 
@@ -234,6 +238,40 @@ class Workspace:
         # against the trusted base and decides where the run goes.
         return self.pin()
 
+    def review_results(self, reviewed_paths: list[str] | None = None) -> list[dict]:
+        results = []
+        for branch_id, output_key, lane in ENGINE.REVIEW_LANES:
+            output = {"summary": f"{lane} checked", "findings": []}
+            if lane == "patch-completeness-evidence":
+                output["reviewedPaths"] = (
+                    ["app.py"] if reviewed_paths is None else reviewed_paths
+                )
+            results.append(
+                {
+                    "id": branch_id,
+                    "status": "succeeded",
+                    "context_updates": {output_key: output},
+                }
+            )
+        return results
+
+    def record_reviews(self, results: list[dict] | None = None) -> dict:
+        return self.context(
+            self.engine("record-reviews", json.dumps(results or self.review_results()))
+        )
+
+    def consolidate(self, result: dict | None = None) -> dict:
+        return self.context(
+            self.engine(
+                "merge-consolidation",
+                json.dumps(result or CLEAN_CONSOLIDATION),
+            )
+        )
+
+    def clean_review(self) -> dict:
+        self.record_reviews()
+        return self.consolidate()
+
 
 class WorkspaceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -294,7 +332,7 @@ class ChangedSetTests(WorkspaceTest):
         # The regression this guards: a staged (--cached) diff is empty by the
         # time the engine looks, because Fabro already committed the tree.
         context = self.workspace.generate()
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
         self.assertEqual(self.workspace.state()["changed_paths"], ["M app.py"])
 
     def test_added_deleted_and_renamed_paths_are_all_seen(self) -> None:
@@ -303,7 +341,7 @@ class ChangedSetTests(WorkspaceTest):
         (workspace.path / "app.py").write_text(FIXED_SOURCE, encoding="utf-8")
         git("mv", "app.py", "renamed.py", cwd=workspace.path)
         context = workspace.generate(source=None)
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
         entries = " ".join(workspace.state()["changed_paths"])
         self.assertIn("added.py", entries)
         self.assertIn("renamed.py", entries)
@@ -312,20 +350,20 @@ class ChangedSetTests(WorkspaceTest):
         workspace = self.workspace
         os.chmod(workspace.path / "app.py", 0o755)
         context = workspace.generate(source=None)
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
 
     def test_symlink_is_reported_as_a_changed_path(self) -> None:
         workspace = self.workspace
         (workspace.path / "link.py").symlink_to("app.py")
         context = workspace.generate(source=None)
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
         self.assertIn("link.py", " ".join(workspace.state()["changed_paths"]))
 
     def test_generator_claim_of_changes_cannot_invent_one(self) -> None:
         context = self.workspace.generate(
             source=None, changedFiles=["app.py", "invented.py"]
         )
-        self.assertNotEqual(context["pin_next"], "verify")
+        self.assertNotEqual(context["pin_next"], "review")
         self.assertEqual(self.workspace.state()["status"], "declined")
 
     def test_no_change_and_no_question_declines(self) -> None:
@@ -369,7 +407,7 @@ class TamperingTests(WorkspaceTest):
         fixtures.mkdir(parents=True, exist_ok=True)
         (fixtures / "command_injection.py").write_text("x = 1\n", encoding="utf-8")
         context = workspace.generate(source=None)
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
 
     def test_engine_edited_after_prepare_aborts_the_next_node(self) -> None:
         """The per-node hash check, as the graph runs it."""
@@ -424,60 +462,157 @@ class TamperingTests(WorkspaceTest):
         self.assertNotEqual(configured, str(hooks))
 
 
-class VerdictTests(WorkspaceTest):
+class PlanReviewTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def route(self, **overrides) -> dict:
+        payload = json.loads(json.dumps(APPROVED_PLAN))
+        payload.update(overrides)
+        return self.workspace.context(
+            self.workspace.engine("route-plan", json.dumps(payload))
+        )
+
+    def test_approved_plan_routes_to_implementation(self) -> None:
+        self.assertEqual(self.route()["plan_next"], "implement")
+        self.assertEqual(self.workspace.state()["approved_plan"], APPROVED_PLAN)
+
+    def test_plan_can_ask_one_owner_question(self) -> None:
+        first = self.route(ownerQuestion="Must legacy report names keep working?")
+        self.assertEqual(first["plan_next"], "ask")
+        self.assertTrue(self.workspace.state()["owner_question_used"])
+
+        second = self.route(ownerQuestion="A second question?")
+        self.assertEqual(second["plan_next"], "decline")
+        self.assertIn("one question", self.workspace.state()["decline_reason"])
+
+    def test_plan_review_can_decline_before_implementation(self) -> None:
+        context = self.route(declineReason="The finding needs a product decision.")
+        self.assertEqual(context["plan_next"], "decline")
+        self.assertIn("Plan review declined", self.workspace.state()["decline_reason"])
+
+    def test_planning_write_declines_before_implementation(self) -> None:
+        (self.workspace.path / "plan-write.txt").write_text("unexpected\n")
+        self.workspace.checkpoint("review_plan")
+        context = self.workspace.context(
+            self.workspace.engine("check-plan-clean", self.workspace.base)
+        )
+        self.assertFalse(context["plan_tree_clean"])
+        self.assertIn("Planning changed", self.workspace.state()["decline_reason"])
+
+
+class ReviewConsolidationTests(WorkspaceTest):
     def setUp(self) -> None:
         super().setUp()
         self.workspace.start()
         self.workspace.generate()
 
-    def verdict(self, **overrides) -> dict:
-        payload = json.loads(json.dumps(PASSING_VERDICT))
-        payload.update(overrides)
-        return self.workspace.context(
-            self.workspace.engine("merge-verdict", json.dumps(payload))
+    def test_all_six_review_lanes_are_required(self) -> None:
+        results = self.workspace.review_results()
+        results.pop()
+        result = self.workspace.engine("record-reviews", json.dumps(results))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("required review", result.stderr.decode("utf-8"))
+
+    def test_completeness_paths_must_match_the_derived_set(self) -> None:
+        results = self.workspace.review_results(["some_other_file.py"])
+        result = self.workspace.engine("record-reviews", json.dumps(results))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("different path set", result.stderr.decode("utf-8"))
+
+    def test_clean_consolidation_finalizes(self) -> None:
+        self.workspace.record_reviews()
+        context = self.workspace.consolidate()
+        self.assertEqual(context["review_next"], "clean")
+        self.assertEqual(self.workspace.state()["status"], "finalizing")
+
+    def test_verified_findings_route_one_fixup(self) -> None:
+        self.workspace.record_reviews()
+        context = self.workspace.consolidate(
+            {
+                "outcome": "fix",
+                "summary": "The exploit remains open.",
+                "findings": [BLOCKING_FINDING],
+            }
         )
-
-    def test_pass_moves_to_the_adversarial_pass(self) -> None:
-        context = self.verdict()
-        self.assertTrue(context["verdict_pass"])
-
-    def test_unsure_declines_with_no_revision_round(self) -> None:
-        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
-        claims["behaviourUnchanged"] = {
-            "state": "UNSURE",
-            "evidence": "callers I could not trace",
-        }
-        context = self.verdict(claims=claims)
-        self.assertTrue(context["declined"])
-        self.assertFalse(context["retry"])
-        self.assertFalse(self.workspace.state()["revision_used"])
-
-    def test_first_objection_revises_and_second_declines(self) -> None:
-        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
-        claims["targeted"] = {"state": "NOT_CONFIDENT", "evidence": "a stray refactor"}
-        first = self.verdict(verdict="REJECT", claims=claims, objections=["drop it"])
-        self.assertTrue(first["retry"])
+        self.assertEqual(context["review_next"], "fix")
+        marked = self.workspace.context(self.workspace.engine("mark-fixup"))
+        self.assertTrue(marked["fixup_used"])
         self.assertTrue(self.workspace.state()["revision_used"])
 
-        second = self.verdict(verdict="REJECT", claims=claims, objections=["still"])
-        self.assertTrue(second["declined"])
-        self.assertFalse(second["retry"])
-
-    def test_reviewed_paths_must_match_the_derived_set(self) -> None:
-        payload = json.loads(json.dumps(PASSING_VERDICT))
-        payload["reviewedPaths"] = ["some_other_file.py"]
-        result = self.workspace.engine("merge-verdict", json.dumps(payload))
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
-
-    def test_missing_claim_is_refused(self) -> None:
-        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
-        del claims["targeted"]
-        result = self.workspace.engine(
-            "merge-verdict", json.dumps({**PASSING_VERDICT, "claims": claims})
+    def test_decline_consolidation_stops_without_fixup(self) -> None:
+        self.workspace.record_reviews()
+        context = self.workspace.consolidate(
+            {
+                "outcome": "decline",
+                "summary": "No safe automated fix exists.",
+                "findings": [BLOCKING_FINDING],
+            }
         )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("omitted the targeted claim", result.stderr.decode("utf-8"))
+        self.assertEqual(context["review_next"], "decline")
+        self.assertFalse(self.workspace.state()["revision_used"])
+
+    def test_unchanged_fixup_declines_before_second_review(self) -> None:
+        self.workspace.record_reviews()
+        self.workspace.consolidate(
+            {
+                "outcome": "fix",
+                "summary": "Repair the remaining path.",
+                "findings": [BLOCKING_FINDING],
+            }
+        )
+        self.workspace.context(self.workspace.engine("mark-fixup"))
+        self.workspace.checkpoint("fix_review_findings")
+        assessed = self.workspace.context(
+            self.workspace.engine(
+                "assess-change", json.dumps({"summary": "unchanged"})
+            )
+        )
+        self.assertFalse(assessed["declined"])
+        pinned = self.workspace.pin()
+        self.assertEqual(pinned["pin_next"], "decline")
+        self.assertIn("unchanged", self.workspace.state()["decline_reason"])
+
+    def test_changed_fixup_runs_all_six_lanes_again(self) -> None:
+        self.workspace.record_reviews()
+        self.workspace.consolidate(
+            {
+                "outcome": "fix",
+                "summary": "Repair the remaining path.",
+                "findings": [BLOCKING_FINDING],
+            }
+        )
+        self.workspace.context(self.workspace.engine("mark-fixup"))
+        (self.workspace.path / "app.py").write_text(
+            FIXED_SOURCE.replace("unknown report", "unsupported report"),
+            encoding="utf-8",
+        )
+        self.workspace.checkpoint("fix_review_findings")
+        self.workspace.context(
+            self.workspace.engine(
+                "assess-change", json.dumps({"summary": "fixed review findings"})
+            )
+        )
+        self.assertEqual(self.workspace.pin()["pin_next"], "review")
+        recorded = self.workspace.record_reviews()
+        self.assertEqual(recorded["review_round"], 2)
+
+    def test_second_fix_request_declines(self) -> None:
+        state = self.workspace.state()
+        state["consolidation"] = {
+            "outcome": "fix",
+            "summary": "The second review still found a blocker.",
+            "findings": [BLOCKING_FINDING],
+        }
+        state_path = (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+        )
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        context = self.workspace.context(self.workspace.engine("decline-repeat-fix"))
+        self.assertTrue(context["repeat_fix_declined"])
+        self.assertEqual(self.workspace.state()["status"], "declined")
 
 
 class ReviewedBytesTests(WorkspaceTest):
@@ -499,30 +634,31 @@ class ReviewedBytesTests(WorkspaceTest):
             self.workspace.state()["reviewed_diff_sha256"], r"^[0-9a-f]{64}$"
         )
 
-    def test_a_write_during_verify_stops_the_run(self) -> None:
+    def test_a_write_during_review_fanout_stops_the_run(self) -> None:
         (self.workspace.path / "smuggled.py").write_text(
             "BACKDOOR = True\n", encoding="utf-8"
         )
-        self.workspace.checkpoint("verify")
-        result = self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.workspace.checkpoint("review")
+        result = self.workspace.engine(
+            "record-reviews", json.dumps(self.workspace.review_results())
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
 
-    def test_a_write_during_the_adversarial_pass_stops_the_run(self) -> None:
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+    def test_a_write_during_consolidation_stops_the_run(self) -> None:
+        self.workspace.record_reviews()
         (self.workspace.path / "app.py").write_text(
             FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
         )
-        self.workspace.checkpoint("adversarial")
+        self.workspace.checkpoint("consolidate_reviews")
         result = self.workspace.engine(
-            "merge-adversarial", json.dumps(CLEAN_ADVERSARIAL)
+            "merge-consolidation", json.dumps(CLEAN_CONSOLIDATION)
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("not what was reviewed", result.stderr.decode("utf-8"))
 
-    def test_a_write_after_the_adversarial_pass_stops_delivery(self) -> None:
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
-        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+    def test_a_write_after_consolidation_stops_delivery(self) -> None:
+        self.workspace.clean_review()
         (self.workspace.path / "app.py").write_text(
             FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
         )
@@ -533,8 +669,7 @@ class ReviewedBytesTests(WorkspaceTest):
         self.assertFalse(sorted(self.workspace.path.glob("SECURITY-PATCH-*")))
 
     def test_delivered_patch_hash_equals_the_reviewed_hash(self) -> None:
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
-        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        self.workspace.clean_review()
         self.workspace.engine("finalize", self.workspace.review_pin())
         record = json.loads(
             (self.workspace.products() / "verdict.json").read_text(encoding="utf-8")
@@ -545,7 +680,7 @@ class ReviewedBytesTests(WorkspaceTest):
 class TrustedPinTests(WorkspaceTest):
     """The expected value must live where agents cannot edit it.
 
-    The state file sits in the checkout the generator can write, so a
+    The state file sits in the checkout the implementer can write, so a
     fingerprint kept only there could be rewritten to match a change made
     afterwards. The pin travels through Fabro's run context instead, which is
     server-side, and finalize trusts it over anything on disk.
@@ -555,8 +690,7 @@ class TrustedPinTests(WorkspaceTest):
         super().setUp()
         self.workspace.start()
         self.workspace.generate()
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
-        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        self.workspace.clean_review()
 
     def rewrite_state(self, **fields) -> None:
         path = (
@@ -651,7 +785,7 @@ class TrustedPinTests(WorkspaceTest):
 class ForgedBaseTests(WorkspaceTest):
     """A forged base must not turn a rejected change into a published one.
 
-    The state file is in the checkout the generator can write. Setting its
+    The state file is in the checkout the implementer can write. Setting its
     base to HEAD makes the change measure as empty, which routes to a decline
     — and a decline that restored to that same forged base would leave the
     change sitting in the run branch for Fabro to open a pull request from.
@@ -698,7 +832,7 @@ class ForgedBaseTests(WorkspaceTest):
         measured = self.workspace.pin()
         self.assertEqual(
             measured["pin_next"],
-            "verify",
+            "review",
             "a forged base hid a real change from the run",
         )
 
@@ -725,22 +859,11 @@ class ForgedBaseTests(WorkspaceTest):
         signals = " ".join(self.workspace.state()["tampering_signals"])
         self.assertIn("disagreed with the trusted base", signals)
 
-    def test_revise_restores_against_the_trusted_base(self) -> None:
-        self.workspace.generate()
-        self.forge_base_to_head()
-        result = self.workspace.engine("revise", self.workspace.base)
-        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
-        self.assertEqual(
-            (self.workspace.path / "app.py").read_text(encoding="utf-8"),
-            VULNERABLE_SOURCE,
-            "the fresh attempt inherited the rejected one",
-        )
-
     def test_pin_review_re_derives_the_change_from_the_trusted_base(self) -> None:
         self.workspace.generate()
         self.forge_base_to_head()
         context = self.workspace.pin()
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
         pin = json.loads(context["review_pin"])
         self.assertEqual(pin["base"], self.workspace.base)
         self.assertEqual(self.workspace.state()["base"], self.workspace.base)
@@ -760,7 +883,7 @@ class ForgedBaseTests(WorkspaceTest):
         self.assertIn("support files", self.workspace.state()["decline_reason"])
 
     def test_a_missing_trusted_base_refuses_rather_than_guessing(self) -> None:
-        for command in ("pin-review", "revise", "no-patch"):
+        for command in ("check-plan-clean", "pin-review", "no-patch"):
             with self.subTest(command=command):
                 result = self.workspace.engine(command, "")
                 self.assertEqual(result.returncode, 2)
@@ -776,7 +899,7 @@ class ForgedBaseTests(WorkspaceTest):
         routing, or publishes takes the base from the run context.
         """
         source = ENGINE_PATH.read_text(encoding="utf-8")
-        for name in ("assess_change", "revise", "no_patch", "pin_review"):
+        for name in ("assess_change", "no_patch", "pin_review"):
             body = re.search(
                 r"\ndef " + name + r"\(\) -> None:\n(.*?)(?=\ndef )",
                 source,
@@ -790,7 +913,7 @@ class ForgedBaseTests(WorkspaceTest):
                     re.search(r'=\s*state(?:\["base"\]|\.get\("base"\))', body.group(1)),
                     f"{name} reads its base from the writable checkout",
                 )
-        for name in ("revise", "no_patch", "pin_review"):
+        for name in ("no_patch", "pin_review"):
             body = re.search(
                 r"\ndef " + name + r"\(\) -> None:\n(.*?)(?=\ndef )",
                 source,
@@ -811,7 +934,7 @@ class ForgedBaseTests(WorkspaceTest):
 
     def test_the_graph_feeds_the_trusted_base_to_every_such_step(self) -> None:
         graph = GRAPH_PATH.read_text(encoding="utf-8")
-        for node in ("pin_review", "revise", "no_patch"):
+        for node in ("check_plan_clean", "pin_review", "no_patch"):
             with self.subTest(node=node):
                 body = re.search(
                     r"    " + node + r" \[(.*?)\n    \]", graph, flags=re.S
@@ -833,27 +956,27 @@ class ReviewedPathsTests(WorkspaceTest):
         self.workspace.generate()
 
     def test_empty_reviewed_paths_is_refused(self) -> None:
-        payload = {**PASSING_VERDICT, "reviewedPaths": []}
-        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        result = self.workspace.engine(
+            "record-reviews", json.dumps(self.workspace.review_results([]))
+        )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("no reviewed paths", result.stderr.decode("utf-8"))
+        self.assertIn("no paths", result.stderr.decode("utf-8"))
 
     def test_a_summary_phrase_is_not_a_path_list(self) -> None:
-        payload = {**PASSING_VERDICT, "reviewedPaths": ["reviewed everything"]}
-        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        result = self.workspace.engine(
+            "record-reviews",
+            json.dumps(self.workspace.review_results(["reviewed everything"])),
+        )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
+        self.assertIn("different path set", result.stderr.decode("utf-8"))
 
     def test_bare_paths_match_the_derived_set(self) -> None:
-        payload = {**PASSING_VERDICT, "reviewedPaths": ["app.py"]}
-        context = self.workspace.context(
-            self.workspace.engine("merge-verdict", json.dumps(payload))
-        )
-        self.assertTrue(context["verdict_pass"])
+        context = self.workspace.record_reviews(self.workspace.review_results(["app.py"]))
+        self.assertTrue(context["reviews_recorded"])
 
     def test_the_schema_refuses_an_empty_list(self) -> None:
         schema = json.loads(
-            (WORKFLOW_ROOT / "schemas/patch-verdict.schema.json").read_text(
+            (WORKFLOW_ROOT / "schemas/review-lane.schema.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -872,7 +995,7 @@ class AwkwardFilenameTests(WorkspaceTest):
         (self.workspace.path / "src").mkdir()
         (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
         context = self.workspace.generate(source=None)
-        self.assertEqual(context["pin_next"], "verify")
+        self.assertEqual(context["pin_next"], "review")
         self.assertIn(awkward, self.workspace.state()["changed_path_set"])
 
     def test_a_backslash_is_not_a_directory_separator(self) -> None:
@@ -884,17 +1007,21 @@ class AwkwardFilenameTests(WorkspaceTest):
         awkward = "weird\\name.py"
         (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
         self.workspace.generate(source=None)
-        payload = {**PASSING_VERDICT, "reviewedPaths": ["weird/name.py"]}
-        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        result = self.workspace.engine(
+            "record-reviews",
+            json.dumps(self.workspace.review_results(["weird/name.py"])),
+        )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
+        self.assertIn("different path set", result.stderr.decode("utf-8"))
 
     def test_surrounding_whitespace_is_part_of_the_name(self) -> None:
         awkward = " leading.py"
         (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
         self.workspace.generate(source=None)
-        payload = {**PASSING_VERDICT, "reviewedPaths": ["leading.py"]}
-        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        result = self.workspace.engine(
+            "record-reviews",
+            json.dumps(self.workspace.review_results(["leading.py"])),
+        )
         self.assertEqual(result.returncode, 2)
 
     def test_a_reviewer_can_match_a_spaced_filename_exactly(self) -> None:
@@ -902,67 +1029,10 @@ class AwkwardFilenameTests(WorkspaceTest):
         (self.workspace.path / "src").mkdir()
         (self.workspace.path / awkward).write_text("x = 1\n", encoding="utf-8")
         self.workspace.generate(source=FIXED_SOURCE)
-        payload = {**PASSING_VERDICT, "reviewedPaths": ["app.py", awkward]}
-        context = self.workspace.context(
-            self.workspace.engine("merge-verdict", json.dumps(payload))
+        context = self.workspace.record_reviews(
+            self.workspace.review_results(["app.py", awkward])
         )
-        self.assertTrue(context["verdict_pass"])
-
-
-class AdversarialTests(WorkspaceTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.workspace.start()
-        self.workspace.generate()
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
-
-    def test_clean_pass_finalizes(self) -> None:
-        context = self.workspace.context(
-            self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
-        )
-        self.assertTrue(context["adversarial_clean"])
-
-    def test_new_attack_path_sends_it_back_once(self) -> None:
-        context = self.workspace.context(
-            self.workspace.engine(
-                "merge-adversarial",
-                json.dumps(
-                    {
-                        "introducesNewAttackPath": True,
-                        "reasoning": "the allowlist is caller-supplied",
-                        "attackPath": "caller sets ALLOWED then reaches subprocess",
-                    }
-                ),
-            )
-        )
-        self.assertTrue(context["retry"])
-        self.assertIn(
-            "new attack path", " ".join(self.workspace.state()["objections"])
-        )
-
-
-class OwnerGateTests(WorkspaceTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.workspace.start()
-
-    def test_question_routes_to_the_gate_once(self) -> None:
-        context = self.workspace.generate(
-            source=None, ownerQuestion="Should legacy callers keep working?"
-        )
-        self.assertEqual(context["pin_next"], "ask")
-        self.assertTrue(self.workspace.state()["owner_question_used"])
-
-    def test_second_question_declines_rather_than_asking_again(self) -> None:
-        self.workspace.generate(source=None, ownerQuestion="first?")
-        context = self.workspace.generate(source=None, ownerQuestion="second?")
-        self.assertEqual(context["pin_next"], "decline")
-        self.assertIn("second owner question", self.workspace.state()["decline_reason"])
-
-    def test_a_question_alongside_a_change_is_treated_as_the_change(self) -> None:
-        context = self.workspace.generate(ownerQuestion="but also, should I?")
-        self.assertEqual(context["pin_next"], "verify")
-        self.assertNotEqual(context["pin_next"], "ask")
+        self.assertTrue(context["reviews_recorded"])
 
 
 class DeliveryTests(WorkspaceTest):
@@ -970,8 +1040,7 @@ class DeliveryTests(WorkspaceTest):
         super().setUp()
         self.workspace.start()
         self.workspace.generate()
-        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
-        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        self.workspace.clean_review()
 
     def test_products_carry_the_record_and_the_bytes(self) -> None:
         self.workspace.engine("finalize", self.workspace.review_pin())
@@ -986,6 +1055,9 @@ class DeliveryTests(WorkspaceTest):
         )
         self.assertTrue(record["untested"])
         self.assertEqual(record["testsRun"], ENGINE.TESTS_RUN_TEXT)
+        self.assertEqual(record["reviewRound"], 1)
+        self.assertEqual(len(record["reviewLanes"]), 6)
+        self.assertEqual(record["consolidation"]["outcome"], "clean")
 
     def test_patch_applies_to_the_recorded_base(self) -> None:
         self.workspace.engine("finalize", self.workspace.review_pin())
@@ -1057,17 +1129,6 @@ class DeclineTests(WorkspaceTest):
         self.decline()
         self.assertFalse(build.exists(), "an ignored leftover survived the decline")
 
-    def test_revise_removes_ignored_leftovers_before_a_fresh_attempt(self) -> None:
-        (self.workspace.path / ".gitignore").write_text(
-            "build/\n", encoding="utf-8"
-        )
-        self.workspace.checkpoint("ignore-rule")
-        build = self.workspace.path / "build"
-        build.mkdir()
-        (build / "cached.bin").write_text("from the rejected attempt", encoding="utf-8")
-        self.workspace.engine("revise", self.workspace.base)
-        self.assertFalse(build.exists(), "a fresh attempt inherited a leftover")
-
     def test_the_engines_own_state_survives_the_sweep(self) -> None:
         self.decline()
         state_path = (
@@ -1091,21 +1152,6 @@ class DeclineTests(WorkspaceTest):
         note = (self.workspace.products() / "DECLINED.md").read_text(encoding="utf-8")
         self.assertIn("No patch for F1", note)
         self.assertIn("subprocess with an argument list", note)
-
-    def test_revise_returns_the_tree_without_moving_head(self) -> None:
-        before = git(
-            "rev-parse", "HEAD", cwd=self.workspace.path
-        ).stdout.decode().strip()
-        self.workspace.engine("revise", self.workspace.base)
-        after = git(
-            "rev-parse", "HEAD", cwd=self.workspace.path
-        ).stdout.decode().strip()
-        self.assertEqual(before, after)
-        self.assertEqual(
-            (self.workspace.path / "app.py").read_text(encoding="utf-8"),
-            VULNERABLE_SOURCE,
-        )
-
 
 class GoalHelperTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1266,7 +1312,8 @@ class GraphAndConfigurationTests(unittest.TestCase):
         self.assertIn("shape=hexagon", body)
         self.assertIn('timeout="86400s"', body)
         self.assertIn('human.default_choice="no_patch"', body)
-        self.assertIn("owner_gate -> generate [freeform=true]", self.graph)
+        self.assertIn('on_failure="route"', body)
+        self.assertIn("owner_gate -> plan [freeform=true]", self.graph)
 
     def test_gate_timeout_and_failure_are_routed_by_condition(self) -> None:
         """Neither may fall through to the freeform edge.
@@ -1284,46 +1331,35 @@ class GraphAndConfigurationTests(unittest.TestCase):
         self.assertIn("preferred_label=no_patch", condition)
         self.assertIn("outcome=failed", condition)
 
-    def test_generate_allows_exactly_three_visits(self) -> None:
-        node = re.search(r"    generate \[(.*?)\n    \]", self.graph, flags=re.S)
-        assert node
-        self.assertIn("max_visits=3", node.group(1))
-        self.assertNotIn('fidelity="compact"', node.group(1))
+    def test_revisited_agent_nodes_allow_two_runs(self) -> None:
+        for name in (
+            "plan",
+            "review_plan",
+            "review_exploit_closure",
+            "review_new_attack_paths",
+            "review_compatibility",
+            "review_completeness",
+            "review_design_economy",
+            "review_performance_lifetime",
+            "consolidate_reviews",
+        ):
+            node = re.search(
+                r"    " + name + r" \[(.*?)\n    \]", self.graph, flags=re.S
+            )
+            assert node, name
+            self.assertIn("max_visits=3", node.group(1), name)
 
-    def test_native_failure_policies_preserve_agent_declines(self) -> None:
+    def test_native_failure_policies_exit_except_for_the_human_gate(self) -> None:
         self.assertIn('on_failure="exit"', self.graph)
         self.assertNotIn("    abort [", self.graph)
         self.assertNotIn(" -> abort", self.graph)
-
-        for node in ("generate", "verify", "adversarial"):
-            match = re.search(
-                r"    " + node + r" \[(.*?)\n    \]",
-                self.graph,
-                flags=re.S,
-            )
-            assert match
-            self.assertIn('on_failure="route"', match.group(1), node)
-            self.assertIn(
-                f'{node} -> '
-                + {
-                    "generate": "assess_change",
-                    "verify": "merge_verdict",
-                    "adversarial": "merge_adversarial",
-                }[node]
-                + ' [condition="outcome=succeeded"]',
-                self.graph,
-            )
-            self.assertIn(f"    {node} -> no_patch\n", self.graph)
-
-        for edge in (
-            "prepare -> no_patch",
-            "assess_change -> pin_review",
-            "pin_review -> no_patch",
-            "merge_verdict -> no_patch",
-            "merge_adversarial -> no_patch",
-            "revise -> generate",
-        ):
-            self.assertIn(f"    {edge}\n", self.graph)
+        self.assertIn('owner_gate [', self.graph)
+        self.assertIn('on_failure="route"', self.graph)
+        self.assertIn("    prepare -> exit\n", self.graph)
+        self.assertIn("    check_plan_clean -> exit\n", self.graph)
+        self.assertIn("    assess_change -> exit\n", self.graph)
+        self.assertIn("    pin_review -> exit\n", self.graph)
+        self.assertIn("    merge_consolidation -> exit\n", self.graph)
 
     def test_every_terminal_path_reaches_exit(self) -> None:
         for node in ("finalize", "no_patch"):
@@ -1399,11 +1435,44 @@ class GraphAndConfigurationTests(unittest.TestCase):
             "the fixture finding must point at a file that exists",
         )
 
-    def test_smoke_fixture_exception_is_consistent_in_agent_prompts(self) -> None:
-        for name in ("generate.md.j2", "verify.md.j2"):
+    def test_smoke_fixture_exception_is_consistent_in_editing_prompts(self) -> None:
+        for name in ("generate.md.j2", "fix-review-findings.md.j2"):
             prompt = (WORKFLOW_ROOT / "prompts" / name).read_text(encoding="utf-8")
             self.assertIn("except its `fixtures/` directory", prompt, name)
-            self.assertIn("Fixtures are disposable smoke-test targets", prompt, name)
+
+    def test_uses_gpt_sol_with_opus_then_kimi_fallbacks(self) -> None:
+        stylesheet = re.search(
+            r'model_stylesheet="(.*?)"', self.graph, flags=re.S
+        )
+        assert stylesheet
+        self.assertIn("* { model: gpt-sol;", stylesheet.group(1))
+        self.assertNotIn("model: kimi-k3", stylesheet.group(1))
+        fixup = re.search(
+            r"    fix_review_findings \[(.*?)\n    \]", self.graph, flags=re.S
+        )
+        assert fixup
+        self.assertIn('reasoning_effort="xhigh"', fixup.group(1))
+
+        expected = [
+            "anthropic:claude-opus-5",
+            "openrouter:claude-opus-5",
+            "moonshot:kimi-k3",
+            "openrouter:kimi-k3",
+        ]
+        for name in CONFIGS:
+            settings = tomllib.loads(
+                (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
+            )
+            self.assertEqual(settings["run"]["model"]["fallbacks"]["gpt-sol"], expected)
+
+    def test_a_surviving_original_exploit_is_always_blocking(self) -> None:
+        prompt = (
+            WORKFLOW_ROOT / "prompts/review-exploit-closure.md.j2"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "A surviving original exploit is always a\nblocking finding",
+            prompt,
+        )
 
     def test_products_never_call_the_result_verified(self) -> None:
         engine_source = ENGINE_PATH.read_text(encoding="utf-8")

@@ -230,13 +230,21 @@ The second workflow takes one finding from a report and produces a fix, opened
 as a **draft pull request** against the branch the run cloned. It runs
 unattended, one finding per run.
 
-A generator implements the fix, an independent verifier reviews it and states
-three claims, and a third agent attacks the change on its own. A single
-objection buys one revision round; a second declines. Every product calls the
-result a **reviewed patch** — never verified or tested.
+One agent plans the fix and a second reviews and repairs that plan before any
+code changes. After implementation, six agents review the patch in parallel:
+exploit closure, new attack paths, compatibility and behavior, completeness and
+evidence, design economy, and performance and lifetime. A consolidator returns
+`clean`, `fix`, or `decline`.
 
-A failed generator, verifier, or adversarial agent declines the patch. A failed
-deterministic stage stops at that stage. Neither failure can publish a patch.
+One `fix` result permits one focused fixup. All six review lanes then run again.
+A second blocking result declines the patch. Every product calls the result a
+**reviewed patch** — never verified or tested. A failed stage exits the run and
+cannot publish a patch.
+
+All agent stages use GPT Sol. Planning and consolidation use `max` reasoning;
+implementation and review use `high`; fixup uses `xhigh`. The fallback order is
+Opus, then Moonshot Kimi K3, then OpenRouter Kimi K3. Kimi K3 does not support
+`xhigh`, so only Opus is an effective fallback during fixup.
 
 ### Run it
 
@@ -270,21 +278,18 @@ writes a `SECURITY-PATCH-<timestamp>/` bundle you collect with
 | --- | --- |
 | `PATCH.md` | The note to read first: what changed, what review established, and that no tests were run. |
 | `patch.diff` | The reviewed diff, byte-faithful, if you would rather apply it yourself. |
-| `verdict.json` | The canonical record: claims, base commit, and the patch's SHA-256. |
-| `DECLINED.md` | Written instead when no patch was earned, with the blocking claim and the reason. |
+| `verdict.json` | The canonical record: review lanes, consolidation, review round, claims, base commit, and patch SHA-256. |
+| `DECLINED.md` | Written instead when no patch was earned, with the blocking review result and the reason. |
 
-A declined run opens no pull request. A decline is the verifier doing its job:
-"I could not establish that the fix leaves behaviour unchanged" is a complete
-answer, and the note carries the report's original recommendation so you still
-have somewhere to start.
+A declined run opens no pull request. The note carries the consolidated reason
+and the report's original recommendation so you still have somewhere to start.
 
 ### It runs no tests
 
-By design. The verifier's confidence rests on reading the change and its
-callers, never on a test run, and every product says so in those words. Wire
-your own verification — a test suite, a linter, a type checker, an LLM judge —
-into the graph between the `verify` and `finalize` nodes, as a
-`shape=parallelogram` node whose failure routes to `no_patch`.
+By design. Review confidence rests on reading the change and its callers, never
+on a test run, and every product says so in those words. Wire your own
+verification — a test suite, a linter, or a type checker — into the clean route
+between `merge_consolidation` and `finalize`, with failure routed to `no_patch`.
 
 ### Before you point it at a repository
 
@@ -341,13 +346,12 @@ trusted-repository rule above is the control.
 
 ### Attempts stay in the run branch
 
-Fabro commits and pushes every node's state, so a rejected first attempt and
-the restoration that followed it remain in `fabro/run/<id>` history, and a
-revised run's pull request lists them among its commits. The diff under review
-is only ever the reviewed patch, and a test asserts the pull request's final
-diff equals `patch.diff` — but the attempt is visible to anyone reading the
-branch. If a rejected attempt must never leave the sandbox, use the
-artifacts-only configuration.
+Fabro commits and pushes every node's state, so the original patch and any
+fixup remain in `fabro/run/<id>` history. A decline restores the final tree to
+the base without rewriting that history. The pull request's final diff is only
+the reviewed patch and equals `patch.diff`, but earlier attempts remain visible
+to anyone reading the branch. If an attempt must never leave the sandbox, use
+the artifacts-only configuration.
 
 ## More documentation
 

@@ -39,12 +39,12 @@ Everything the patch workflow runs lives under
 | `workflow.toml` | The normal run configuration. Opens a draft pull request. |
 | `workflow-embargo.toml` | Artifacts-only: no pull request, no branch pushes. For public repositories and embargoed findings. |
 | `verify.toml` | A smoke run against the command-injection fixture. Publishes nothing. |
-| `scripts/suggest_patches.py` | The deterministic engine. It owns routing, the changed set, restoration, diff capture, and the products. |
+| `scripts/suggest_patches.py` | The deterministic engine. It owns routing, the changed set, review coverage, the one-fixup limit, restoration, diff capture, and the products. |
 | `scripts/make_goal.py` | Builds and validates the goal file from a report, before any run starts. |
 | `scripts/git_readonly.py` | The read-only Git entry point, duplicated from the scan workflow. |
-| `prompts/*.md.j2` | Generator, verifier, and adversarial prompts. |
+| `prompts/*.md.j2` | Planning, implementation, six review-lane, consolidation, and fixup prompts. |
 | `prompts/partials/` | Shared prompt content, **duplicated** from the scan workflow so the directory installs alone. The copies may diverge; no test asserts they match. |
-| `schemas/` | The finding input contract, the three agent contracts, and the `verdict.json` record contract. |
+| `schemas/` | Finding, plan, implementation, review-lane, consolidation, and `verdict.json` contracts. |
 | `specs/patch-spec.md` | What the products are and the rules the engine follows. |
 | `fixtures/` | The command-injection fixture and the finding that points at it. |
 
@@ -67,8 +67,8 @@ The repository root also contains:
 The `security-review` workflow reports findings and recommendations. It does
 not modify reviewed files or apply fixes.
 
-`suggest-security-patches` is the deliberate exception: its generator edits the
-sandbox checkout, and its result is published. That difference is why it needs
+`suggest-security-patches` is the deliberate exception: its implementer and
+fixup agents edit the sandbox checkout, and its result is published. That difference is why it needs
 integrity rules the review does not — see "The patch workflow does not trust
 its own tree" below. The rule to hold onto is that the *review* stays read-only,
 so it remains the workflow you can point at code you do not trust.
@@ -152,13 +152,12 @@ during the review.
 
 ### The patch workflow does not trust its own tree
 
-The generator can write anywhere in the checkout, so nothing downstream of it
-takes the tree at face value.
+The implementation agents can write anywhere in the checkout, so nothing
+downstream of them takes the tree at face value.
 
-The patch graph also uses `on_failure="exit"`. Its `generate`, `verify`, and
-`adversarial` nodes override that policy with `on_failure="route"` because an
-agent failure must take the `no_patch` edge. Deterministic failures still stop
-at the failed node.
+The patch graph uses `on_failure="exit"`, so a failed stage stops the run. The
+human gate alone uses `on_failure="route"` so timeout and failure take the
+decline path instead of falling through to its freeform answer edge.
 
 Paths are compared exactly as Git spells them, read NUL-delimited
 (`git diff --name-status -z`, `git ls-files -z`). Do not trim them or rewrite
@@ -171,11 +170,11 @@ filesystem operands are rejected because `git diff` enters no-index mode on its
 own when handed two paths.
 
 The changed set comes from Git — `git diff <base>..HEAD --name-status` — never
-from the generator's `changedFiles`. Fabro checkpoints after every node, which
-means it has already staged and committed the generator's work before the
-engine looks; a staged (`--cached`) diff would be empty. The verifier's
-`reviewedPaths` is cross-checked against that derived set, and a disagreement
-stops the run rather than delivering bytes nobody reviewed.
+from the implementer's `changedFiles`. Fabro checkpoints after every node,
+which means it has already staged and committed the implementation before the
+engine looks; a staged (`--cached`) diff would be empty. The completeness
+lane's `reviewedPaths` is cross-checked against that derived set, and a
+disagreement stops the run rather than delivering bytes nobody reviewed.
 
 The delivered bytes must be the reviewed bytes, and the expected value has to
 live somewhere the agents cannot reach. Every node is followed by a checkpoint
@@ -188,21 +187,21 @@ server-side, outside the sandbox — and read back by `finalize` through
 publish if the two disagree.
 
 The base commit is trusted the same way, and for a sharper reason. `prepare`
-emits `patch_base` into context, and `pin_review`, `revise`, and `no_patch`
-each read it back through `stdin_source`. A base forged in the state file makes
+emits `patch_base` into context, and `check_plan_clean`, `pin_review`, and
+`no_patch` each read it back through `stdin_source`. A base forged in the state file makes
 a real change measure as empty, which routes to a decline; a decline that
 restored to that forged base would leave the change in the run branch and hand
 publication a non-empty diff, so a declined run would open a pull request for
 an unreviewed patch. `assess_change` spends its stdin on the
-generator's output, so rather than read a base from the state file it reads
+implementer's output, so rather than read a base from the state file it reads
 none and runs no Git at all: it records what the generator said. Every
 measurement — the changed set, the protected-path check, the fingerprint, and
 which way the run goes — belongs to `pin_review`, from the trusted base.
 
 That distinction is the point, and it is easy to undo by accident: the engine's
-state file lives in the checkout the generator can write, so **nothing that
-decides what gets published may be trusted from it**. The two merge steps do
-run an early fingerprint check against the state file; it is named
+state file lives in the checkout an implementation agent can write, so
+**nothing that decides what gets published may be trusted from it**. Review
+recording and consolidation do run an early fingerprint check against the state file; it is named
 `advisory_diff_check` and commented as a convenience, not a boundary. Keep it
 that way. Note the residual, too: the claims text and summary in the products
 are still state-derived, bounded only by the fact that routing runs on
@@ -217,15 +216,19 @@ since the smoke run's whole job is to patch one and a fixture decides nothing.
 The engine's own `runtime/` is dropped from the changed set entirely — it is
 bookkeeping, neither part of the patch nor evidence of tampering.
 
+One consolidated `fix` outcome permits one focused fixup in the current patch.
+All six review lanes then run again. A second `fix` request declines instead of
+looping. The fixup limit lives in Fabro's server-side context, not in agent-
+writable state.
+
 Restoration never rewrites history. Fabro pushes the run branch after every
 checkpoint, so `reset --hard` would strand the local branch behind its remote.
-Both the revision round and the decline path restore in place with
-`git restore --source=<base> --staged --worktree` and `git clean -fdx`, letting
-the next checkpoint record the restoration as a forward commit. A decline then
-asserts the content matches the base and no untracked file survives; that
-invariant is the only thing between a rejected attempt and an opened pull
-request, because Fabro skips pull-request creation exactly when the final diff
-is empty.
+The decline path restores in place with `git restore
+--source=<base> --staged --worktree` and `git clean -fdx`, letting the next
+checkpoint record the restoration as a forward commit. A decline then asserts
+the content matches the base and no untracked file survives; that invariant is
+the only thing between a rejected attempt and an opened pull request, because
+Fabro skips pull-request creation exactly when the final diff is empty.
 
 Repository hooks at checkpoint remain an open gap
 ([fabro-sh/fabro#809](https://github.com/fabro-sh/fabro/issues/809)). The
@@ -236,9 +239,10 @@ documentation that implies otherwise.
 
 The patch workflow runs no tests, so no product may call a result "verified" or
 "tested" without qualification. The label is **reviewed patch**. In
-`verdict.json`, review confidence (`claims`) and testing (`untested`,
-`testsRun`) are separate fields, and `PATCH.md` leads with the absence of tests
-rather than burying it. A test asserts this.
+`verdict.json`, the raw review lanes, consolidation, review round, derived
+confidence claims, and testing (`untested`, `testsRun`) are separate fields.
+`PATCH.md` leads with the absence of tests rather than burying it. A test
+asserts this.
 
 ### Sub-agents need explicit rules
 
@@ -296,9 +300,9 @@ generated sample report, and documentation naming.
 The second builds a throwaway repository shaped like the sandbox — including
 Fabro's commit-after-every-node checkpoint, which several behaviours depend on
 — and drives the patch engine through it with fabricated agent output. It
-covers the changed-set matrix, the tampering rules, the claim arithmetic, the
-owner-question budget, delivery, and the decline invariant, plus the graph and
-configuration contracts.
+covers planning, the changed-set matrix, six-lane review coverage,
+consolidation, the one-fixup limit, tampering rules, the owner-question budget,
+delivery, and the decline invariant, plus graph and configuration contracts.
 
 Both graphs should also parse:
 

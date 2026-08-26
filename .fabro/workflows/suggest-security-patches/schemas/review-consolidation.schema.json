@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Consolidated patch review",
+  "type": "object",
+  "required": ["outcome", "summary", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "outcome": { "type": "string", "enum": ["clean", "fix", "decline"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["lane", "issue", "evidence", "requiredChange"],
+      "additionalProperties": false,
+      "properties": {
+        "lane": {
+          "type": "string",
+          "enum": [
+            "exploit-closure",
+            "new-attack-paths",
+            "compatibility-behavior",
+            "patch-completeness-evidence",
+            "design-economy",
+            "performance-lifetime"
+          ]
+        },
+        "issue": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "requiredChange": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    }
+  }
+}
