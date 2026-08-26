@@ -22,6 +22,10 @@ enabled = false
 enabled = true
 push = false
 
+[run.meta_branch]
+enabled = true
+push = false
+
 [run.checkpoint]
 skip_git_hooks = true
 exclude_globs = [

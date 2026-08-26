@@ -1363,6 +1363,8 @@ class GraphAndConfigurationTests(unittest.TestCase):
         self.assertFalse(settings["run"]["pull_request"]["enabled"])
         self.assertTrue(settings["run"]["run_branch"]["enabled"])
         self.assertFalse(settings["run"]["run_branch"]["push"])
+        self.assertTrue(settings["run"]["meta_branch"]["enabled"])
+        self.assertFalse(settings["run"]["meta_branch"]["push"])
 
     def test_embargo_configuration_publishes_nothing(self) -> None:
         settings = tomllib.loads(
