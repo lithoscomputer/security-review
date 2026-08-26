@@ -1,0 +1,1084 @@
+#!/usr/bin/env python3
+"""Deterministic engine for the Fabro suggest-security-patches workflow.
+
+One run takes one security finding and produces one reviewed patch, delivered
+as a draft pull request, or a decline that explains itself. Agents generate,
+review, and attack the change; this program owns every decision made from what
+they return: routing, the authoritative changed set, workspace restoration,
+diff capture, integrity checks, and the products.
+
+The generator writes to the checkout, so nothing here trusts the tree. The
+changed set comes from Git, never from the generator's own account of it, and
+the support files this engine reads are hash-checked on every invocation.
+
+Python 3.9-compatible. Standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+
+WORKFLOW_ROOT = Path(".fabro/workflows/suggest-security-patches")
+CONTROL_DIR = WORKFLOW_ROOT / "runtime"
+STATE_PATH = CONTROL_DIR / "state.json"
+
+# Fabro resolves stdin_source before starting a command and enforces this same
+# ceiling. Keep the direct-input guard aligned with that transport.
+MAX_STDIN_BYTES = 30 * 1024 * 1024
+MAX_RESULT_TEXT = 8000
+
+FINDING_ID_PATTERN = re.compile(r"^F[0-9]{1,9}$")
+COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+# A finding carrying these fails at run creation, not here: Fabro renders the
+# goal as a MiniJinja template. make_goal.py refuses them up front; this is the
+# backstop for a goal that reached the sandbox by another route.
+TEMPLATE_DELIMITERS = ("{{", "{%", "{#")
+
+# The generator has write access to the checkout, so no legitimate fix touches
+# the engine that judges it. The fixtures are the exception: the smoke run's
+# whole job is to patch one, and a fixture decides nothing.
+PROTECTED_PREFIX = ".fabro/workflows/suggest-security-patches/"
+PROTECTED_EXCEPTION = PROTECTED_PREFIX + "fixtures/"
+# The engine's own bookkeeping. It is gitignored and checkpoint-excluded in
+# every shipped configuration, but a target repository can always be missing
+# that fence, and the engine's state is neither part of the patch nor evidence
+# of tampering. Drop it before anything else looks at the changed set.
+RUNTIME_PREFIX = PROTECTED_PREFIX + "runtime/"
+
+CLAIM_KEYS = ("targeted", "noNewVulnerability", "behaviourUnchanged")
+CLAIM_LABELS = {
+    "targeted": "TARGETED",
+    "noNewVulnerability": "NO_NEW_VULNERABILITY",
+    "behaviourUnchanged": "BEHAVIOUR_UNCHANGED",
+}
+
+# This workflow runs no tests. The sentence is fixed so no product can imply
+# otherwise, and it stays separate from review confidence in every record.
+TESTS_RUN_TEXT = "none — this workflow runs no tests"
+
+# The diff contract. Every byte the verifier reviewed reaches patch.diff and the
+# pull request unchanged, CRLF and non-UTF-8 files included.
+DIFF_FLAGS = (
+    "--binary",
+    "--full-index",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+)
+
+PRODUCTS_PREFIX = "SECURITY-PATCH-"
+
+
+class WorkflowDataError(RuntimeError):
+    """A condition the run must stop on, named for the operator."""
+
+
+# ── Basics ────────────────────────────────────────────────────────────────
+
+
+def root() -> Path:
+    return Path.cwd().resolve()
+
+
+def now_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+
+def clean_text(value: Any, cap: int = 4000) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > cap:
+        text = text[:cap].rstrip() + "…"
+    return text
+
+
+def one_line(value: Any, cap: int = 500) -> str:
+    text = clean_text(value, cap)
+    return " ".join(text.split())
+
+
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    text = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+    temporary.write_text(text + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise WorkflowDataError(f"{path} is missing") from error
+    except json.JSONDecodeError as error:
+        raise WorkflowDataError(f"{path} is not valid JSON: {error}") from error
+
+
+def load_state() -> Dict[str, Any]:
+    value = read_json(STATE_PATH)
+    if not isinstance(value, dict):
+        raise WorkflowDataError(f"{STATE_PATH} must contain a JSON object")
+    return value
+
+
+def save_state(state: Mapping[str, Any]) -> None:
+    write_json(STATE_PATH, dict(state))
+
+
+def emit(**updates: Any) -> None:
+    print(
+        json.dumps(
+            {"context_updates": updates},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    )
+
+
+def read_stdin_text() -> str:
+    payload = sys.stdin.buffer.read(MAX_STDIN_BYTES + 1)
+    if len(payload) > MAX_STDIN_BYTES:
+        raise WorkflowDataError("input exceeds the transport limit")
+    return payload.decode("utf-8", "replace")
+
+
+def parse_agent_json(raw: str, label: str) -> Dict[str, Any]:
+    """Read one agent's structured result.
+
+    Fabro validates against the node's output schema before we see it, so a
+    parse failure here means the node did not produce its schema at all.
+    """
+    text = raw.strip()
+    if not text:
+        raise WorkflowDataError(f"the {label} node returned nothing")
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise WorkflowDataError(
+            f"the {label} node did not return JSON: {error}"
+        ) from error
+    if not isinstance(value, dict):
+        raise WorkflowDataError(f"the {label} node must return a JSON object")
+    return value
+
+
+# ── Git ───────────────────────────────────────────────────────────────────
+
+
+def git(*arguments: str, check: bool = False) -> subprocess.CompletedProcess:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_PAGER": "cat",
+            "PAGER": "cat",
+            "GIT_EXTERNAL_DIFF": "",
+        }
+    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root()), *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=environment,
+        )
+    except OSError as error:
+        raise WorkflowDataError(f"could not run Git: {error}") from error
+    if check and result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise WorkflowDataError(
+            f"git {' '.join(arguments)} failed"
+            + (f": {one_line(detail, 2000)}" if detail else "")
+        )
+    return result
+
+
+def git_text(*arguments: str, check: bool = False) -> Optional[str]:
+    result = git(*arguments, check=check)
+    if result.returncode != 0:
+        return None
+    return result.stdout.decode("utf-8", "replace").rstrip("\r\n")
+
+
+def resolve_head() -> str:
+    value = git_text("rev-parse", "HEAD", check=True)
+    if not value or not COMMIT_PATTERN.match(value):
+        raise WorkflowDataError("HEAD did not resolve to a commit")
+    return value
+
+
+def worktree_is_clean() -> bool:
+    """True when nothing is unstaged or untracked.
+
+    After a Fabro checkpoint this is the normal state: the checkpoint stages
+    and commits everything. A dirty tree here means something wrote after it.
+    """
+    status = git_text("status", "--porcelain")
+    return status is not None and status.strip() == ""
+
+
+def changed_paths(base: str) -> List[str]:
+    """The authoritative changed set, in name-status form.
+
+    Derived from committed history, because Fabro checkpoints after every node:
+    by the time this runs, the generator's work is a commit, and a staged diff
+    would be empty.
+    """
+    raw = git_text(
+        "diff",
+        "--name-status",
+        "--find-renames=50%",
+        "--no-ext-diff",
+        "--no-textconv",
+        f"{base}..HEAD",
+        check=True,
+    )
+    if raw is None:
+        raise WorkflowDataError("could not derive the changed set from Git")
+    entries: List[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        entry = " ".join(line.split("\t"))
+        if all(is_engine_runtime(path) for path in paths_from_name_status([entry])):
+            continue
+        entries.append(entry)
+    return entries
+
+
+def is_engine_runtime(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.startswith(RUNTIME_PREFIX)
+
+
+def paths_from_name_status(entries: Sequence[str]) -> List[str]:
+    paths: List[str] = []
+    for entry in entries:
+        parts = entry.split()
+        if len(parts) >= 2:
+            paths.extend(parts[1:])
+    return paths
+
+
+def diffstat(base: str) -> str:
+    value = git_text(
+        "diff",
+        "--stat",
+        "--no-ext-diff",
+        "--no-textconv",
+        f"{base}..HEAD",
+    )
+    return clean_text(value or "", 4000)
+
+
+def capture_diff(base: str, destination: Path) -> bytes:
+    """Write the reviewed diff byte-faithfully and return its bytes."""
+    result = git("diff", *DIFF_FLAGS, base, "HEAD", check=True)
+    payload = result.stdout
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(payload)
+    return payload
+
+
+def restore_base_tree(base: str) -> None:
+    """Return the tree to the base without moving HEAD.
+
+    Fabro pushes the run branch after every checkpoint, so a `reset --hard`
+    would leave the local branch behind its pushed remote and the next
+    non-force push would fail as non-fast-forward. Restoring in place lets the
+    next checkpoint record the restoration as a forward commit instead.
+    """
+    git("restore", "--source", base, "--staged", "--worktree", "--", ".", check=True)
+    # `-e` keeps the engine's own state from being swept away mid-run. Ignored
+    # files are already safe without `-x`; this holds even where the target
+    # repository lacks the workflow's .gitignore.
+    git("clean", "-fd", "-e", RUNTIME_PREFIX.rstrip("/"), check=True)
+
+
+def untracked_paths() -> List[str]:
+    raw = git_text("ls-files", "--others", "--exclude-standard")
+    if not raw:
+        return []
+    return [line for line in raw.splitlines() if line.strip()]
+
+
+def content_matches_base(base: str) -> bool:
+    """True when the working tree and index hold exactly the base content.
+
+    HEAD is deliberately not part of this: restoration happens in place and
+    only becomes a commit at Fabro's next checkpoint, so immediately after a
+    restore HEAD still points at the attempt. What matters is that the content
+    the next checkpoint will commit is the base content — that is what makes
+    the run's final diff empty and keeps Fabro from opening a pull request.
+    """
+    worktree = git("diff", "--quiet", "--no-ext-diff", "--no-textconv", base)
+    index = git("diff", "--cached", "--quiet", "--no-ext-diff", "--no-textconv", base)
+    return worktree.returncode == 0 and index.returncode == 0
+
+
+# ── Integrity ─────────────────────────────────────────────────────────────
+
+
+def hook_configuration_report() -> Dict[str, Any]:
+    """What the repository's hook configuration looks like right now.
+
+    Defense in depth only. The control that actually stops a repository hook
+    from running during a checkpoint is Fabro's own commit invocation; see
+    fabro-sh/fabro#809. Nothing here can be ordered early enough to prevent a
+    hook installed during an agent node from firing at that node's checkpoint,
+    so this reports rather than promises.
+    """
+    configured = git_text("config", "--local", "--get", "core.hooksPath")
+    hooks_directory = root() / ".git" / "hooks"
+    live: List[str] = []
+    if hooks_directory.is_dir():
+        for entry in sorted(hooks_directory.iterdir()):
+            if entry.is_file() and os.access(entry, os.X_OK):
+                live.append(entry.name)
+    return {
+        "core_hooks_path": configured or None,
+        "executable_hooks_in_git_hooks": live,
+    }
+
+
+def neutralize_hooks() -> Dict[str, Any]:
+    """Point hooks at an empty directory this engine owns, and report drift."""
+    owned = (CONTROL_DIR / "empty-hooks").resolve()
+    owned.mkdir(parents=True, exist_ok=True)
+    before = hook_configuration_report()
+    git("config", "--local", "core.hooksPath", str(owned))
+    deviation: List[str] = []
+    configured = before.get("core_hooks_path")
+    if configured and configured != str(owned):
+        deviation.append(f"core.hooksPath pointed at {one_line(configured, 200)}")
+    if before.get("executable_hooks_in_git_hooks"):
+        names = ", ".join(before["executable_hooks_in_git_hooks"])
+        deviation.append(f"executable hooks present in .git/hooks: {names}")
+    return {"deviation": deviation, "hooks_path": str(owned)}
+
+
+# Support-file integrity is checked by each node's graph-embedded script line,
+# before this program is invoked at all. It is deliberately not re-checked
+# here: an engine that verifies itself proves nothing, and a helper that looked
+# like the control would be worse than none.
+
+
+def guard(state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Run at the top of every deterministic node after prepare.
+
+    Re-asserts hook configuration and records any deviation into state, so the
+    products can say what was seen even when the run still succeeds.
+    """
+    current = state if state is not None else load_state()
+    outcome = neutralize_hooks()
+    if outcome["deviation"]:
+        signals = list(current.get("tampering_signals") or [])
+        signals.extend(outcome["deviation"])
+        current["tampering_signals"] = signals[:20]
+    return current
+
+
+def protected_path_violations(paths: Sequence[str]) -> List[str]:
+    violations: List[str] = []
+    for path in paths:
+        normalized = path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        if is_engine_runtime(normalized):
+            continue
+        if normalized.startswith(PROTECTED_PREFIX) and not normalized.startswith(
+            PROTECTED_EXCEPTION
+        ):
+            violations.append(path)
+    return violations
+
+
+# ── Finding input ─────────────────────────────────────────────────────────
+
+
+def normalize_repo_path(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise WorkflowDataError("the finding's `file` is missing")
+    candidate = value.strip().replace("\\", "/")
+    if candidate.startswith("/"):
+        raise WorkflowDataError("the finding's `file` must be repository-relative")
+    parts = PurePosixPath(candidate).parts
+    if any(part == ".." for part in parts):
+        raise WorkflowDataError("the finding's `file` must not escape the repository")
+    normalized = str(PurePosixPath(*[p for p in parts if p not in (".",)]))
+    if not normalized or normalized == ".":
+        raise WorkflowDataError("the finding's `file` is not a usable path")
+    return normalized
+
+
+def validate_finding(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        raise WorkflowDataError(
+            "the goal must be one JSON finding object — free text is not supported; "
+            "use scripts/make_goal.py to build it from a report"
+        )
+    identifier = value.get("id")
+    if not isinstance(identifier, str) or not FINDING_ID_PATTERN.match(identifier):
+        raise WorkflowDataError(
+            "the finding's `id` must look like F1 — the only report-derived value "
+            "this workflow acts on"
+        )
+    title = value.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise WorkflowDataError("the finding's `title` is missing")
+    finding = {
+        "id": identifier,
+        "title": one_line(title, 500),
+        "file": normalize_repo_path(value.get("file")),
+    }
+    line = value.get("line")
+    if isinstance(line, int) and line > 0:
+        finding["line"] = line
+    for key, cap in (
+        ("snippet", 4000),
+        ("symbol", 500),
+        ("impact", 20000),
+        ("description", 40000),
+        ("recommendation", 20000),
+        ("severity", 40),
+        ("ruleId", 200),
+        ("findingId", 200),
+    ):
+        text = value.get(key)
+        if isinstance(text, str) and text.strip():
+            finding[key] = clean_text(text, cap)
+    return finding
+
+
+def locate_at_head(finding: Mapping[str, Any]) -> Tuple[bool, str]:
+    """Confirm the flagged code still exists at HEAD, by content.
+
+    Line numbers drift, so they are a hint. The snippet and symbol are what
+    identify the code. A finding whose code has since changed is declined
+    rather than patched blind.
+    """
+    path = finding["file"]
+    blob = git_text("show", f"HEAD:./{path}")
+    if blob is None:
+        return False, f"{path} does not exist at HEAD"
+
+    snippet = finding.get("snippet")
+    symbol = finding.get("symbol")
+    if snippet:
+        needle = " ".join(str(snippet).split())
+        haystack = " ".join(blob.split())
+        if needle and needle in haystack:
+            if symbol and symbol not in blob:
+                return False, (
+                    f"the flagged line is still in {path}, but {symbol} is not — "
+                    "the code moved out of the function the report named"
+                )
+            return True, f"located by snippet in {path}"
+        return False, (
+            f"the flagged line from the report is no longer in {path} — "
+            "it was rewritten after the scan"
+        )
+    if symbol:
+        if symbol in blob:
+            return True, f"located by symbol {symbol} in {path}"
+        return False, f"{symbol} is no longer in {path}"
+
+    line = finding.get("line")
+    if isinstance(line, int) and 0 < line <= len(blob.splitlines()):
+        return True, (
+            f"{path} exists at HEAD and reaches line {line}; the finding carried "
+            "neither a snippet nor a symbol, so the location is unverified"
+        )
+    return False, (
+        f"{path} exists but the finding carried no snippet, symbol, or usable "
+        "line to locate the flagged code"
+    )
+
+
+# ── Products ──────────────────────────────────────────────────────────────
+
+
+def products_directory(state: Mapping[str, Any]) -> Path:
+    name = state.get("products_dir")
+    if not isinstance(name, str) or not name.startswith(PRODUCTS_PREFIX):
+        raise WorkflowDataError("the products directory was never named")
+    return root() / name
+
+
+def claim_lines(claims: Mapping[str, Any]) -> List[str]:
+    lines: List[str] = []
+    for key in CLAIM_KEYS:
+        claim = claims.get(key) if isinstance(claims, Mapping) else None
+        if not isinstance(claim, Mapping):
+            continue
+        state = str(claim.get("state", "")).strip() or "UNSURE"
+        evidence = one_line(claim.get("evidence"), 500)
+        lines.append(f"- **{CLAIM_LABELS[key]}** — {state}: {evidence}")
+    return lines
+
+
+def write_patch_note(
+    state: Mapping[str, Any],
+    directory: Path,
+    record: Mapping[str, Any],
+) -> None:
+    finding = state["finding"]
+    lines = [
+        f"# Reviewed patch for {finding['id']}: {finding['title']}",
+        "",
+        "**No tests were run.** This workflow runs none; every claim below rests "
+        "on code review by independent agents, not on a test run. Read the diff "
+        "before you merge it.",
+        "",
+        f"- Finding: `{finding['id']}` — {finding['title']}",
+        f"- Flagged code: `{finding['file']}`"
+        + (f":{finding['line']}" if finding.get("line") else ""),
+        f"- Applies to base commit: `{record['base']}`",
+        f"- Patch bytes (SHA-256): `{record.get('patchSha256') or 'n/a'}`",
+        "",
+        "## What the change does",
+        "",
+        clean_text(record.get("summary"), 4000) or "_no summary returned_",
+        "",
+        "## What review established",
+        "",
+    ]
+    lines.extend(claim_lines(record.get("claims") or {}))
+    lines.extend(
+        [
+            "",
+            f"- Tests run: {TESTS_RUN_TEXT}",
+            "",
+            "## Adversarial pass",
+            "",
+            clean_text(
+                (record.get("adversarial") or {}).get("reasoning"),
+                4000,
+            )
+            or "_not recorded_",
+            "",
+            "## Changed files",
+            "",
+        ]
+    )
+    for entry in record.get("changedPaths") or []:
+        lines.append(f"- `{entry}`")
+    stat = record.get("diffstat")
+    if stat:
+        lines.extend(["", "```", stat, "```"])
+    signals = state.get("tampering_signals") or []
+    if signals:
+        lines.extend(["", "## Integrity signals", ""])
+        for signal in signals:
+            lines.append(f"- {signal}")
+    lines.extend(
+        [
+            "",
+            "## Applying it outside the pull request",
+            "",
+            "```bash",
+            f"git apply {directory.name}/patch.diff",
+            "```",
+            "",
+        ]
+    )
+    (directory / "PATCH.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_decline_note(
+    state: Mapping[str, Any],
+    directory: Path,
+    record: Mapping[str, Any],
+) -> None:
+    finding = state["finding"]
+    lines = [
+        f"# No patch for {finding['id']}: {finding['title']}",
+        "",
+        clean_text(record.get("declineReason"), 4000)
+        or "The run ended without a reviewed patch.",
+        "",
+        f"- Finding: `{finding['id']}` — {finding['title']}",
+        f"- Flagged code: `{finding['file']}`"
+        + (f":{finding['line']}" if finding.get("line") else ""),
+        f"- Base commit: `{record['base']}`",
+        f"- Status: `{record['status']}`",
+        "",
+    ]
+    claims = record.get("claims") or {}
+    if claims:
+        lines.extend(["## What review established", ""])
+        lines.extend(claim_lines(claims))
+        lines.append("")
+    stat = record.get("diffstat")
+    if stat:
+        lines.extend(
+            [
+                "## The attempt that was rejected",
+                "",
+                "The change itself is not kept — it was rejected. Its shape was:",
+                "",
+                "```",
+                stat,
+                "```",
+                "",
+            ]
+        )
+    recommendation = record.get("recommendation")
+    if recommendation:
+        lines.extend(
+            [
+                "## The report's original recommendation",
+                "",
+                clean_text(recommendation, 4000),
+                "",
+            ]
+        )
+    signals = state.get("tampering_signals") or []
+    if signals:
+        lines.extend(["## Integrity signals", ""])
+        for signal in signals:
+            lines.append(f"- {signal}")
+        lines.append("")
+    (directory / "DECLINED.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def build_record(state: Mapping[str, Any], status: str) -> Dict[str, Any]:
+    finding = state["finding"]
+    record: Dict[str, Any] = {
+        "recordVersion": 1,
+        "id": finding["id"],
+        "title": finding["title"],
+        "status": status,
+        "base": state["base"],
+        "untested": True,
+        "testsRun": TESTS_RUN_TEXT,
+        "summary": state.get("summary"),
+        "claims": state.get("claims"),
+        "reviewedPaths": state.get("reviewed_paths") or [],
+        "changedPaths": state.get("changed_paths") or [],
+        "diffstat": state.get("diffstat"),
+        "adversarial": state.get("adversarial"),
+        "declineReason": state.get("decline_reason"),
+        "recommendation": finding.get("recommendation"),
+        "revisionUsed": bool(state.get("revision_used")),
+        "ownerQuestionUsed": bool(state.get("owner_question_used")),
+        "patchSha256": state.get("patch_sha256"),
+        "tamperingSignals": state.get("tampering_signals") or [],
+    }
+    return record
+
+
+# ── Commands ──────────────────────────────────────────────────────────────
+
+
+def prepare(args: argparse.Namespace) -> None:
+    raw = read_stdin_text()
+    for delimiter in TEMPLATE_DELIMITERS:
+        if delimiter in raw:
+            raise WorkflowDataError(
+                f"the goal contains the template delimiter {delimiter!r}. Fabro "
+                "renders the goal as a template, so such a finding cannot be "
+                "passed through unchanged. Build the goal with make_goal.py, "
+                "which refuses these up front — never hand-edit the finding, "
+                "because that changes the evidence"
+            )
+    try:
+        parsed = json.loads(raw.strip() or "null")
+    except json.JSONDecodeError as error:
+        raise WorkflowDataError(
+            "the goal is not JSON. This workflow takes one finding object from a "
+            f"report's SECURITY-REVIEW-RESULTS.jsonl: {error}"
+        ) from error
+
+    finding = validate_finding(parsed)
+    base = resolve_head()
+    hooks = neutralize_hooks()
+
+    state: Dict[str, Any] = {
+        "finding": finding,
+        "base": base,
+        "products_dir": f"{PRODUCTS_PREFIX}{now_stamp()}",
+        "owner_question_used": False,
+        "revision_used": False,
+        "tampering_signals": hooks["deviation"],
+    }
+
+    located, reason = locate_at_head(finding)
+    if not located:
+        state["status"] = "skipped_stale"
+        state["decline_reason"] = (
+            f"The finding is stale: {reason}. Nothing was patched, because a patch "
+            "written against code the scan never saw is a guess. Re-scan the "
+            "current tree and patch from that report."
+        )
+        save_state(state)
+        emit(finding_located=False, finding_id=finding["id"], patch_base=base)
+        return
+
+    state["status"] = "generating"
+    state["location_reason"] = reason
+    save_state(state)
+    emit(
+        finding_located=True,
+        finding_id=finding["id"],
+        patch_base=base,
+        owner_question=False,
+    )
+
+
+def assess_change() -> None:
+    state = guard()
+    if state.get("status") == "skipped_stale":
+        raise WorkflowDataError("a stale finding reached assess-change")
+
+    raw = read_stdin_text()
+    result = parse_agent_json(raw, "generate")
+
+    refusal = clean_text(result.get("refusal"), 2000)
+    summary = clean_text(result.get("summary"), 4000)
+    question = clean_text(result.get("ownerQuestion"), 2000)
+    behaviour_change = clean_text(result.get("behaviourChange"), 2000)
+    if summary:
+        state["summary"] = summary
+    if behaviour_change:
+        state["behaviour_change"] = behaviour_change
+
+    if not worktree_is_clean():
+        # Fabro's checkpoint stages and commits everything before this runs, so
+        # a dirty tree means something wrote afterwards.
+        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
+            "the working tree was not clean after the generator's checkpoint"
+        ]
+
+    base = state["base"]
+    entries = changed_paths(base)
+    state["changed_paths"] = entries
+    paths = paths_from_name_status(entries)
+
+    violations = protected_path_violations(paths)
+    if violations:
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The attempt changed this workflow's own support files "
+            f"({', '.join(violations[:5])}). No legitimate fix edits the engine "
+            "that judges it, so the unit is declined and the change discarded."
+        )
+        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
+            f"patch touched protected paths: {', '.join(violations[:5])}"
+        ]
+        save_state(state)
+        emit(has_change=False, owner_question=False, declined=True)
+        return
+
+    if refusal:
+        state["status"] = "declined"
+        state["decline_reason"] = f"The generator refused: {refusal}"
+        save_state(state)
+        emit(has_change=False, owner_question=False, declined=True)
+        return
+
+    if question and not entries:
+        if state.get("owner_question_used"):
+            state["status"] = "declined"
+            state["decline_reason"] = (
+                "The generator asked a second owner question instead of "
+                "implementing the answer to the first. One question is the "
+                "budget, so the unit is declined."
+            )
+            save_state(state)
+            emit(has_change=False, owner_question=False, declined=True)
+            return
+        state["owner_question_used"] = True
+        state["owner_question"] = question
+        state["status"] = "awaiting_owner"
+        save_state(state)
+        emit(has_change=False, owner_question=True, declined=False)
+        return
+
+    if not entries:
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The generator changed nothing and asked nothing. Its account: "
+            + (summary or "no summary returned")
+        )
+        save_state(state)
+        emit(has_change=False, owner_question=False, declined=True)
+        return
+
+    state["status"] = "verifying"
+    state["diffstat"] = diffstat(base)
+    save_state(state)
+    emit(has_change=True, owner_question=False, declined=False)
+
+
+def merge_verdict() -> None:
+    state = guard()
+    raw = read_stdin_text()
+    result = parse_agent_json(raw, "verify")
+
+    verdict = str(result.get("verdict", "")).strip().upper()
+    claims = result.get("claims")
+    if not isinstance(claims, Mapping):
+        raise WorkflowDataError("the verifier returned no claims")
+
+    normalized: Dict[str, Any] = {}
+    unsure: List[str] = []
+    not_confident: List[str] = []
+    for key in CLAIM_KEYS:
+        claim = claims.get(key)
+        if not isinstance(claim, Mapping):
+            raise WorkflowDataError(f"the verifier omitted the {key} claim")
+        claim_state = str(claim.get("state", "")).strip().upper()
+        evidence = one_line(claim.get("evidence"), 1000)
+        normalized[key] = {"state": claim_state, "evidence": evidence}
+        if claim_state == "UNSURE":
+            unsure.append(CLAIM_LABELS[key])
+        elif claim_state != "CONFIDENT":
+            not_confident.append(CLAIM_LABELS[key])
+    state["claims"] = normalized
+
+    reviewed = [
+        one_line(entry, 500)
+        for entry in (result.get("reviewedPaths") or [])
+        if isinstance(entry, str)
+    ]
+    state["reviewed_paths"] = reviewed
+
+    objections = [
+        clean_text(entry, 2000)
+        for entry in (result.get("objections") or [])
+        if isinstance(entry, str) and entry.strip()
+    ]
+
+    if unsure:
+        # Absent evidence is a real answer. There is nothing a fresh attempt can
+        # do about a point the verifier could not establish by reading.
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The verifier could not establish "
+            + ", ".join(unsure)
+            + " even by reading, so no patch was written. "
+            + (objections[0] if objections else "")
+        ).strip()
+        save_state(state)
+        emit(verdict_pass=False, retry=False, declined=True)
+        return
+
+    if verdict != "PASS" or not_confident:
+        blocked = ", ".join(not_confident) if not_confident else "the verifier"
+        if state.get("revision_used"):
+            state["status"] = "declined"
+            state["decline_reason"] = (
+                f"A second review round still objected ({blocked}). "
+                + (objections[0] if objections else "")
+            ).strip()
+            save_state(state)
+            emit(verdict_pass=False, retry=False, declined=True)
+            return
+        state["revision_used"] = True
+        state["objections"] = objections or [f"{blocked} was not satisfied"]
+        state["status"] = "revising"
+        save_state(state)
+        emit(verdict_pass=False, retry=True, declined=False)
+        return
+
+    # Cross-check: the bytes we are about to deliver must be the bytes reviewed.
+    reviewed_paths = set(paths_from_name_status(reviewed))
+    derived_paths = set(paths_from_name_status(state.get("changed_paths") or []))
+    if reviewed_paths and reviewed_paths != derived_paths:
+        only_reviewer = sorted(reviewed_paths - derived_paths)[:5]
+        only_engine = sorted(derived_paths - reviewed_paths)[:5]
+        raise WorkflowDataError(
+            "the verifier reviewed a different set of paths than the change "
+            f"contains (reviewer only: {only_reviewer}; change only: {only_engine})"
+        )
+
+    state["status"] = "adversarial"
+    save_state(state)
+    emit(verdict_pass=True, retry=False, declined=False)
+
+
+def merge_adversarial() -> None:
+    state = guard()
+    raw = read_stdin_text()
+    result = parse_agent_json(raw, "adversarial")
+
+    introduces = bool(result.get("introducesNewAttackPath"))
+    reasoning = clean_text(result.get("reasoning"), MAX_RESULT_TEXT)
+    attack_path = clean_text(result.get("attackPath"), 4000)
+    state["adversarial"] = {
+        "introducesNewAttackPath": introduces,
+        "reasoning": reasoning,
+        "attackPath": attack_path or None,
+    }
+
+    if not introduces:
+        state["status"] = "finalizing"
+        save_state(state)
+        emit(adversarial_clean=True, retry=False, declined=False)
+        return
+
+    objection = attack_path or reasoning or "a new attack path was found"
+    if state.get("revision_used"):
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The adversarial pass found a new attack path in the revised change: "
+            + objection
+        )
+        save_state(state)
+        emit(adversarial_clean=False, retry=False, declined=True)
+        return
+
+    state["revision_used"] = True
+    state["objections"] = [
+        "The change introduces a new attack path that did not exist before it: "
+        + objection
+    ]
+    state["status"] = "revising"
+    save_state(state)
+    emit(adversarial_clean=False, retry=True, declined=False)
+
+
+def revise() -> None:
+    state = guard()
+    base = state["base"]
+    restore_base_tree(base)
+    leftovers = untracked_paths()
+    if not content_matches_base(base) or leftovers:
+        raise WorkflowDataError(
+            "the workspace did not return to the base revision before a fresh "
+            "attempt"
+            + (f" (left behind: {', '.join(leftovers[:5])})" if leftovers else "")
+        )
+    state["status"] = "generating"
+    state["claims"] = None
+    state["reviewed_paths"] = []
+    state["changed_paths"] = []
+    state["diffstat"] = None
+    state["adversarial"] = None
+    save_state(state)
+    emit(owner_question=False)
+
+
+def finalize() -> None:
+    state = guard()
+    base = state["base"]
+    directory = products_directory(state)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    payload = capture_diff(base, directory / "patch.diff")
+    if not payload.strip():
+        raise WorkflowDataError(
+            "the change produced an empty diff at the point of delivery"
+        )
+    state["patch_sha256"] = sha256_bytes(payload)
+    state["status"] = "patch_written"
+
+    record = build_record(state, "patch_written")
+    write_json(directory / "verdict.json", record)
+    write_patch_note(state, directory, record)
+    save_state(state)
+
+    print(
+        f"suggest_patches.py: reviewed patch for {state['finding']['id']} "
+        f"written to {directory.name}/ ({len(payload)} bytes, "
+        f"sha256 {state['patch_sha256'][:12]}…)"
+    )
+    emit(patch_written=True)
+
+
+def no_patch() -> None:
+    state = guard()
+    base = state["base"]
+    status = state.get("status")
+    if status not in ("declined", "skipped_stale"):
+        state["status"] = status = "declined"
+    if not state.get("decline_reason"):
+        state["decline_reason"] = "The run ended without a reviewed patch."
+
+    restore_base_tree(base)
+    leftovers = untracked_paths()
+    if not content_matches_base(base) or leftovers:
+        # This invariant is what keeps a declined run from opening a pull
+        # request: Fabro skips PR creation only when the final diff is empty.
+        raise WorkflowDataError(
+            "the workspace did not return to the base revision on decline, so a "
+            "pull request could still be opened for work that was rejected"
+            + (f" (left behind: {', '.join(leftovers[:5])})" if leftovers else "")
+        )
+
+    directory = products_directory(state)
+    directory.mkdir(parents=True, exist_ok=True)
+    record = build_record(state, status)
+    write_json(directory / "verdict.json", record)
+    write_decline_note(state, directory, record)
+    save_state(state)
+
+    print(
+        f"suggest_patches.py: no patch for {state['finding']['id']} — "
+        f"{one_line(state['decline_reason'], 300)}"
+    )
+    emit(patch_written=False)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("prepare")
+    for name in (
+        "assess-change",
+        "merge-verdict",
+        "merge-adversarial",
+        "revise",
+        "finalize",
+        "no-patch",
+    ):
+        subparsers.add_parser(name)
+    return parser
+
+
+def main(argv: Sequence[str]) -> int:
+    args = build_parser().parse_args(argv)
+    commands = {
+        "prepare": lambda: prepare(args),
+        "assess-change": assess_change,
+        "merge-verdict": merge_verdict,
+        "merge-adversarial": merge_adversarial,
+        "revise": revise,
+        "finalize": finalize,
+        "no-patch": no_patch,
+    }
+    try:
+        commands[args.command]()
+    except WorkflowDataError as error:
+        print(f"suggest_patches.py: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

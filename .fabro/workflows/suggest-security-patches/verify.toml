@@ -1,0 +1,59 @@
+_version = 1
+
+# Smoke run: patch the deliberate command-injection fixture.
+#
+#   fabro run --goal-file .fabro/workflows/suggest-security-patches/fixtures/finding-command-injection.json \
+#     .fabro/workflows/suggest-security-patches/verify.toml
+#
+# It must produce a reviewed patch diff in the artifacts, and no pull request.
+
+[workflow]
+graph = "suggest-security-patches.fabro"
+
+[run.clone]
+depth = 1
+
+[run.pull_request]
+enabled = false
+
+[run.run_branch]
+enabled = false
+
+[run.checkpoint]
+skip_git_hooks = true
+exclude_globs = [
+  "SECURITY-PATCH-*/**",
+  ".fabro/blobs/**",
+  ".fabro/workflows/suggest-security-patches/runtime",
+]
+
+[run.model.fallbacks]
+"kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", "claude-opus-5"]
+
+[run.environment]
+id = "suggest-security-patches"
+
+[run.environment.env]
+GITHUB_TOKEN = ""
+GH_TOKEN = ""
+
+[run.artifacts]
+include = [
+  "SECURITY-PATCH-*/patch.diff",
+  "SECURITY-PATCH-*/verdict.json",
+  "SECURITY-PATCH-*/PATCH.md",
+  "SECURITY-PATCH-*/DECLINED.md",
+]
+
+[environments.suggest-security-patches]
+provider = "daytona"
+
+[environments.suggest-security-patches.image]
+dockerfile = """
+FROM buildpack-deps:noble
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
+"""
+
+[environments.suggest-security-patches.resources]
+cpu = 2
+memory = "4GB"

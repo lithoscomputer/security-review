@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Patch verifier verdict",
+  "type": "object",
+  "required": ["verdict", "claims", "reviewedPaths"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "REJECT"]
+    },
+    "claims": {
+      "type": "object",
+      "required": ["targeted", "noNewVulnerability", "behaviourUnchanged"],
+      "properties": {
+        "targeted": { "$ref": "#/$defs/claim" },
+        "noNewVulnerability": { "$ref": "#/$defs/claim" },
+        "behaviourUnchanged": { "$ref": "#/$defs/claim" }
+      }
+    },
+    "reviewedPaths": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "type": "string" },
+      "description": "The changed paths in name-status form, derived by the verifier from the diff it read."
+    },
+    "objections": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string" },
+      "description": "Concrete enough for a fresh attempt to act on: file:line evidence and the required change."
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["state", "evidence"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["CONFIDENT", "NOT_CONFIDENT", "UNSURE"]
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "One line: a file:line, or the specific thing that was read."
+        }
+      }
+    }
+  }
+}

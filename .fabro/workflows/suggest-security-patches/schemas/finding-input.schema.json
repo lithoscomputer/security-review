@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One security finding, as passed to the workflow through --goal-file",
+  "type": "object",
+  "required": ["id", "title", "file"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^F[0-9]{1,9}$",
+      "description": "The report-local finding id. The only report-derived value the workflow acts on."
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Repository-relative path to the flagged code. Absolute paths and .. segments are rejected."
+    },
+    "line": { "type": "integer", "minimum": 1 },
+    "snippet": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "The flagged source line. Used to locate the code at HEAD by content."
+    },
+    "symbol": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "The enclosing function or method, when the report recorded one."
+    },
+    "impact": { "type": "string", "maxLength": 20000 },
+    "description": { "type": "string", "maxLength": 40000 },
+    "recommendation": { "type": "string", "maxLength": 20000 },
+    "severity": { "type": "string", "maxLength": 40 },
+    "ruleId": { "type": "string", "maxLength": 200 },
+    "findingId": { "type": "string", "maxLength": 200 },
+    "occurrenceId": { "type": "string", "maxLength": 200 }
+  }
+}

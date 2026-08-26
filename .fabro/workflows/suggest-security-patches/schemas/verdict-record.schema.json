@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verdict.json — the canonical record of one suggest-security-patches run",
+  "type": "object",
+  "required": [
+    "recordVersion",
+    "id",
+    "title",
+    "status",
+    "base",
+    "untested",
+    "testsRun"
+  ],
+  "properties": {
+    "recordVersion": { "type": "integer", "const": 1 },
+    "id": { "type": "string", "pattern": "^F[0-9]{1,9}$" },
+    "title": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["patch_written", "declined", "skipped_stale"]
+    },
+    "base": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The commit every reviewed byte applies to."
+    },
+    "patchSha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of patch.diff, tying the reviewed bytes to the artifact and the PR change."
+    },
+    "summary": { "type": ["string", "null"] },
+    "claims": {
+      "type": ["object", "null"],
+      "description": "Review confidence only. Never a statement that runtime behaviour was checked."
+    },
+    "untested": {
+      "type": "boolean",
+      "description": "Always true: this workflow runs no tests."
+    },
+    "testsRun": {
+      "type": "string",
+      "description": "Always the same sentence, kept separate from review confidence."
+    },
+    "reviewedPaths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "changedPaths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The engine's Git-derived changed set, in name-status form."
+    },
+    "diffstat": { "type": ["string", "null"] },
+    "adversarial": { "type": ["object", "null"] },
+    "declineReason": { "type": ["string", "null"] },
+    "recommendation": { "type": ["string", "null"] },
+    "revisionUsed": { "type": "boolean" },
+    "ownerQuestionUsed": { "type": "boolean" }
+  }
+}

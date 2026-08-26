@@ -1,0 +1,71 @@
+_version = 1
+
+# Artifacts-only configuration, for a PUBLIC repository or a finding under
+# embargo.
+#
+# Disabling the pull request alone would not hold an embargo: Fabro pushes the
+# run branch after every checkpoint, so the patch would be public before anyone
+# reviewed it. This configuration publishes nothing — no pull request, no run
+# branch, no metadata branch. The result reaches you as run artifacts only:
+#
+#   fabro artifact cp <RUN_ID>
+#
+# Then read PATCH.md, apply patch.diff yourself, and open the pull request when
+# disclosure is acceptable.
+
+[workflow]
+graph = "suggest-security-patches.fabro"
+
+[run.clone]
+depth = 1
+
+[run.pull_request]
+enabled = false
+
+[run.run_branch]
+enabled = true
+push = false
+
+# The metadata branch carries stage traces, which quote the finding.
+[run.meta_branch]
+enabled = true
+push = false
+
+[run.checkpoint]
+skip_git_hooks = true
+exclude_globs = [
+  "SECURITY-PATCH-*/**",
+  ".fabro/blobs/**",
+  ".fabro/workflows/suggest-security-patches/runtime",
+]
+
+[run.model.fallbacks]
+"kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", "claude-opus-5"]
+
+[run.environment]
+id = "suggest-security-patches"
+
+[run.environment.env]
+GITHUB_TOKEN = ""
+GH_TOKEN = ""
+
+[run.artifacts]
+include = [
+  "SECURITY-PATCH-*/patch.diff",
+  "SECURITY-PATCH-*/verdict.json",
+  "SECURITY-PATCH-*/PATCH.md",
+  "SECURITY-PATCH-*/DECLINED.md",
+]
+
+[environments.suggest-security-patches]
+provider = "daytona"
+
+[environments.suggest-security-patches.image]
+dockerfile = """
+FROM buildpack-deps:noble
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
+"""
+
+[environments.suggest-security-patches.resources]
+cpu = 2
+memory = "4GB"

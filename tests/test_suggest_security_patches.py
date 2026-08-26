@@ -1,0 +1,805 @@
+#!/usr/bin/env python3
+"""Contract and transition tests for the suggest-security-patches workflow."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import tomllib
+import unittest
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW_ROOT = REPOSITORY_ROOT / ".fabro/workflows/suggest-security-patches"
+ENGINE_PATH = WORKFLOW_ROOT / "scripts/suggest_patches.py"
+GOAL_HELPER_PATH = WORKFLOW_ROOT / "scripts/make_goal.py"
+GIT_WRAPPER_PATH = WORKFLOW_ROOT / "scripts/git_readonly.py"
+PATCH_SPEC_PATH = WORKFLOW_ROOT / "specs/patch-spec.md"
+GRAPH_PATH = WORKFLOW_ROOT / "suggest-security-patches.fabro"
+FIXTURE_FINDING = WORKFLOW_ROOT / "fixtures/finding-command-injection.json"
+
+CONFIGS = ("workflow.toml", "workflow-embargo.toml", "verify.toml")
+
+# The files every deterministic node must hash-check before it runs. The
+# generator can write to the checkout, so a single check in prepare would not
+# survive its node.
+PINNED_SUPPORT_FILES = (
+    "scripts/suggest_patches.py",
+    "scripts/git_readonly.py",
+    "specs/patch-spec.md",
+)
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+sys.dont_write_bytecode = True
+ENGINE = load_module("fabro_suggest_patches_engine", ENGINE_PATH)
+GOAL_HELPER = load_module("fabro_suggest_patches_goal", GOAL_HELPER_PATH)
+
+VULNERABLE_SOURCE = '''"""Fixture."""
+
+import os
+
+
+def run_report() -> None:
+    command = input("Report command: ")
+    os.system(command)
+'''
+
+FIXED_SOURCE = '''"""Fixture."""
+
+import subprocess
+
+ALLOWED = {"daily": ["./report", "--daily"]}
+
+
+def run_report() -> None:
+    name = input("Report command: ")
+    argv = ALLOWED.get(name)
+    if argv is None:
+        raise ValueError("unknown report")
+    subprocess.run(argv, shell=False, check=True)
+'''
+
+PASSING_VERDICT = {
+    "verdict": "PASS",
+    "claims": {
+        "targeted": {"state": "CONFIDENT", "evidence": "one hunk in app.py"},
+        "noNewVulnerability": {
+            "state": "CONFIDENT",
+            "evidence": "argv comes from a fixed dict",
+        },
+        "behaviourUnchanged": {
+            "state": "CONFIDENT",
+            "evidence": "app.py:9, the documented report still runs",
+        },
+    },
+    "reviewedPaths": ["M app.py"],
+}
+
+CLEAN_ADVERSARIAL = {
+    "introducesNewAttackPath": False,
+    "reasoning": "No caller-controlled value reaches subprocess.",
+}
+
+
+def git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+class Workspace:
+    """A throwaway repository shaped like the sandbox the workflow runs in."""
+
+    def __init__(self, directory: Path) -> None:
+        self.path = directory
+        git("init", "-q", ".", cwd=directory)
+        git("config", "user.email", "test@example.invalid", cwd=directory)
+        git("config", "user.name", "Test", cwd=directory)
+        git("config", "commit.gpgsign", "false", cwd=directory)
+        engine_directory = directory / ".fabro/workflows/suggest-security-patches"
+        (engine_directory / "scripts").mkdir(parents=True)
+        (engine_directory / "specs").mkdir(parents=True)
+        for relative in PINNED_SUPPORT_FILES:
+            (engine_directory / relative).write_bytes(
+                (WORKFLOW_ROOT / relative).read_bytes()
+            )
+        # The fence the workflow ships with: its runtime state is the engine's
+        # own bookkeeping and never part of a patch.
+        (engine_directory / ".gitignore").write_bytes(
+            (WORKFLOW_ROOT / ".gitignore").read_bytes()
+        )
+        (directory / "app.py").write_text(VULNERABLE_SOURCE, encoding="utf-8")
+        git("add", "-A", cwd=directory)
+        git("commit", "-qm", "initial", cwd=directory)
+        self.base = git(
+            "rev-parse", "HEAD", cwd=directory
+        ).stdout.decode().strip()
+
+    def checkpoint(self, label: str) -> None:
+        """What Fabro does after every node: stage everything and commit.
+
+        Fabro honours `[run.checkpoint] exclude_globs`, so the products
+        directory never enters a commit and never reaches the pull request's
+        diff. The exclusion is modelled here because the decline invariant
+        depends on it.
+        """
+        git("add", "-A", "--", ".", ":(exclude)SECURITY-PATCH-*", cwd=self.path)
+        git(
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            f"fabro(run): {label} (succeeded)",
+            cwd=self.path,
+        )
+
+    def engine(self, command: str, stdin: str = "") -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable,
+                ".fabro/workflows/suggest-security-patches/scripts/suggest_patches.py",
+                command,
+            ],
+            cwd=self.path,
+            input=stdin.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def context(self, result: subprocess.CompletedProcess) -> dict:
+        payload = result.stdout.decode("utf-8").strip().splitlines()
+        for line in reversed(payload):
+            if line.startswith("{"):
+                return json.loads(line)["context_updates"]
+        raise AssertionError(f"no routing output: {result.stdout!r} {result.stderr!r}")
+
+    def state(self) -> dict:
+        return json.loads(
+            (
+                self.path
+                / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+            ).read_text(encoding="utf-8")
+        )
+
+    def products(self) -> Path:
+        matches = sorted(self.path.glob("SECURITY-PATCH-*"))
+        assert matches, "no products directory"
+        return matches[0]
+
+    def goal(self, **overrides) -> str:
+        finding = {
+            "id": "F1",
+            "title": "Command injection in run_report",
+            "file": "app.py",
+            "line": 8,
+            "snippet": "os.system(command)",
+            "symbol": "run_report",
+            "recommendation": "Use subprocess with an argument list.",
+        }
+        finding.update(overrides)
+        return json.dumps(finding)
+
+    def start(self, **overrides) -> dict:
+        return self.context(self.engine("prepare", self.goal(**overrides)))
+
+    def generate(self, source: str = FIXED_SOURCE, **result) -> dict:
+        """Write a change the way the generator would, then checkpoint it."""
+        if source is not None:
+            (self.path / "app.py").write_text(source, encoding="utf-8")
+        self.checkpoint("generate")
+        payload = {"summary": "fixed", "changedFiles": ["app.py"]}
+        payload.update(result)
+        return self.context(self.engine("assess-change", json.dumps(payload)))
+
+
+class WorkspaceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.workspace = Workspace(Path(self._temporary.name))
+
+
+class PrepareTests(WorkspaceTest):
+    def test_locates_the_finding_and_records_the_base(self) -> None:
+        context = self.workspace.start()
+        self.assertTrue(context["finding_located"])
+        self.assertEqual(context["patch_base"], self.workspace.base)
+        self.assertEqual(self.workspace.state()["base"], self.workspace.base)
+
+    def test_stale_finding_declines_instead_of_patching_blind(self) -> None:
+        context = self.workspace.start(snippet="os.execv(rewritten_since_the_scan)")
+        self.assertFalse(context["finding_located"])
+        self.assertEqual(self.workspace.state()["status"], "skipped_stale")
+
+    def test_missing_file_is_stale(self) -> None:
+        context = self.workspace.start(file="gone.py", snippet="anything")
+        self.assertFalse(context["finding_located"])
+
+    def test_template_delimiter_is_refused_with_a_named_reason(self) -> None:
+        result = self.workspace.engine(
+            "prepare", self.workspace.goal(title="uses {{ user }} in the title")
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("template delimiter", result.stderr.decode("utf-8"))
+
+    def test_free_text_goal_is_refused(self) -> None:
+        result = self.workspace.engine("prepare", "please fix the command injection")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("finding object", result.stderr.decode("utf-8"))
+
+    def test_path_escaping_the_repository_is_refused(self) -> None:
+        result = self.workspace.engine(
+            "prepare", self.workspace.goal(file="../../etc/passwd")
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("escape the repository", result.stderr.decode("utf-8"))
+
+    def test_malformed_id_is_refused(self) -> None:
+        result = self.workspace.engine("prepare", self.workspace.goal(id="../../F1"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("`id`", result.stderr.decode("utf-8"))
+
+
+class ChangedSetTests(WorkspaceTest):
+    """The changed set comes from Git, never from the generator's account."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def test_change_survives_the_checkpoint_that_commits_it(self) -> None:
+        # The regression this guards: a staged (--cached) diff is empty by the
+        # time the engine looks, because Fabro already committed the tree.
+        context = self.workspace.generate()
+        self.assertTrue(context["has_change"])
+        self.assertEqual(self.workspace.state()["changed_paths"], ["M app.py"])
+
+    def test_added_deleted_and_renamed_paths_are_all_seen(self) -> None:
+        workspace = self.workspace
+        (workspace.path / "added.py").write_text("x = 1\n", encoding="utf-8")
+        (workspace.path / "app.py").write_text(FIXED_SOURCE, encoding="utf-8")
+        git("mv", "app.py", "renamed.py", cwd=workspace.path)
+        context = workspace.generate(source=None)
+        self.assertTrue(context["has_change"])
+        entries = " ".join(workspace.state()["changed_paths"])
+        self.assertIn("added.py", entries)
+        self.assertIn("renamed.py", entries)
+
+    def test_mode_change_alone_is_a_change(self) -> None:
+        workspace = self.workspace
+        os.chmod(workspace.path / "app.py", 0o755)
+        context = workspace.generate(source=None)
+        self.assertTrue(context["has_change"])
+
+    def test_symlink_is_reported_as_a_changed_path(self) -> None:
+        workspace = self.workspace
+        (workspace.path / "link.py").symlink_to("app.py")
+        context = workspace.generate(source=None)
+        self.assertTrue(context["has_change"])
+        self.assertIn("link.py", " ".join(workspace.state()["changed_paths"]))
+
+    def test_generator_claim_of_changes_cannot_invent_one(self) -> None:
+        context = self.workspace.generate(
+            source=None, changedFiles=["app.py", "invented.py"]
+        )
+        self.assertFalse(context["has_change"])
+        self.assertEqual(self.workspace.state()["status"], "declined")
+
+    def test_no_change_and_no_question_declines(self) -> None:
+        context = self.workspace.generate(source=None, summary="I changed nothing")
+        self.assertFalse(context["has_change"])
+        self.assertFalse(context["owner_question"])
+        self.assertIn("changed nothing", self.workspace.state()["decline_reason"])
+
+    def test_refusal_declines(self) -> None:
+        context = self.workspace.generate(source=None, refusal="dispatch was malformed")
+        self.assertTrue(context["declined"])
+        self.assertIn("refused", self.workspace.state()["decline_reason"])
+
+
+class TamperingTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def test_patch_touching_the_engine_is_declined(self) -> None:
+        workspace = self.workspace
+        engine = (
+            workspace.path
+            / ".fabro/workflows/suggest-security-patches/scripts/suggest_patches.py"
+        )
+        engine.write_text(
+            engine.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8"
+        )
+        context = workspace.generate(source=None)
+        self.assertTrue(context["declined"])
+        state = workspace.state()
+        self.assertIn("support files", state["decline_reason"])
+        self.assertTrue(state["tampering_signals"])
+
+    def test_fixtures_are_patchable(self) -> None:
+        # The smoke run's whole job is to patch a fixture, and a fixture
+        # decides nothing, so it is the one exception to the rule above.
+        workspace = self.workspace
+        fixtures = (
+            workspace.path / ".fabro/workflows/suggest-security-patches/fixtures"
+        )
+        fixtures.mkdir(parents=True, exist_ok=True)
+        (fixtures / "command_injection.py").write_text("x = 1\n", encoding="utf-8")
+        context = workspace.generate(source=None)
+        self.assertTrue(context["has_change"])
+
+    def test_engine_edited_after_prepare_aborts_the_next_node(self) -> None:
+        """The per-node hash check, as the graph runs it."""
+        workspace = self.workspace
+        engine_relative = (
+            ".fabro/workflows/suggest-security-patches/scripts/suggest_patches.py"
+        )
+        expected = hashlib.sha256(
+            (workspace.path / engine_relative).read_bytes()
+        ).hexdigest()
+        (workspace.path / engine_relative).write_text(
+            "# replaced\n", encoding="utf-8"
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); "
+                "sys.exit(0 if pairs and all("
+                "hashlib.sha256(open(path,'rb').read()).hexdigest()==expected "
+                "for path,expected in pairs) else 91)",
+                engine_relative,
+                expected,
+            ],
+            cwd=workspace.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(result.returncode, 91)
+
+    def test_hook_installed_at_an_active_path_is_reported(self) -> None:
+        """Defense in depth only — see fabro-sh/fabro#809 for the real control.
+
+        The engine cannot stop a hook from firing at the generator's own
+        checkpoint, so what it owes the operator is noticing and saying so.
+        """
+        workspace = self.workspace
+        hooks = workspace.path / "planted-hooks"
+        hooks.mkdir()
+        hook = hooks / "post-commit"
+        hook.write_text("#!/bin/sh\ntouch /tmp/fabro-hook-ran\n", encoding="utf-8")
+        hook.chmod(0o755)
+        git("config", "core.hooksPath", str(hooks), cwd=workspace.path)
+
+        workspace.generate(source=None)
+        signals = " ".join(workspace.state()["tampering_signals"])
+        self.assertIn("core.hooksPath", signals)
+        # And the engine has repointed it away from the planted directory.
+        configured = git(
+            "config", "--local", "--get", "core.hooksPath", cwd=workspace.path
+        ).stdout.decode().strip()
+        self.assertNotEqual(configured, str(hooks))
+
+
+class VerdictTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+
+    def verdict(self, **overrides) -> dict:
+        payload = json.loads(json.dumps(PASSING_VERDICT))
+        payload.update(overrides)
+        return self.workspace.context(
+            self.workspace.engine("merge-verdict", json.dumps(payload))
+        )
+
+    def test_pass_moves_to_the_adversarial_pass(self) -> None:
+        context = self.verdict()
+        self.assertTrue(context["verdict_pass"])
+
+    def test_unsure_declines_with_no_revision_round(self) -> None:
+        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
+        claims["behaviourUnchanged"] = {
+            "state": "UNSURE",
+            "evidence": "callers I could not trace",
+        }
+        context = self.verdict(claims=claims)
+        self.assertTrue(context["declined"])
+        self.assertFalse(context["retry"])
+        self.assertFalse(self.workspace.state()["revision_used"])
+
+    def test_first_objection_revises_and_second_declines(self) -> None:
+        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
+        claims["targeted"] = {"state": "NOT_CONFIDENT", "evidence": "a stray refactor"}
+        first = self.verdict(verdict="REJECT", claims=claims, objections=["drop it"])
+        self.assertTrue(first["retry"])
+        self.assertTrue(self.workspace.state()["revision_used"])
+
+        second = self.verdict(verdict="REJECT", claims=claims, objections=["still"])
+        self.assertTrue(second["declined"])
+        self.assertFalse(second["retry"])
+
+    def test_reviewed_paths_must_match_the_derived_set(self) -> None:
+        payload = json.loads(json.dumps(PASSING_VERDICT))
+        payload["reviewedPaths"] = ["M some_other_file.py"]
+        result = self.workspace.engine("merge-verdict", json.dumps(payload))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("different set of paths", result.stderr.decode("utf-8"))
+
+    def test_missing_claim_is_refused(self) -> None:
+        claims = json.loads(json.dumps(PASSING_VERDICT["claims"]))
+        del claims["targeted"]
+        result = self.workspace.engine(
+            "merge-verdict", json.dumps({**PASSING_VERDICT, "claims": claims})
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("omitted the targeted claim", result.stderr.decode("utf-8"))
+
+
+class AdversarialTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+
+    def test_clean_pass_finalizes(self) -> None:
+        context = self.workspace.context(
+            self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+        )
+        self.assertTrue(context["adversarial_clean"])
+
+    def test_new_attack_path_sends_it_back_once(self) -> None:
+        context = self.workspace.context(
+            self.workspace.engine(
+                "merge-adversarial",
+                json.dumps(
+                    {
+                        "introducesNewAttackPath": True,
+                        "reasoning": "the allowlist is caller-supplied",
+                        "attackPath": "caller sets ALLOWED then reaches subprocess",
+                    }
+                ),
+            )
+        )
+        self.assertTrue(context["retry"])
+        self.assertIn(
+            "new attack path", " ".join(self.workspace.state()["objections"])
+        )
+
+
+class OwnerGateTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def test_question_routes_to_the_gate_once(self) -> None:
+        context = self.workspace.generate(
+            source=None, ownerQuestion="Should legacy callers keep working?"
+        )
+        self.assertTrue(context["owner_question"])
+        self.assertTrue(self.workspace.state()["owner_question_used"])
+
+    def test_second_question_declines_rather_than_asking_again(self) -> None:
+        self.workspace.generate(source=None, ownerQuestion="first?")
+        context = self.workspace.generate(source=None, ownerQuestion="second?")
+        self.assertFalse(context["owner_question"])
+        self.assertTrue(context["declined"])
+        self.assertIn("second owner question", self.workspace.state()["decline_reason"])
+
+    def test_a_question_alongside_a_change_is_treated_as_the_change(self) -> None:
+        context = self.workspace.generate(ownerQuestion="but also, should I?")
+        self.assertTrue(context["has_change"])
+        self.assertFalse(context["owner_question"])
+
+
+class DeliveryTests(WorkspaceTest):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+        self.workspace.engine("merge-verdict", json.dumps(PASSING_VERDICT))
+        self.workspace.engine("merge-adversarial", json.dumps(CLEAN_ADVERSARIAL))
+
+    def test_products_carry_the_record_and_the_bytes(self) -> None:
+        self.workspace.engine("finalize")
+        products = self.workspace.products()
+        record = json.loads((products / "verdict.json").read_text(encoding="utf-8"))
+        payload = (products / "patch.diff").read_bytes()
+
+        self.assertEqual(record["status"], "patch_written")
+        self.assertEqual(record["base"], self.workspace.base)
+        self.assertEqual(
+            record["patchSha256"], hashlib.sha256(payload).hexdigest()
+        )
+        self.assertTrue(record["untested"])
+        self.assertEqual(record["testsRun"], ENGINE.TESTS_RUN_TEXT)
+
+    def test_patch_applies_to_the_recorded_base(self) -> None:
+        self.workspace.engine("finalize")
+        products = self.workspace.products()
+        git("checkout", "-q", self.workspace.base, "--", "app.py", cwd=self.workspace.path)
+        subprocess.run(
+            ["git", "apply", "--check", str(products / "patch.diff")],
+            cwd=self.workspace.path,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def test_the_note_leads_with_the_absence_of_tests(self) -> None:
+        self.workspace.engine("finalize")
+        note = (self.workspace.products() / "PATCH.md").read_text(encoding="utf-8")
+        heading, remainder = note.split("\n", 1)
+        self.assertIn("Reviewed patch", heading)
+        self.assertIn("No tests were run", remainder[:400])
+        self.assertNotIn("verified patch", note.lower())
+
+
+class DeclineTests(WorkspaceTest):
+    """The invariant that keeps a rejected attempt from becoming a PR."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+        self.workspace.generate()
+
+    def decline(self) -> subprocess.CompletedProcess:
+        state = self.workspace.state()
+        state["status"] = "declined"
+        state["decline_reason"] = "The verifier could not establish behaviour."
+        (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+        ).write_text(json.dumps(state), encoding="utf-8")
+        return self.workspace.engine("no-patch")
+
+    def test_decline_leaves_the_tree_at_base_so_the_final_diff_is_empty(self) -> None:
+        self.decline()
+        self.workspace.checkpoint("no_patch")
+        diff = git(
+            "diff",
+            "--stat",
+            f"{self.workspace.base}..HEAD",
+            cwd=self.workspace.path,
+        ).stdout.decode()
+        self.assertEqual(diff.strip(), "", "a declined run would still open a PR")
+
+    def test_decline_removes_untracked_leftovers(self) -> None:
+        # `git reset --hard` would not: this is why the decline path restores
+        # and then cleans, and asserts the result.
+        (self.workspace.path / "stray.txt").write_text("left behind", encoding="utf-8")
+        self.decline()
+        self.assertFalse((self.workspace.path / "stray.txt").exists())
+
+    def test_decline_never_rewinds_the_pushed_branch(self) -> None:
+        before = git(
+            "rev-parse", "HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+        self.decline()
+        after = git(
+            "rev-parse", "HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+        self.assertEqual(before, after, "HEAD moved, so the next push would fail")
+
+    def test_decline_writes_its_reason_and_the_recommendation(self) -> None:
+        self.decline()
+        note = (self.workspace.products() / "DECLINED.md").read_text(encoding="utf-8")
+        self.assertIn("No patch for F1", note)
+        self.assertIn("subprocess with an argument list", note)
+
+    def test_revise_returns_the_tree_without_moving_head(self) -> None:
+        before = git(
+            "rev-parse", "HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+        self.workspace.engine("revise")
+        after = git(
+            "rev-parse", "HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+        self.assertEqual(before, after)
+        self.assertEqual(
+            (self.workspace.path / "app.py").read_text(encoding="utf-8"),
+            VULNERABLE_SOURCE,
+        )
+
+
+class GoalHelperTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.report = Path(self._temporary.name) / "SECURITY-REVIEW-20260826-000000"
+        self.report.mkdir()
+
+    def write(self, *findings: dict) -> Path:
+        path = self.report / "SECURITY-REVIEW-RESULTS.jsonl"
+        path.write_text(
+            "\n".join(json.dumps(finding) for finding in findings) + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def finding(self, **overrides) -> dict:
+        value = {
+            "id": "F1",
+            "title": "Command injection",
+            "file": "app.py",
+            "snippet": "os.system(command)",
+            "internalOnly": "dropped",
+        }
+        value.update(overrides)
+        return value
+
+    def test_selects_by_id_and_carries_only_what_the_run_reads(self) -> None:
+        self.write(self.finding(), self.finding(id="F2", title="Other"))
+        goal = GOAL_HELPER.build(
+            GOAL_HELPER.select(
+                GOAL_HELPER.load_findings(
+                    self.report / "SECURITY-REVIEW-RESULTS.jsonl"
+                ),
+                "F1",
+            )
+        )
+        self.assertEqual(goal["id"], "F1")
+        self.assertNotIn("internalOnly", goal)
+
+    def test_template_delimiter_is_refused_before_any_run(self) -> None:
+        with self.assertRaises(GOAL_HELPER.GoalError) as caught:
+            GOAL_HELPER.build(self.finding(title="uses {{ user }}"))
+        message = str(caught.exception)
+        self.assertIn("template delimiter", message)
+        self.assertIn("Do not edit the finding", message)
+
+    def test_unknown_id_names_what_is_available(self) -> None:
+        self.write(self.finding())
+        with self.assertRaises(GOAL_HELPER.GoalError) as caught:
+            GOAL_HELPER.select(
+                GOAL_HELPER.load_findings(
+                    self.report / "SECURITY-REVIEW-RESULTS.jsonl"
+                ),
+                "F9",
+            )
+        self.assertIn("F1", str(caught.exception))
+
+    def test_non_id_selection_is_refused(self) -> None:
+        self.write(self.finding())
+        with self.assertRaises(GOAL_HELPER.GoalError):
+            GOAL_HELPER.select([self.finding()], "all")
+
+
+class GraphAndConfigurationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.graph = GRAPH_PATH.read_text(encoding="utf-8")
+
+    def test_every_deterministic_node_rechecks_its_support_files(self) -> None:
+        scripts = re.findall(r'script="(.*?)"\n', self.graph, flags=re.S)
+        engine_scripts = [s for s in scripts if "suggest_patches.py" in s]
+        self.assertGreaterEqual(len(engine_scripts), 7)
+        for script in engine_scripts:
+            self.assertIn("hashlib.sha256", script)
+            for relative in PINNED_SUPPORT_FILES:
+                self.assertIn(relative, script)
+
+    def test_the_owner_gate_is_a_freeform_hexagon_with_a_decline_default(self) -> None:
+        gate = re.search(r"owner_gate \[(.*?)\]", self.graph, flags=re.S)
+        assert gate
+        body = gate.group(1)
+        self.assertIn("shape=hexagon", body)
+        self.assertIn('timeout="86400s"', body)
+        self.assertIn('human.default_choice="no_patch"', body)
+        self.assertIn("owner_gate -> generate [freeform=true]", self.graph)
+
+    def test_gate_timeout_and_failure_are_routed_by_condition(self) -> None:
+        """Neither may fall through to the freeform edge.
+
+        Fabro evaluates conditions first, so routing both here keeps an
+        unattended run from looping back into the generator: on timeout the
+        handler sets preferred_label to the human.default_choice value, and a
+        gate that fails closed arrives as outcome=failed.
+        """
+        edge = re.search(
+            r"owner_gate -> no_patch \[condition=\"(.*?)\"\]", self.graph
+        )
+        assert edge, "the gate has no conditional route to no_patch"
+        condition = edge.group(1)
+        self.assertIn("preferred_label=no_patch", condition)
+        self.assertIn("outcome=failed", condition)
+
+    def test_generate_allows_exactly_three_visits(self) -> None:
+        node = re.search(r"    generate \[(.*?)\n    \]", self.graph, flags=re.S)
+        assert node
+        self.assertIn("max_visits=3", node.group(1))
+
+    def test_every_terminal_path_reaches_exit_or_abort(self) -> None:
+        for node in ("finalize", "no_patch"):
+            self.assertIn(f"{node} -> exit", self.graph)
+            self.assertIn(f"{node} -> abort", self.graph)
+
+    def test_configurations_disable_repository_hooks_at_checkpoint(self) -> None:
+        for name in CONFIGS:
+            settings = tomllib.loads(
+                (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
+            )
+            self.assertTrue(
+                settings["run"]["checkpoint"]["skip_git_hooks"],
+                f"{name} must not let repository hooks run at checkpoint",
+            )
+
+    def test_products_never_ride_in_the_pull_request_diff(self) -> None:
+        for name in CONFIGS:
+            settings = tomllib.loads(
+                (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
+            )
+            excluded = settings["run"]["checkpoint"]["exclude_globs"]
+            self.assertIn("SECURITY-PATCH-*/**", excluded, name)
+
+    def test_default_configuration_opens_a_draft_pull_request(self) -> None:
+        settings = tomllib.loads(
+            (WORKFLOW_ROOT / "workflow.toml").read_text(encoding="utf-8")
+        )
+        self.assertTrue(settings["run"]["pull_request"]["enabled"])
+        self.assertTrue(settings["run"]["pull_request"]["draft"])
+
+    def test_embargo_configuration_publishes_nothing(self) -> None:
+        settings = tomllib.loads(
+            (WORKFLOW_ROOT / "workflow-embargo.toml").read_text(encoding="utf-8")
+        )
+        self.assertFalse(settings["run"]["pull_request"]["enabled"])
+        self.assertFalse(settings["run"]["run_branch"]["push"])
+        self.assertFalse(settings["run"]["meta_branch"]["push"])
+
+    def test_no_configuration_requests_a_github_token(self) -> None:
+        for name in CONFIGS:
+            settings = tomllib.loads(
+                (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
+            )
+            integrations = settings["run"].get("integrations", {})
+            self.assertNotIn("github", integrations, name)
+            self.assertEqual(settings["run"]["environment"]["env"]["GITHUB_TOKEN"], "")
+
+    def test_schemas_declare_their_dialect(self) -> None:
+        for path in sorted((WORKFLOW_ROOT / "schemas").glob("*.json")):
+            schema = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                schema["$schema"],
+                "https://json-schema.org/draft/2020-12/schema",
+                path.name,
+            )
+
+    def test_the_shipped_fixture_finding_is_valid_input(self) -> None:
+        finding = json.loads(FIXTURE_FINDING.read_text(encoding="utf-8"))
+        normalized = ENGINE.validate_finding(finding)
+        self.assertEqual(normalized["id"], "F1")
+        self.assertTrue(
+            (REPOSITORY_ROOT / normalized["file"]).is_file(),
+            "the fixture finding must point at a file that exists",
+        )
+
+    def test_products_never_call_the_result_verified(self) -> None:
+        engine_source = ENGINE_PATH.read_text(encoding="utf-8")
+        self.assertIn("Reviewed patch", engine_source)
+        self.assertTrue(ENGINE.TESTS_RUN_TEXT.startswith("none"))
+
+
+if __name__ == "__main__":
+    unittest.main()

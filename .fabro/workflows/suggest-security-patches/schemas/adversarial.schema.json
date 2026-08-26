@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Adversarial review of the bare diff",
+  "type": "object",
+  "required": ["introducesNewAttackPath", "reasoning"],
+  "properties": {
+    "introducesNewAttackPath": {
+      "type": "boolean",
+      "description": "True only for a concrete path an attacker gains from this change that did not exist before it."
+    },
+    "reasoning": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000,
+      "description": "The attack path, concretely, or what was checked and why nothing was found."
+    },
+    "attackPath": {
+      "type": ["string", "null"],
+      "maxLength": 4000,
+      "description": "Entry point through the changed code to the attacker's gain. Required when introducesNewAttackPath is true."
+    }
+  }
+}

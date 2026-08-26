@@ -1,0 +1,74 @@
+_version = 1
+
+[workflow]
+graph = "suggest-security-patches.fabro"
+
+# The finding arrives as the goal, not as an input:
+#   python3 .fabro/workflows/suggest-security-patches/scripts/make_goal.py \
+#     SECURITY-REVIEW-<ts> F3 > finding.json
+#   fabro run --goal-file finding.json \
+#     .fabro/workflows/suggest-security-patches/workflow.toml
+
+# The patch is written against the cloned HEAD, so history is not needed.
+[run.clone]
+depth = 1
+
+# Fabro's publish stage pushes the run branch and opens the pull request from
+# the server, with its own GitHub App credentials, against the branch this run
+# cloned. Nothing in the sandbox needs a token to deliver, so the workflow
+# never runs `gh`.
+#
+# This ships enabled, which is what the workflow is for — and it means a run
+# against a PUBLIC repository discloses the patch and the finding the moment
+# publish runs. For a public repository, or a finding under embargo, use
+# workflow-embargo.toml instead and open the pull request yourself later.
+[run.pull_request]
+enabled = true
+draft = true
+
+# Repository hooks must not run during checkpoints. This alone is not
+# sufficient: Fabro implements it as `git commit --no-verify`, which leaves
+# post-commit hooks live. See fabro-sh/fabro#809.
+[run.checkpoint]
+skip_git_hooks = true
+exclude_globs = [
+  "SECURITY-PATCH-*/**",
+  ".fabro/blobs/**",
+  ".fabro/workflows/suggest-security-patches/runtime",
+]
+
+[run.model.fallbacks]
+"kimi-k3" = ["moonshot:kimi-k3", "openrouter:kimi-k3", "claude-opus-5"]
+
+[run.environment]
+id = "suggest-security-patches"
+
+# No [run.integrations.github.permissions] is declared, so no GITHUB_TOKEN is
+# injected into any node's environment. These are blanked as defense in depth.
+[run.environment.env]
+GITHUB_TOKEN = ""
+GH_TOKEN = ""
+
+[run.artifacts]
+include = [
+  "SECURITY-PATCH-*/patch.diff",
+  "SECURITY-PATCH-*/verdict.json",
+  "SECURITY-PATCH-*/PATCH.md",
+  "SECURITY-PATCH-*/DECLINED.md",
+]
+
+[environments.suggest-security-patches]
+provider = "daytona"
+
+# The agents search the tree constantly. buildpack-deps:noble, the Daytona
+# default base, ships grep but not ripgrep, which respects .gitignore and is
+# far faster on a large repository.
+[environments.suggest-security-patches.image]
+dockerfile = """
+FROM buildpack-deps:noble
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
+"""
+
+[environments.suggest-security-patches.resources]
+cpu = 2
+memory = "4GB"

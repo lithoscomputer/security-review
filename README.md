@@ -5,8 +5,17 @@ repository. A team of agents maps the target, looks for vulnerabilities, and
 tries to disprove each candidate. Only findings that pass a three-voter
 verification panel reach the report.
 
-This project is a workflow for [Fabro](https://fabro.sh/). Fabro is required to
-run it.
+This project holds two workflows for [Fabro](https://fabro.sh/). Fabro is
+required to run them.
+
+| Workflow | Takes | Produces |
+| --- | --- | --- |
+| `security-review` | A repository | A report of verified findings |
+| `suggest-security-patches` | One finding from that report | A reviewed patch, as a draft pull request |
+
+The review is read-only. The patch workflow writes to its sandbox checkout and
+opens a pull request, so it has a different trust model — see
+[Suggest security patches](#suggest-security-patches) before you run it.
 
 ## Before you run
 
@@ -198,6 +207,128 @@ Reviews are nondeterministic. A later run can find something that an earlier
 run missed. An empty report means that the run found no panel-verified finding;
 it does not prove that the target has no vulnerabilities. Use this workflow
 with SAST, dependency scanning, and code review.
+
+## Suggest security patches
+
+The second workflow takes one finding from a report and produces a fix, opened
+as a **draft pull request** against the branch the run cloned. It runs
+unattended, one finding per run.
+
+A generator implements the fix, an independent verifier reviews it and states
+three claims, and a third agent attacks the change on its own. A single
+objection buys one revision round; a second declines. Every product calls the
+result a **reviewed patch** — never verified or tested.
+
+### Run it
+
+Build the goal from a report, then run:
+
+```bash
+python3 .fabro/workflows/suggest-security-patches/scripts/make_goal.py \
+  SECURITY-REVIEW-20260826-101500 F3 > finding.json
+
+fabro run \
+  --goal-file finding.json \
+  .fabro/workflows/suggest-security-patches/workflow.toml
+```
+
+`make_goal.py` refuses anything the run would refuse later, so problems surface
+at your terminal instead of after a sandbox starts.
+
+The finding travels as the run's goal, not as an input. Fabro renders the goal
+as a template, so a finding whose text contains `{{`, `{%`, or `{#` cannot be
+passed through unchanged; `make_goal.py` names the field and offset and stops.
+Do not edit the finding to get around this — that changes the evidence the
+patch is judged against. Patch such a finding by hand.
+
+### What you get
+
+A completed run opens a draft pull request whose diff is the fix alone, and
+writes a `SECURITY-PATCH-<timestamp>/` bundle you collect with
+`fabro artifact cp <RUN_ID>`:
+
+| File | Purpose |
+| --- | --- |
+| `PATCH.md` | The note to read first: what changed, what review established, and that no tests were run. |
+| `patch.diff` | The reviewed diff, byte-faithful, if you would rather apply it yourself. |
+| `verdict.json` | The canonical record: claims, base commit, and the patch's SHA-256. |
+| `DECLINED.md` | Written instead when no patch was earned, with the blocking claim and the reason. |
+
+A declined run opens no pull request. A decline is the verifier doing its job:
+"I could not establish that the fix leaves behaviour unchanged" is a complete
+answer, and the note carries the report's original recommendation so you still
+have somewhere to start.
+
+### It runs no tests
+
+By design. The verifier's confidence rests on reading the change and its
+callers, never on a test run, and every product says so in those words. Wire
+your own verification — a test suite, a linter, a type checker, an LLM judge —
+into the graph between the `verify` and `finalize` nodes, as a
+`shape=parallelogram` node whose failure routes to `no_patch`.
+
+### Before you point it at a repository
+
+This workflow writes to its sandbox checkout and publishes. Three things follow
+from that, and none of them are optional reading.
+
+**Use it only on repositories you trust.** It inherits the trust model of a
+maintainer fixing their own code. Fabro embeds a `contents: write` installation
+token in the sandbox's git origin URL — it needs one to push checkpoints — and
+any process in that sandbox can read it. Untrusted repository content plus an
+agent that reads it is exactly the prompt-injection setup that turns into a
+pushed branch. Point the read-only `security-review` workflow at code you do
+not trust; point this one only at code you own.
+
+**Narrow the installation, and protect the target.** Scope the Fabro GitHub App
+installation used for these runs to the target repository alone, so the minted
+token reaches nothing else, and enable branch and tag protection so a rogue ref
+cannot become a release path. The draft pull request plus your review is the
+merge gate.
+
+**A draft pull request is not private.** The shipped `workflow.toml` opens one
+on every successful run — that is what the workflow is for — which means a run
+against a **public** repository discloses the patch and the finding the moment
+it publishes. Nothing in the sandbox can detect repository visibility, so this
+is yours to get right. For a public repository, or a finding under embargo, use
+the artifacts-only configuration instead:
+
+```bash
+fabro run --goal-file finding.json \
+  .fabro/workflows/suggest-security-patches/workflow-embargo.toml
+```
+
+It disables pull-request creation *and* run-branch and metadata-branch pushing,
+because disabling the pull request alone would not hold an embargo: Fabro
+pushes the run branch after every checkpoint. Nothing leaves the sandbox but
+the artifacts. Apply the patch and open the pull request yourself when
+disclosure is acceptable. If a finding's evidence quotes a live credential,
+rotate it first and do not run with pull-request creation enabled.
+
+### Known gap: repository hooks at checkpoint
+
+Fabro's checkpoint commit runs repository git hooks. `[run.checkpoint]
+skip_git_hooks = true` — set in every configuration here — becomes
+`git commit --no-verify`, which does not suppress `post-commit`. Checkpoints
+run after every node, so a generator that installs a hook has it execute at its
+own node's checkpoint, before any later node could restore anything. No
+workflow can close this from inside; it is filed upstream as
+[fabro-sh/fabro#809](https://github.com/fabro-sh/fabro/issues/809).
+
+The engine reports what it sees — it repoints `core.hooksPath` at a directory
+it owns, checks it at every deterministic node, and records deviations in
+`PATCH.md` and `verdict.json` — but treat that as a signal, not a control. The
+trusted-repository rule above is the control.
+
+### Attempts stay in the run branch
+
+Fabro commits and pushes every node's state, so a rejected first attempt and
+the restoration that followed it remain in `fabro/run/<id>` history, and a
+revised run's pull request lists them among its commits. The diff under review
+is only ever the reviewed patch, and a test asserts the pull request's final
+diff equals `patch.diff` — but the attempt is visible to anyone reading the
+branch. If a rejected attempt must never leave the sandbox, use the
+artifacts-only configuration.
 
 ## More documentation
 

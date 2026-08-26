@@ -1,0 +1,13 @@
+{
+  "id": "F1",
+  "title": "Command injection through unvalidated input passed to os.system",
+  "file": ".fabro/workflows/suggest-security-patches/fixtures/command_injection.py",
+  "line": 8,
+  "snippet": "os.system(command)",
+  "symbol": "run_report",
+  "severity": "high",
+  "ruleId": "command-injection.shell-from-user-input",
+  "impact": "Whatever the caller types is executed by the shell, so any input reaching run_report becomes arbitrary command execution with the process's privileges.",
+  "description": "run_report reads a string from input() and hands it straight to os.system, which runs it through a shell. Nothing validates, escapes, or constrains the value between the two, so shell metacharacters in the input are interpreted rather than treated as data.",
+  "recommendation": "Do not pass user input through a shell. Use subprocess.run with an argument list and shell=False, and constrain the command to a known-good set rather than accepting an arbitrary string."
+}
