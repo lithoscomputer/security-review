@@ -330,7 +330,27 @@ def capture_diff(base: str, destination: Path) -> bytes:
     return payload
 
 
-def build_review_pin(base: str, payload: bytes) -> str:
+def read_trusted_base() -> str:
+    """The base commit, from the run context rather than from the state file.
+
+    `prepare` emits it into Fabro's context, which the server holds outside the
+    sandbox. Every step whose outcome can reach publication reads it from here:
+    the state file lives in the checkout the generator can write, and a forged
+    base there is enough to make a real change look like no change at all.
+    """
+    value = read_stdin_text().strip()
+    if not COMMIT_PATTERN.match(value):
+        raise WorkflowDataError(
+            "the trusted base commit did not reach this step. It is carried in "
+            "the run context, so a missing or malformed value means the node "
+            "was wired without its stdin_source"
+        )
+    if git("rev-parse", "--verify", "--quiet", value + "^{commit}").returncode != 0:
+        raise WorkflowDataError(f"the trusted base {value[:12]}… is not a commit here")
+    return value
+
+
+def build_review_pin(base: str, payload: bytes, entries: Sequence[str]) -> str:
     """The trusted anchor for everything delivered.
 
     Emitted into Fabro's run context, which lives on the server: unlike this
@@ -343,6 +363,7 @@ def build_review_pin(base: str, payload: bytes) -> str:
             "base": base,
             "review_commit": resolve_head(),
             "diff_sha256": sha256_bytes(payload),
+            "changed": list(entries),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -363,10 +384,14 @@ def parse_review_pin(raw: str) -> Dict[str, str]:
         raise WorkflowDataError(f"the review pin is not JSON: {error}") from error
     if not isinstance(value, dict):
         raise WorkflowDataError("the review pin must be a JSON object")
+    changed = value.get("changed")
     pin = {
         "base": str(value.get("base", "")),
         "review_commit": str(value.get("review_commit", "")),
         "diff_sha256": str(value.get("diff_sha256", "")),
+        "changed": [entry for entry in changed if isinstance(entry, str)]
+        if isinstance(changed, list)
+        else [],
     }
     if not COMMIT_PATTERN.match(pin["base"]):
         raise WorkflowDataError("the review pin carries no base commit")
@@ -955,21 +980,81 @@ def assess_change() -> None:
         emit(has_change=False, owner_question=False, declined=True)
         return
 
+    # Routing only. `pin_review` re-derives all of this from the trusted base
+    # before anything is reviewed, so a forged base here can misroute a run but
+    # cannot decide what is published.
     state["status"] = "verifying"
     state["diffstat"] = diffstat(base)
-    # Pin the reviewed bytes before any reviewer runs, and put the pin in the
-    # run context rather than only in the state file: the context is
-    # server-side, so it is the one record here that an agent with write access
-    # to this checkout cannot edit to match a change it made afterwards.
+    save_state(state)
+    emit(has_change=True, owner_question=False, declined=False)
+
+
+def pin_review() -> None:
+    """Re-derive the change from the trusted base, then pin it.
+
+    `assess_change` works from the state file so it can read the generator's
+    output on its own stdin, which leaves its base forgeable. This step takes
+    the base from the run context instead and redoes every judgement that can
+    reach publication: what the change actually contains, whether it touches
+    anything it must not, and the fingerprint `finalize` will hold it to.
+    """
+    state = guard()
+    base = read_trusted_base()
+    if state.get("base") != base:
+        # Not fatal on its own — the trusted value simply wins — but a run
+        # whose state disagrees with the context has been edited.
+        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
+            f"the recorded base disagreed with the trusted base {base[:12]}…"
+        ]
+        state["base"] = base
+
+    entries = changed_entries(base)
+    state["changed_paths"] = display_entries(entries)
+    state["changed_path_set"] = sorted(set(entry_paths(entries)))
+    state["diffstat"] = diffstat(base)
+
+    violations = protected_path_violations(entry_paths(entries))
+    if violations:
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The attempt changed this workflow's own support files "
+            f"({', '.join(violations[:5])}). No legitimate fix edits the engine "
+            "that judges it, so the unit is declined and the change discarded."
+        )
+        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
+            f"patch touched protected paths: {', '.join(violations[:5])}"
+        ]
+        save_state(state)
+        emit(pin_declined=True)
+        return
+
+    if not entries:
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "Measured against the run's own base commit, the attempt changed "
+            "nothing. Nothing is delivered."
+        )
+        save_state(state)
+        emit(pin_declined=True)
+        return
+
     payload = diff_bytes(base)
-    pin = build_review_pin(base, payload)
+    if not payload.strip():
+        state["status"] = "declined"
+        state["decline_reason"] = (
+            "The attempt produced an empty diff against the run's own base "
+            "commit. Nothing is delivered."
+        )
+        save_state(state)
+        emit(pin_declined=True)
+        return
+
+    state["status"] = "verifying"
     state["reviewed_diff_sha256"] = sha256_bytes(payload)
     save_state(state)
     emit(
-        has_change=True,
-        owner_question=False,
-        declined=False,
-        review_pin=pin,
+        pin_declined=False,
+        review_pin=build_review_pin(base, payload, state["changed_paths"]),
     )
 
 
@@ -1111,7 +1196,10 @@ def merge_adversarial() -> None:
 
 def revise() -> None:
     state = guard()
-    base = state["base"]
+    # Trusted, not state-derived: restoring to a forged base would leave the
+    # rejected attempt in the tree and call it a fresh start.
+    base = read_trusted_base()
+    state["base"] = base
     restore_base_tree(base)
     leftovers = leftover_paths()
     if not content_matches_base(base) or leftovers:
@@ -1163,6 +1251,11 @@ def finalize() -> None:
     state["base"] = base
     state["patch_sha256"] = sha256_bytes(payload)
     state["reviewed_diff_sha256"] = pin["diff_sha256"]
+    # The published record's changed set comes from the pin, so what a reader
+    # is told the patch touches is derived from the trusted base rather than
+    # from a file in the checkout.
+    if pin["changed"]:
+        state["changed_paths"] = pin["changed"]
     state["status"] = "patch_written"
 
     record = build_record(state, "patch_written")
@@ -1180,7 +1273,17 @@ def finalize() -> None:
 
 def no_patch() -> None:
     state = guard()
-    base = state["base"]
+    # The base comes from the run context, never from the state file. With a
+    # forged base this step would "restore" to a tree that still held the
+    # rejected change, report a clean decline, and leave publication a
+    # non-empty diff to open a pull request from — a declined run publishing an
+    # unreviewed patch. The trusted base is what makes the decline real.
+    base = read_trusted_base()
+    if state.get("base") != base:
+        state["tampering_signals"] = list(state.get("tampering_signals") or []) + [
+            f"the recorded base disagreed with the trusted base {base[:12]}…"
+        ]
+    state["base"] = base
     status = state.get("status")
     if status not in ("declined", "skipped_stale"):
         state["status"] = status = "declined"
@@ -1221,6 +1324,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("prepare")
     for name in (
         "assess-change",
+        "pin-review",
         "merge-verdict",
         "merge-adversarial",
         "revise",
@@ -1236,6 +1340,7 @@ def main(argv: Sequence[str]) -> int:
     commands = {
         "prepare": lambda: prepare(args),
         "assess-change": assess_change,
+        "pin-review": pin_review,
         "merge-verdict": merge_verdict,
         "merge-adversarial": merge_adversarial,
         "revise": revise,

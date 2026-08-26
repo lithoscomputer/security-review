@@ -153,6 +153,10 @@ class Workspace:
             cwd=self.path,
         )
 
+    def pin(self) -> dict:
+        """Run pin_review the way the graph does: trusted base on stdin."""
+        return self.context(self.engine("pin-review", self.base))
+
     def review_pin(self) -> str:
         """What Fabro's context would hand back to finalize via stdin_source."""
         pin = self.context_updates.get("review_pin")
@@ -212,13 +216,21 @@ class Workspace:
         return self.context(self.engine("prepare", self.goal(**overrides)))
 
     def generate(self, source: str = FIXED_SOURCE, **result) -> dict:
-        """Write a change the way the generator would, then checkpoint it."""
+        """Write a change the way the generator would, then checkpoint it.
+
+        Follows the graph: when assess_change reports a change, the run passes
+        through pin_review, which re-derives it from the trusted base before
+        any reviewer sees it. Returns assess_change's routing.
+        """
         if source is not None:
             (self.path / "app.py").write_text(source, encoding="utf-8")
         self.checkpoint("generate")
         payload = {"summary": "fixed", "changedFiles": ["app.py"]}
         payload.update(result)
-        return self.context(self.engine("assess-change", json.dumps(payload)))
+        assessed = self.context(self.engine("assess-change", json.dumps(payload)))
+        if assessed.get("has_change"):
+            self.pin()
+        return assessed
 
 
 class WorkspaceTest(unittest.TestCase):
@@ -635,6 +647,133 @@ class TrustedPinTests(WorkspaceTest):
         self.assertIn('stdin_source="context.review_pin"', node.group(1))
 
 
+class ForgedBaseTests(WorkspaceTest):
+    """A forged base must not turn a rejected change into a published one.
+
+    The state file is in the checkout the generator can write. Setting its
+    base to HEAD makes the change measure as empty, which routes to a decline
+    — and a decline that restored to that same forged base would leave the
+    change sitting in the run branch for Fabro to open a pull request from.
+    Every step whose outcome can reach publication therefore takes the base
+    from the run context instead.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace.start()
+
+    def forge_base_to_head(self) -> None:
+        path = (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/runtime/state.json"
+        )
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state["base"] = git(
+            "rev-parse", "HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def final_diff(self) -> str:
+        return git(
+            "diff", "--stat", f"{self.workspace.base}..HEAD", cwd=self.workspace.path
+        ).stdout.decode().strip()
+
+    def test_the_reported_attack_publishes_nothing(self) -> None:
+        # 1-3: the generator writes a change and its checkpoint commits it.
+        (self.workspace.path / "app.py").write_text(
+            FIXED_SOURCE + "\nBACKDOOR = True\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("generate")
+        # 2: the base is rewritten to HEAD, so the change measures as empty.
+        self.forge_base_to_head()
+        # 4: assess_change sees nothing and routes to a decline.
+        assessed = self.workspace.context(
+            self.workspace.engine(
+                "assess-change", json.dumps({"summary": "nothing to do"})
+            )
+        )
+        self.assertFalse(assessed["has_change"])
+
+        # 5: the decline restores against the trusted base, not the forged one.
+        result = self.workspace.engine("no-patch", self.workspace.base)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+        self.workspace.checkpoint("no_patch")
+
+        self.assertEqual(
+            self.final_diff(),
+            "",
+            "a declined run left a change for publication to open a PR from",
+        )
+        self.assertNotIn(
+            "BACKDOOR",
+            (self.workspace.path / "app.py").read_text(encoding="utf-8"),
+        )
+
+    def test_the_decline_records_that_the_base_disagreed(self) -> None:
+        self.workspace.generate()
+        self.forge_base_to_head()
+        self.workspace.engine("no-patch", self.workspace.base)
+        signals = " ".join(self.workspace.state()["tampering_signals"])
+        self.assertIn("disagreed with the trusted base", signals)
+
+    def test_revise_restores_against_the_trusted_base(self) -> None:
+        self.workspace.generate()
+        self.forge_base_to_head()
+        result = self.workspace.engine("revise", self.workspace.base)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+        self.assertEqual(
+            (self.workspace.path / "app.py").read_text(encoding="utf-8"),
+            VULNERABLE_SOURCE,
+            "the fresh attempt inherited the rejected one",
+        )
+
+    def test_pin_review_re_derives_the_change_from_the_trusted_base(self) -> None:
+        self.workspace.generate()
+        self.forge_base_to_head()
+        context = self.workspace.pin()
+        self.assertFalse(context["pin_declined"])
+        pin = json.loads(context["review_pin"])
+        self.assertEqual(pin["base"], self.workspace.base)
+        self.assertEqual(self.workspace.state()["base"], self.workspace.base)
+
+    def test_pin_review_catches_protected_paths_a_forged_base_hid(self) -> None:
+        engine = (
+            self.workspace.path
+            / ".fabro/workflows/suggest-security-patches/scripts/suggest_patches.py"
+        )
+        engine.write_text(
+            engine.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8"
+        )
+        self.workspace.checkpoint("generate")
+        self.forge_base_to_head()
+        context = self.workspace.pin()
+        self.assertTrue(context["pin_declined"])
+        self.assertIn("support files", self.workspace.state()["decline_reason"])
+
+    def test_a_missing_trusted_base_refuses_rather_than_guessing(self) -> None:
+        for command in ("pin-review", "revise", "no-patch"):
+            with self.subTest(command=command):
+                result = self.workspace.engine(command, "")
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(
+                    "did not reach this step", result.stderr.decode("utf-8")
+                )
+
+    def test_the_graph_feeds_the_trusted_base_to_every_such_step(self) -> None:
+        graph = GRAPH_PATH.read_text(encoding="utf-8")
+        for node in ("pin_review", "revise", "no_patch"):
+            with self.subTest(node=node):
+                body = re.search(
+                    r"    " + node + r" \[(.*?)\n    \]", graph, flags=re.S
+                )
+                assert body, f"{node} not found"
+                self.assertIn(
+                    'stdin_source="context.patch_base"',
+                    body.group(1),
+                    f"{node} reads its base from the writable checkout",
+                )
+
+
 class ReviewedPathsTests(WorkspaceTest):
     """The path cross-check must not pass by saying nothing."""
 
@@ -836,7 +975,7 @@ class DeclineTests(WorkspaceTest):
             self.workspace.path
             / ".fabro/workflows/suggest-security-patches/runtime/state.json"
         ).write_text(json.dumps(state), encoding="utf-8")
-        return self.workspace.engine("no-patch")
+        return self.workspace.engine("no-patch", self.workspace.base)
 
     def test_decline_leaves_the_tree_at_base_so_the_final_diff_is_empty(self) -> None:
         self.decline()
@@ -877,7 +1016,7 @@ class DeclineTests(WorkspaceTest):
         build = self.workspace.path / "build"
         build.mkdir()
         (build / "cached.bin").write_text("from the rejected attempt", encoding="utf-8")
-        self.workspace.engine("revise")
+        self.workspace.engine("revise", self.workspace.base)
         self.assertFalse(build.exists(), "a fresh attempt inherited a leftover")
 
     def test_the_engines_own_state_survives_the_sweep(self) -> None:
@@ -908,7 +1047,7 @@ class DeclineTests(WorkspaceTest):
         before = git(
             "rev-parse", "HEAD", cwd=self.workspace.path
         ).stdout.decode().strip()
-        self.workspace.engine("revise")
+        self.workspace.engine("revise", self.workspace.base)
         after = git(
             "rev-parse", "HEAD", cwd=self.workspace.path
         ).stdout.decode().strip()

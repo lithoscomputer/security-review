@@ -164,6 +164,17 @@ server-side, outside the sandbox — and read back by `finalize` through
 `stdin_source`. `finalize` trusts the pin over the state file and refuses to
 publish if the two disagree.
 
+The base commit is trusted the same way, and for a sharper reason. `prepare`
+emits `patch_base` into context, and `pin_review`, `revise`, and `no_patch`
+each read it back through `stdin_source`. A base forged in the state file makes
+a real change measure as empty, which routes to a decline; a decline that
+restored to that forged base would leave the change in the run branch and hand
+publication a non-empty diff, so a declined run would open a pull request for
+an unreviewed patch. `assess_change` is the exception — its stdin is spent on
+the generator's output — so it decides routing only, and `pin_review` re-derives
+the changed set, the protected-path check, and the fingerprint from the trusted
+base before any reviewer runs.
+
 That distinction is the point, and it is easy to undo by accident: the engine's
 state file lives in the checkout the generator can write, so **nothing that
 decides what gets published may be trusted from it**. The two merge steps do

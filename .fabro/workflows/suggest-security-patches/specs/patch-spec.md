@@ -106,6 +106,23 @@ only there could be rewritten to match a change made afterwards. Run context is
 held by the Fabro server, outside the sandbox, and reaches `finalize` through
 `stdin_source`.
 
+**Every step whose outcome can reach publication reads the base from the run
+context.** `prepare` emits `patch_base`; `pin_review`, `revise`, and `no_patch`
+each take it back through `stdin_source`. This is not belt-and-braces. A base
+forged in the state file makes a real change measure as no change at all, which
+routes the run to a decline — and a decline that restored to that same forged
+base would leave the change sitting in the run branch, giving publication a
+non-empty diff to open a pull request from. A declined run would publish an
+unreviewed patch. The trusted base is what makes a decline real.
+
+`assess_change` is the one step that still works from the state file, because
+its single `stdin_source` is spent on the generator's output. It decides
+routing only: `pin_review` runs immediately after it and re-derives the changed
+set, the protected-path check, and the fingerprint from the trusted base before
+any reviewer sees the change. A forged base at `assess_change` can therefore
+misroute a run — into a decline that then cleans up correctly — but cannot
+decide what is published.
+
 `finalize` therefore trusts the pin over the state file. It refuses to publish
 if the state file's base or fingerprint disagrees with the pin — a disagreement
 means the file was edited during the run — and it derives the patch from the
@@ -114,9 +131,13 @@ stops the run; nothing is published. The earlier checks at the two merge steps
 read the state file instead and are labelled in the code as advisory: they fail
 fast on an honest mistake and are not a boundary.
 
-**What remains state-derived.** The claims text, the summary, and the finding
-fields in the products are read from the state file, so a reviewer agent that
-wrote to the checkout could make a product misreport them. The bound on that is
+**What remains state-derived.** The claims text, the summary, the reviewer's
+own `reviewedPaths`, and the finding fields in the products are read from the
+state file, so a reviewer agent that wrote to the checkout could make a product
+misreport them. (The published `changedPaths` is not among them: it comes from
+the pin, so what a reader is told the patch touches is derived from the trusted
+base.) A reviewer forging its own claim record is in any case forging something
+it already controls through its verdict. The bound on that is
 routing: whether a run reaches `finalize` at all is decided by context flags
 Fabro holds server-side, so a rejected or unsure verdict cannot be edited into
 a published patch — only the wording of an already-passing one. Closing this
