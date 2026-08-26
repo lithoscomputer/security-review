@@ -31,8 +31,10 @@ the project or its tests.
 
 1. **Sane paths.** Every changed path is a normal file inside the repository. A
    path escaping the tree, a symlink where a file is expected, anything under
-   `.git/`, or anything under `.fabro/workflows/suggest-security-patches/` is
-   not a legitimate fix change — reject and name the path.
+   `.git/`, or anything under `.fabro/workflows/suggest-security-patches/`
+   except its `fixtures/` directory is not a legitimate fix change — reject
+   and name the path. Fixtures are disposable smoke-test targets and do not
+   decide the result.
 2. **Does it close the finding?** Trace the exploit path the finding describes
    through the changed code. If the vulnerable flow still works, or only one of
    several entry points was guarded, reject with the path as evidence.

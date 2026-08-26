@@ -1399,6 +1399,12 @@ class GraphAndConfigurationTests(unittest.TestCase):
             "the fixture finding must point at a file that exists",
         )
 
+    def test_smoke_fixture_exception_is_consistent_in_agent_prompts(self) -> None:
+        for name in ("generate.md.j2", "verify.md.j2"):
+            prompt = (WORKFLOW_ROOT / "prompts" / name).read_text(encoding="utf-8")
+            self.assertIn("except its `fixtures/` directory", prompt, name)
+            self.assertIn("Fixtures are disposable smoke-test targets", prompt, name)
+
     def test_products_never_call_the_result_verified(self) -> None:
         engine_source = ENGINE_PATH.read_text(encoding="utf-8")
         self.assertIn("Reviewed patch", engine_source)

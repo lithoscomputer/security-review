@@ -14,8 +14,10 @@ FINDING:
 You are working in a disposable checkout of the repository at the revision the
 patch will apply to. Edit it directly. Do not commit, do not switch or create
 branches, and do not touch anything under `.git/` or under
-`.fabro/workflows/suggest-security-patches/` — the second is the engine that
-judges your work, and a change there ends the run as tampering.
+`.fabro/workflows/suggest-security-patches/`, except its `fixtures/` directory.
+The protected files are the engine that judges your work, and a change to them
+ends the run as tampering. Fixtures are disposable smoke-test targets and do
+not decide the result.
 
 ## What a good fix is
 
