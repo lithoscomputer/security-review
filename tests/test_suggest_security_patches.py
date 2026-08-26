@@ -1356,6 +1356,14 @@ class GraphAndConfigurationTests(unittest.TestCase):
         self.assertTrue(settings["run"]["pull_request"]["enabled"])
         self.assertTrue(settings["run"]["pull_request"]["draft"])
 
+    def test_smoke_configuration_commits_without_pushing(self) -> None:
+        settings = tomllib.loads(
+            (WORKFLOW_ROOT / "verify.toml").read_text(encoding="utf-8")
+        )
+        self.assertFalse(settings["run"]["pull_request"]["enabled"])
+        self.assertTrue(settings["run"]["run_branch"]["enabled"])
+        self.assertFalse(settings["run"]["run_branch"]["push"])
+
     def test_embargo_configuration_publishes_nothing(self) -> None:
         settings = tomllib.loads(
             (WORKFLOW_ROOT / "workflow-embargo.toml").read_text(encoding="utf-8")

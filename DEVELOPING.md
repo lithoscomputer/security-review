@@ -319,7 +319,9 @@ must report exactly one verified finding.
 The smoke patch run must produce a reviewed patch in the artifacts and open no
 pull request. It patches this repository's own fixture, which is why
 `fixtures/` is exempt from the rule against a patch touching the workflow's
-directory.
+directory. Its local run branch stays enabled because Fabro must checkpoint the
+generated change before `pin_review` can measure `base..HEAD`; `push=false`
+keeps that branch inside the sandbox.
 
 Push the branch first. The sandbox clones the pushed branch, not the local
 working tree. It cannot see uncommitted prompt or engine changes. An unpushed

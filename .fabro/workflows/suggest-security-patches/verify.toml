@@ -17,7 +17,10 @@ depth = 1
 enabled = false
 
 [run.run_branch]
-enabled = false
+# Checkpoints must commit the generated change so pin_review can derive
+# base..HEAD. Keep the branch local so the smoke run publishes nothing.
+enabled = true
+push = false
 
 [run.checkpoint]
 skip_git_hooks = true
