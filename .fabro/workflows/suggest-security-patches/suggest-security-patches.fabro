@@ -7,10 +7,10 @@ digraph SuggestSecurityPatches {
         stall_timeout="14400s",
         model_stylesheet="
             * { model: gpt-sol; reasoning_effort: low; }
-            .planning { reasoning_effort: max; }
+            .planning { reasoning_effort: xhigh; }
             .implementation { reasoning_effort: high; }
             .review { reasoning_effort: high; }
-            .consolidation { reasoning_effort: max; }
+            .consolidation { reasoning_effort: xhigh; }
         "
     ]
     rankdir=LR

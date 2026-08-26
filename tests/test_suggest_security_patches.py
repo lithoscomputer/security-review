@@ -1446,6 +1446,12 @@ class GraphAndConfigurationTests(unittest.TestCase):
         )
         assert stylesheet
         self.assertIn("* { model: gpt-sol;", stylesheet.group(1))
+        self.assertIn(
+            ".planning { reasoning_effort: xhigh; }", stylesheet.group(1)
+        )
+        self.assertIn(
+            ".consolidation { reasoning_effort: xhigh; }", stylesheet.group(1)
+        )
         self.assertNotIn("model: kimi-k3", stylesheet.group(1))
         fixup = re.search(
             r"    fix_review_findings \[(.*?)\n    \]", self.graph, flags=re.S
