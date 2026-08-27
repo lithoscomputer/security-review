@@ -1315,7 +1315,7 @@ result file and do not add narration.</pre>
       </div>
       <div class="rung">
         <span class="votes">plan</span>
-        <span class="what">GPT Sol at max reasoning traces the root cause, exploit path, trust boundary, compatibility risks, and smallest implementation. A second GPT Sol agent reviews and repairs that plan before code changes. The plan can ask the owner one question.</span>
+        <span class="what">GPT Sol at max reasoning traces the root cause, exploit path, trust boundary, observable security objective, compatibility risks, and smallest implementation. A second GPT Sol agent reviews and repairs that plan before code changes. Either planning agent asks the owner directly only when a decision materially changes the safe patch, waits there for the answer, then incorporates it before finishing.</span>
       </div>
       <div class="rung">
         <span class="votes">implement</span>
@@ -1331,7 +1331,7 @@ result file and do not add narration.</pre>
       </div>
       <div class="rung">
         <span class="votes">consolidate</span>
-        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane findings without launching more reviewers. It returns exactly one outcome: clean, fix, or decline.</span>
+        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane results without launching more reviewers. A finding blocks only when the current patched code violates the approved security objective, or the patch creates or worsens a concrete risk. Other directly related risks are recorded as residual follow-up. The consolidator returns exactly one outcome: clean, fix, or decline.</span>
       </div>
     </div>
 

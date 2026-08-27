@@ -24,7 +24,7 @@ digraph SuggestSecurityPatches {
         timeout="180s",
         output_schema="routing",
         stdin_source="graph.goal",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py prepare"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py prepare"
     ]
 
     plan [
@@ -56,7 +56,7 @@ digraph SuggestSecurityPatches {
         output_schema="routing",
         stdin_source="context.output.review_plan",
         max_visits=3,
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py route-plan"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py route-plan"
     ]
     check_plan_clean [
         shape=parallelogram,
@@ -65,17 +65,8 @@ digraph SuggestSecurityPatches {
         output_schema="routing",
         stdin_source="context.patch_base",
         max_visits=3,
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py check-plan-clean"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py check-plan-clean"
     ]
-    owner_gate [
-        shape=hexagon,
-        label="The reviewed plan needs one owner decision. Its question is shown above. Answer in your own words, or let this time out and the run will decline.",
-        question_type="freeform",
-        timeout="86400s",
-        human.default_choice="no_patch",
-        on_failure="route"
-    ]
-
     generate [
         label="Implement the reviewed plan",
         class="implementation",
@@ -92,7 +83,7 @@ digraph SuggestSecurityPatches {
         timeout="180s",
         output_schema="routing",
         stdin_source="context.output.generate",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py assess-change"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py assess-change"
     ]
     pin_review [
         shape=parallelogram,
@@ -101,7 +92,7 @@ digraph SuggestSecurityPatches {
         output_schema="routing",
         stdin_source="context.patch_base",
         max_visits=3,
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py pin-review"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py pin-review"
     ]
 
     review_fork [
@@ -188,7 +179,7 @@ digraph SuggestSecurityPatches {
         output_schema="routing",
         stdin_source="parallel.results",
         max_visits=3,
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py record-reviews"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py record-reviews"
     ]
     consolidate_reviews [
         label="Consolidate reviews",
@@ -208,21 +199,21 @@ digraph SuggestSecurityPatches {
         output_schema="routing",
         stdin_source="context.output.consolidate_reviews",
         max_visits=3,
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py merge-consolidation"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py merge-consolidation"
     ]
     mark_fixup [
         shape=parallelogram,
         label="Record the one allowed fixup",
         timeout="180s",
         output_schema="routing",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py mark-fixup"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py mark-fixup"
     ]
     decline_repeat_fix [
         shape=parallelogram,
         label="Decline a second repair request",
         timeout="180s",
         output_schema="routing",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py decline-repeat-fix"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py decline-repeat-fix"
     ]
 
     fix_review_findings [
@@ -242,7 +233,7 @@ digraph SuggestSecurityPatches {
         timeout="180s",
         output_schema="routing",
         stdin_source="context.output.fix_review_findings",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py assess-change"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py assess-change"
     ]
 
     finalize [
@@ -251,7 +242,7 @@ digraph SuggestSecurityPatches {
         timeout="300s",
         output_schema="routing",
         stdin_source="context.review_pin",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py finalize"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py finalize"
     ]
     no_patch [
         shape=parallelogram,
@@ -259,7 +250,7 @@ digraph SuggestSecurityPatches {
         timeout="300s",
         output_schema="routing",
         stdin_source="context.patch_base",
-        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py b8184f4a9df43fdb883dfd79065ba41519c8ac915a0c14735ce3af1d80a377b6 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md f9b19e1b6085c8ce50ae90fac2a1234205a5f1f1a5a18cfe3fffaf838af98ff5 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py no-patch"
+        script="python3 -c \"import hashlib,sys; pairs=list(zip(sys.argv[1::2],sys.argv[2::2])); sys.exit(0 if pairs and all(hashlib.sha256(open(path,'rb').read()).hexdigest()==expected for path,expected in pairs) else 91)\" .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py 117c5f2eab1af556f7f4e19d58f3feec1a84b2eda0d11d9136d5551e387a53f3 .fabro/workflows/suggest-security-patches/scripts/git_readonly.py 019877aad4e19975f8d16ff6e60152d69e8a31615ceb6858da8782677f043289 .fabro/workflows/suggest-security-patches/specs/patch-spec.md 755927cd944e4cb0676f1540d89fc56acf2bfaff4d818acd1574610a1c7739e6 && python3 .fabro/workflows/suggest-security-patches/scripts/suggest_patches.py no-patch"
     ]
 
     start -> prepare
@@ -270,12 +261,9 @@ digraph SuggestSecurityPatches {
     review_plan -> route_plan
     route_plan -> check_plan_clean
     check_plan_clean -> generate [condition="outcome=succeeded && context.plan_tree_clean=true && context.plan_next=implement"]
-    check_plan_clean -> owner_gate [condition="outcome=succeeded && context.plan_tree_clean=true && context.plan_next=ask"]
     check_plan_clean -> no_patch [condition="outcome=succeeded && context.plan_tree_clean=false"]
     check_plan_clean -> no_patch [condition="outcome=succeeded && context.plan_next=decline"]
     check_plan_clean -> exit
-    owner_gate -> no_patch [condition="preferred_label=no_patch || outcome=failed"]
-    owner_gate -> plan [freeform=true]
 
     generate -> assess_change
     assess_change -> pin_review [condition="outcome=succeeded && context.declined=false"]

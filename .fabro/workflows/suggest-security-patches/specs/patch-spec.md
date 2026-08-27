@@ -58,8 +58,8 @@ weight:
 | `base` | The 40-hex commit every reviewed byte applies to |
 | `patchSha256` | SHA-256 of `patch.diff`, or null on a decline |
 | `claims` | Review confidence only: `targeted`, `noNewVulnerability`, `behaviourUnchanged`, each `{state, evidence}` |
-| `reviewLanes` | The latest six focused review results |
-| `consolidation` | The final `clean`, `fix`, or `decline` decision and verified findings |
+| `reviewLanes` | The latest six focused review results, with blocking findings separate from residual risks |
+| `consolidation` | The final `clean`, `fix`, or `decline` decision, verified blocking findings, and recorded residual risks |
 | `reviewRound` | `1` initially or `2` after the one allowed fixup |
 | `untested` | Always `true` |
 | `testsRun` | Always the same sentence — this workflow runs no tests |
@@ -76,9 +76,14 @@ runs the project. Any product that blurs the two is wrong.
 ## Rules the engine follows
 
 **The workflow plans before it edits.** Planning and plan review are mandatory.
-The reviewer returns a complete repaired plan. One owner question is allowed
-before implementation. The engine confirms that planning left the checkout at
-the trusted base. If no safe plan exists, the run declines.
+Each planning agent asks the owner directly only when repository evidence and
+project instructions cannot resolve a decision that materially changes the
+safe patch. The answer returns to that agent, which incorporates it into the
+complete plan. The plan states the observable security objective that the
+current patched code must enforce. An unanswered question leaves the run
+blocked until the owner answers or cancels it. The engine confirms that
+planning left the checkout at the trusted base. If no safe plan exists, the run
+declines.
 
 **The changed set comes from Git, never from an implementer.** Fabro checkpoints
 after every node — it stages and commits the tree before the next node starts —
@@ -158,10 +163,15 @@ whose contents are never tracked and so appear in neither the diff nor
 **One fixup is allowed.** Six review lanes run in parallel: exploit closure,
 new attack paths, compatibility and behavior, patch completeness and evidence,
 design economy, and performance and lifetime. One consolidator returns
-`clean`, `fix`, or `decline`. A `fix` updates the current patch in place and
-runs all six lanes again. A verified second-round finding declines the patch.
-A server-side `fixup_used` flag prevents a second repair cycle. A surviving
-form of the original exploit is always blocking.
+`clean`, `fix`, or `decline`. Blocking findings alone control that outcome.
+Residual risks are recorded follow-up and do not cause a fix or decline. A
+`fix` updates the current patch in place and runs all six lanes again. A
+verified second-round finding declines the patch. A server-side `fixup_used`
+flag prevents a second repair cycle. A finding is blocking only when the
+current patched code violates the approved security objective under supported
+execution, or the patch creates or worsens a concrete risk. Rollout, migration,
+stale-version, historical-state, retirement, and defense-in-depth work are
+residual unless that objective requires them.
 
 **Restoration never rewrites history.** Fabro pushes the run branch after every
 checkpoint, so a `reset --hard` would leave the local branch behind its pushed

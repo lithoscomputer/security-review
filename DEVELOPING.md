@@ -155,9 +155,10 @@ during the review.
 The implementation agents can write anywhere in the checkout, so nothing
 downstream of them takes the tree at face value.
 
-The patch graph uses `on_failure="exit"`, so a failed stage stops the run. The
-human gate alone uses `on_failure="route"` so timeout and failure take the
-decline path instead of falling through to its freeform answer edge.
+The patch graph uses `on_failure="exit"`, so a failed stage stops the run.
+Planning agents ask necessary owner questions with their human-question tool
+and continue in the same stage after the answer. An unanswered question keeps
+that stage and the run blocked until it is answered or canceled.
 
 Paths are compared exactly as Git spells them, read NUL-delimited
 (`git diff --name-status -z`, `git ls-files -z`). Do not trim them or rewrite
@@ -220,6 +221,12 @@ One consolidated `fix` outcome permits one focused fixup in the current patch.
 All six review lanes then run again. A second `fix` request declines instead of
 looping. The fixup limit lives in Fabro's server-side context, not in agent-
 writable state.
+
+The reviewed plan states the observable security objective for the current
+patched code. Reviews block only when that code violates the objective under
+supported execution, or the patch creates or worsens a concrete risk. Other
+rollout, migration, historical-state, and defense-in-depth work is recorded as
+residual unless the objective requires it.
 
 Restoration never rewrites history. Fabro pushes the run branch after every
 checkpoint, so `reset --hard` would strand the local branch behind its remote.

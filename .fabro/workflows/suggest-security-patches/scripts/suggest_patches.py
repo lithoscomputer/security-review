@@ -880,7 +880,6 @@ def build_record(state: Mapping[str, Any], status: str) -> Dict[str, Any]:
         "declineReason": state.get("decline_reason"),
         "recommendation": finding.get("recommendation"),
         "revisionUsed": bool(state.get("revision_used")),
-        "ownerQuestionUsed": bool(state.get("owner_question_used")),
         "patchSha256": state.get("patch_sha256"),
         "reviewedDiffSha256": state.get("reviewed_diff_sha256"),
         "tamperingSignals": state.get("tampering_signals") or [],
@@ -918,7 +917,6 @@ def prepare(args: argparse.Namespace) -> None:
         "finding": finding,
         "base": base,
         "products_dir": f"{PRODUCTS_PREFIX}{now_stamp()}",
-        "owner_question_used": False,
         "revision_used": False,
         "review_round": 0,
         "tampering_signals": hooks["deviation"],
@@ -951,30 +949,12 @@ def route_plan() -> None:
     state = guard()
     result = parse_agent_json(read_stdin_text(), "review-plan")
     decline = clean_text(result.get("declineReason"), 2000)
-    question = clean_text(result.get("ownerQuestion"), 2000)
 
     if decline:
         state["status"] = "declined"
         state["decline_reason"] = f"Plan review declined the patch: {decline}"
         save_state(state)
         emit(plan_next="decline")
-        return
-
-    if question:
-        if state.get("owner_question_used"):
-            state["status"] = "declined"
-            state["decline_reason"] = (
-                "The reviewed plan still needed an owner decision after the "
-                "workflow used its one question."
-            )
-            save_state(state)
-            emit(plan_next="decline")
-            return
-        state["owner_question_used"] = True
-        state["owner_question"] = question
-        state["status"] = "awaiting_owner"
-        save_state(state)
-        emit(plan_next="ask", owner_question=question)
         return
 
     state["approved_plan"] = result
@@ -1149,11 +1129,13 @@ def parse_review_results(raw: str) -> Dict[str, Dict[str, Any]]:
         if not isinstance(output, dict):
             raise WorkflowDataError(f"required review has no output: {branch_id}")
         findings = output.get("findings")
-        if not isinstance(findings, list):
+        residual_risks = output.get("residualRisks")
+        if not isinstance(findings, list) or not isinstance(residual_risks, list):
             raise WorkflowDataError(f"required review output is malformed: {branch_id}")
         lanes[lane] = {
             "summary": clean_text(output.get("summary"), 4000),
             "findings": findings,
+            "residualRisks": residual_risks,
         }
         if lane == "patch-completeness-evidence":
             reviewed = output.get("reviewedPaths")
@@ -1200,17 +1182,23 @@ def merge_consolidation() -> None:
     outcome = str(result.get("outcome", "")).strip().lower()
     summary = clean_text(result.get("summary"), 4000)
     findings = result.get("findings")
-    if outcome not in ("clean", "fix", "decline") or not isinstance(findings, list):
+    residual_risks = result.get("residualRisks")
+    if (
+        outcome not in ("clean", "fix", "decline")
+        or not isinstance(findings, list)
+        or not isinstance(residual_risks, list)
+    ):
         raise WorkflowDataError("review consolidation returned an invalid outcome")
     if outcome == "clean" and findings:
         raise WorkflowDataError("a clean consolidation cannot retain findings")
-    if outcome == "fix" and not findings:
-        raise WorkflowDataError("a fix consolidation must retain findings")
+    if outcome in ("fix", "decline") and not findings:
+        raise WorkflowDataError(f"a {outcome} consolidation must retain findings")
 
     state["consolidation"] = {
         "outcome": outcome,
         "summary": summary,
         "findings": findings,
+        "residualRisks": residual_risks,
     }
     verified_lanes = {
         finding.get("lane")

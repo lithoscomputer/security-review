@@ -227,14 +227,23 @@ with SAST, dependency scanning, and code review.
 ## Suggest security patches
 
 The second workflow takes one finding from a report and produces a fix, opened
-as a **draft pull request** against the branch the run cloned. It runs
-unattended, one finding per run.
+as a **draft pull request** against the branch the run cloned, one finding per
+run. It needs no human input unless planning finds a product decision that
+materially changes the safe patch.
 
 One agent plans the fix and a second reviews and repairs that plan before any
-code changes. After implementation, six agents review the patch in parallel:
+code changes. The reviewed plan states the observable security objective that
+the current patched code must enforce. Either planning agent asks the owner
+directly only when a product decision materially changes the safe patch, then
+incorporates the answer before it finishes. The run remains blocked until that
+question is answered or canceled. After implementation, six agents review the
+patch in parallel:
 exploit closure, new attack paths, compatibility and behavior, completeness and
 evidence, design economy, and performance and lifetime. A consolidator returns
-`clean`, `fix`, or `decline`.
+`clean`, `fix`, or `decline`. Blocking findings control that outcome. Directly
+related residual risks are recorded separately and do not cause a fix or
+decline. A finding blocks only when the current patched code violates the
+approved security objective, or the patch creates or worsens a concrete risk.
 
 One `fix` result permits one focused fixup. All six review lanes then run again.
 A second blocking result declines the patch. Every product calls the result a
@@ -278,7 +287,7 @@ writes a `SECURITY-PATCH-<timestamp>/` bundle you collect with
 | --- | --- |
 | `PATCH.md` | The note to read first: what changed, what review established, and that no tests were run. |
 | `patch.diff` | The reviewed diff, byte-faithful, if you would rather apply it yourself. |
-| `verdict.json` | The canonical record: review lanes, consolidation, review round, claims, base commit, and patch SHA-256. |
+| `verdict.json` | The canonical record: review lanes, blocking findings, residual risks, consolidation, review round, claims, base commit, and patch SHA-256. |
 | `DECLINED.md` | Written instead when no patch was earned, with the blocking review result and the reason. |
 
 A declined run opens no pull request. The note carries the consolidated reason

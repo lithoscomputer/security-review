@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Consolidated patch review",
   "type": "object",
-  "required": ["outcome", "summary", "findings"],
+  "required": ["outcome", "summary", "findings", "residualRisks"],
   "additionalProperties": false,
   "properties": {
     "outcome": { "type": "string", "enum": ["clean", "fix", "decline"] },
@@ -11,6 +11,11 @@
       "type": "array",
       "maxItems": 30,
       "items": { "$ref": "#/$defs/finding" }
+    },
+    "residualRisks": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/residualRisk" }
     }
   },
   "$defs": {
@@ -33,6 +38,27 @@
         "issue": { "type": "string", "minLength": 1, "maxLength": 2000 },
         "evidence": { "type": "string", "minLength": 1, "maxLength": 4000 },
         "requiredChange": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    },
+    "residualRisk": {
+      "type": "object",
+      "required": ["lane", "issue", "evidence", "recommendedAction"],
+      "additionalProperties": false,
+      "properties": {
+        "lane": {
+          "type": "string",
+          "enum": [
+            "exploit-closure",
+            "new-attack-paths",
+            "compatibility-behavior",
+            "patch-completeness-evidence",
+            "design-economy",
+            "performance-lifetime"
+          ]
+        },
+        "issue": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "recommendedAction": { "type": "string", "minLength": 1, "maxLength": 2000 }
       }
     }
   }

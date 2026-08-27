@@ -78,11 +78,11 @@ APPROVED_PLAN = {
     "rootCause": "Caller-controlled text reaches os.system.",
     "exploitPath": "run_report reads input and passes it to a shell.",
     "trustBoundary": "Interactive input crosses into command execution.",
+    "securityObjective": "Untrusted report names cannot reach command execution.",
     "implementationSteps": ["Replace the shell call with a fixed argv map."],
     "expectedFiles": ["app.py"],
     "compatibilityRisks": "Unknown report names will be rejected.",
     "validationPlan": "Review the changed path and its callers.",
-    "ownerQuestion": None,
     "declineReason": None,
 }
 
@@ -90,6 +90,7 @@ CLEAN_CONSOLIDATION = {
     "outcome": "clean",
     "summary": "All six review lanes found the patch acceptable.",
     "findings": [],
+    "residualRisks": [],
 }
 
 BLOCKING_FINDING = {
@@ -97,6 +98,13 @@ BLOCKING_FINDING = {
     "issue": "The original exploit remains reachable.",
     "evidence": "app.py still passes input to a shell.",
     "requiredChange": "Remove the remaining shell execution path.",
+}
+
+RESIDUAL_RISK = {
+    "lane": "exploit-closure",
+    "issue": "Older records retain the previous representation.",
+    "evidence": "The compatibility reader still accepts records created before deployment.",
+    "recommendedAction": "Track retirement of the older records separately.",
 }
 
 
@@ -241,7 +249,11 @@ class Workspace:
     def review_results(self, reviewed_paths: list[str] | None = None) -> list[dict]:
         results = []
         for branch_id, output_key, lane in ENGINE.REVIEW_LANES:
-            output = {"summary": f"{lane} checked", "findings": []}
+            output = {
+                "summary": f"{lane} checked",
+                "findings": [],
+                "residualRisks": [],
+            }
             if lane == "patch-completeness-evidence":
                 output["reviewedPaths"] = (
                     ["app.py"] if reviewed_paths is None else reviewed_paths
@@ -478,15 +490,6 @@ class PlanReviewTests(WorkspaceTest):
         self.assertEqual(self.route()["plan_next"], "implement")
         self.assertEqual(self.workspace.state()["approved_plan"], APPROVED_PLAN)
 
-    def test_plan_can_ask_one_owner_question(self) -> None:
-        first = self.route(ownerQuestion="Must legacy report names keep working?")
-        self.assertEqual(first["plan_next"], "ask")
-        self.assertTrue(self.workspace.state()["owner_question_used"])
-
-        second = self.route(ownerQuestion="A second question?")
-        self.assertEqual(second["plan_next"], "decline")
-        self.assertIn("one question", self.workspace.state()["decline_reason"])
-
     def test_plan_review_can_decline_before_implementation(self) -> None:
         context = self.route(declineReason="The finding needs a product decision.")
         self.assertEqual(context["plan_next"], "decline")
@@ -523,9 +526,15 @@ class ReviewConsolidationTests(WorkspaceTest):
 
     def test_clean_consolidation_finalizes(self) -> None:
         self.workspace.record_reviews()
-        context = self.workspace.consolidate()
+        consolidation = dict(CLEAN_CONSOLIDATION)
+        consolidation["residualRisks"] = [RESIDUAL_RISK]
+        context = self.workspace.consolidate(consolidation)
         self.assertEqual(context["review_next"], "clean")
         self.assertEqual(self.workspace.state()["status"], "finalizing")
+        self.assertEqual(
+            self.workspace.state()["consolidation"]["residualRisks"],
+            [RESIDUAL_RISK],
+        )
 
     def test_verified_findings_route_one_fixup(self) -> None:
         self.workspace.record_reviews()
@@ -534,9 +543,11 @@ class ReviewConsolidationTests(WorkspaceTest):
                 "outcome": "fix",
                 "summary": "The exploit remains open.",
                 "findings": [BLOCKING_FINDING],
+                "residualRisks": [RESIDUAL_RISK],
             }
         )
         self.assertEqual(context["review_next"], "fix")
+        self.assertEqual(self.workspace.state()["objections"], [BLOCKING_FINDING])
         marked = self.workspace.context(self.workspace.engine("mark-fixup"))
         self.assertTrue(marked["fixup_used"])
         self.assertTrue(self.workspace.state()["revision_used"])
@@ -548,6 +559,7 @@ class ReviewConsolidationTests(WorkspaceTest):
                 "outcome": "decline",
                 "summary": "No safe automated fix exists.",
                 "findings": [BLOCKING_FINDING],
+                "residualRisks": [],
             }
         )
         self.assertEqual(context["review_next"], "decline")
@@ -560,6 +572,7 @@ class ReviewConsolidationTests(WorkspaceTest):
                 "outcome": "fix",
                 "summary": "Repair the remaining path.",
                 "findings": [BLOCKING_FINDING],
+                "residualRisks": [],
             }
         )
         self.workspace.context(self.workspace.engine("mark-fixup"))
@@ -581,6 +594,7 @@ class ReviewConsolidationTests(WorkspaceTest):
                 "outcome": "fix",
                 "summary": "Repair the remaining path.",
                 "findings": [BLOCKING_FINDING],
+                "residualRisks": [],
             }
         )
         self.workspace.context(self.workspace.engine("mark-fixup"))
@@ -604,6 +618,7 @@ class ReviewConsolidationTests(WorkspaceTest):
             "outcome": "fix",
             "summary": "The second review still found a blocker.",
             "findings": [BLOCKING_FINDING],
+            "residualRisks": [],
         }
         state_path = (
             self.workspace.path
@@ -1305,31 +1320,22 @@ class GraphAndConfigurationTests(unittest.TestCase):
             for relative in PINNED_SUPPORT_FILES:
                 self.assertIn(relative, script)
 
-    def test_the_owner_gate_is_a_freeform_hexagon_with_a_decline_default(self) -> None:
-        gate = re.search(r"owner_gate \[(.*?)\]", self.graph, flags=re.S)
-        assert gate
-        body = gate.group(1)
-        self.assertIn("shape=hexagon", body)
-        self.assertIn('timeout="86400s"', body)
-        self.assertIn('human.default_choice="no_patch"', body)
-        self.assertIn('on_failure="route"', body)
-        self.assertIn("owner_gate -> plan [freeform=true]", self.graph)
+    def test_planning_agents_ask_directly_only_when_needed(self) -> None:
+        for name in ("plan.md.j2", "review-plan.md.j2"):
+            prompt = (WORKFLOW_ROOT / "prompts" / name).read_text(encoding="utf-8")
+            with self.subTest(prompt=name):
+                self.assertIn("available human-question tool only when", prompt)
+                self.assertIn("recommendation", prompt)
+                self.assertIn("incorporate the answers", prompt)
 
-    def test_gate_timeout_and_failure_are_routed_by_condition(self) -> None:
-        """Neither may fall through to the freeform edge.
-
-        Fabro evaluates conditions first, so routing both here keeps an
-        unattended run from looping back into the generator: on timeout the
-        handler sets preferred_label to the human.default_choice value, and a
-        gate that fails closed arrives as outcome=failed.
-        """
-        edge = re.search(
-            r"owner_gate -> no_patch \[condition=\"(.*?)\"\]", self.graph
+        plan_schema = json.loads(
+            (WORKFLOW_ROOT / "schemas/patch-plan.schema.json").read_text(
+                encoding="utf-8"
+            )
         )
-        assert edge, "the gate has no conditional route to no_patch"
-        condition = edge.group(1)
-        self.assertIn("preferred_label=no_patch", condition)
-        self.assertIn("outcome=failed", condition)
+        self.assertNotIn("ownerQuestion", plan_schema["properties"])
+        self.assertIn("securityObjective", plan_schema["required"])
+        self.assertNotIn("owner_gate", self.graph)
 
     def test_revisited_agent_nodes_allow_two_runs(self) -> None:
         for name in (
@@ -1349,12 +1355,11 @@ class GraphAndConfigurationTests(unittest.TestCase):
             assert node, name
             self.assertIn("max_visits=3", node.group(1), name)
 
-    def test_native_failure_policies_exit_except_for_the_human_gate(self) -> None:
+    def test_native_failure_policies_exit(self) -> None:
         self.assertIn('on_failure="exit"', self.graph)
         self.assertNotIn("    abort [", self.graph)
         self.assertNotIn(" -> abort", self.graph)
-        self.assertIn('owner_gate [', self.graph)
-        self.assertIn('on_failure="route"', self.graph)
+        self.assertNotIn('on_failure="route"', self.graph)
         self.assertIn("    prepare -> exit\n", self.graph)
         self.assertIn("    check_plan_clean -> exit\n", self.graph)
         self.assertIn("    assess_change -> exit\n", self.graph)
@@ -1471,14 +1476,22 @@ class GraphAndConfigurationTests(unittest.TestCase):
             )
             self.assertEqual(settings["run"]["model"]["fallbacks"]["gpt-sol"], expected)
 
-    def test_a_surviving_original_exploit_is_always_blocking(self) -> None:
-        prompt = (
+    def test_reviews_use_the_approved_security_objective(self) -> None:
+        exploit_prompt = (
             WORKFLOW_ROOT / "prompts/review-exploit-closure.md.j2"
         ).read_text(encoding="utf-8")
+        common_prompt = (
+            WORKFLOW_ROOT / "prompts/partials/review-common.md.j2"
+        ).read_text(encoding="utf-8")
         self.assertIn(
-            "A surviving original exploit is always a\nblocking finding",
-            prompt,
+            "current patched code\nis blocking",
+            exploit_prompt,
         )
+        self.assertIn(
+            "output.review_plan.securityObjective",
+            common_prompt,
+        )
+        self.assertIn("stale-version", common_prompt)
 
     def test_products_never_call_the_result_verified(self) -> None:
         engine_source = ENGINE_PATH.read_text(encoding="utf-8")

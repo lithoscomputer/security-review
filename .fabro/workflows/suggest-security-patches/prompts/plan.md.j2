@@ -11,12 +11,21 @@ FINDING:
 
 Locate the exploit by content, not only by its reported line. Read the relevant
 entry points, callers, and existing tests. The plan must state the root cause,
-exploit path, trust boundary, implementation steps, expected files,
-compatibility risks, and validation plan.
+exploit path, trust boundary, security objective, implementation steps,
+expected files, compatibility risks, and validation plan. The
+`securityObjective` must state the observable property that the current patched
+code must enforce. Include operational or migration guarantees only when they
+are necessary to close the reported exploit.
 
-If `response.owner_gate` is present, incorporate that owner answer. If a safe
-plan needs one owner decision, set `ownerQuestion`. If the dispatch is invalid
-or no safe patch is possible, set `declineReason`.
+Use the available human-question tool only when repository evidence and project
+instructions cannot resolve an owner or product decision, and different
+answers require materially different safe patches. Before asking, give your
+recommendation, its reason, and the important consequences. Ask the minimum
+number of concise questions, then incorporate the answers into the final plan.
+Do not ask for a choice you can resolve from existing behavior or the smallest
+safe change. If a required decision remains and the human-question tool is not
+available, set `declineReason`. Also set `declineReason` when the dispatch is
+invalid or no safe patch is possible.
 
 Do not build, test, execute, install, fetch, or use the network. For history,
 use the wrapper in the

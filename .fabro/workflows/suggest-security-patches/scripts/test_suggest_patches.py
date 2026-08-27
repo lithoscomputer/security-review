@@ -17,7 +17,11 @@ SPEC.loader.exec_module(MODULE)
 def review_results():
     results = []
     for branch_id, output_key, lane in MODULE.REVIEW_LANES:
-        output = {"summary": f"{lane} checked", "findings": []}
+        output = {
+            "summary": f"{lane} checked",
+            "findings": [],
+            "residualRisks": [],
+        }
         if lane == "patch-completeness-evidence":
             output["reviewedPaths"] = ["src/example.py"]
         results.append(
@@ -44,6 +48,23 @@ class ReviewResultTests(unittest.TestCase):
             ["src/example.py"],
         )
 
+    def test_keeps_residual_risks_separate_from_findings(self):
+        results = review_results()
+        residual_risk = {
+            "issue": "older state remains",
+            "evidence": "src/example.py:10",
+            "recommendedAction": "retire it separately",
+        }
+        results[0]["context_updates"]["output.review_exploit_closure"][
+            "residualRisks"
+        ] = [residual_risk]
+        lanes = MODULE.parse_review_results(json.dumps(results))
+        self.assertEqual(lanes["exploit-closure"]["findings"], [])
+        self.assertEqual(
+            lanes["exploit-closure"]["residualRisks"],
+            [residual_risk],
+        )
+
 
 class ConsolidationTests(unittest.TestCase):
     def run_merge(self, state, result):
@@ -60,11 +81,23 @@ class ConsolidationTests(unittest.TestCase):
 
     def test_clean_review_finalizes(self):
         state = {"review_round": 1, "revision_used": False}
+        residual_risk = {
+            "lane": "exploit-closure",
+            "issue": "older state remains",
+            "evidence": "src/example.py:10",
+            "recommendedAction": "retire it separately",
+        }
         emitted = self.run_merge(
             state,
-            {"outcome": "clean", "summary": "all lanes clean", "findings": []},
+            {
+                "outcome": "clean",
+                "summary": "no blocking findings remain",
+                "findings": [],
+                "residualRisks": [residual_risk],
+            },
         )
         self.assertEqual(state["status"], "finalizing")
+        self.assertEqual(state["consolidation"]["residualRisks"], [residual_risk])
         emitted.assert_called_once_with(review_next="clean")
 
     def test_first_review_can_route_one_fixup(self):
@@ -77,10 +110,38 @@ class ConsolidationTests(unittest.TestCase):
         }
         emitted = self.run_merge(
             state,
-            {"outcome": "fix", "summary": "repair", "findings": [finding]},
+            {
+                "outcome": "fix",
+                "summary": "repair",
+                "findings": [finding],
+                "residualRisks": [],
+            },
         )
         self.assertEqual(state["status"], "awaiting_review_fixup")
         emitted.assert_called_once_with(review_next="fix")
+
+    def test_residual_risks_cannot_route_a_fix(self):
+        state = {"review_round": 1, "revision_used": False}
+        with self.assertRaisesRegex(
+            MODULE.WorkflowDataError,
+            "fix consolidation must retain findings",
+        ):
+            self.run_merge(
+                state,
+                {
+                    "outcome": "fix",
+                    "summary": "repair older state",
+                    "findings": [],
+                    "residualRisks": [
+                        {
+                            "lane": "exploit-closure",
+                            "issue": "older state remains",
+                            "evidence": "src/example.py:10",
+                            "recommendedAction": "retire it separately",
+                        }
+                    ],
+                },
+            )
 
     def test_mark_fixup_records_the_server_routing_state(self):
         state = {"revision_used": False}
