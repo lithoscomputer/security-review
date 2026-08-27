@@ -250,7 +250,7 @@ A second blocking result declines the patch. Every product calls the result a
 **reviewed patch** — never verified or tested. A failed stage exits the run and
 cannot publish a patch.
 
-All agent stages use GPT Sol. Planning and consolidation use `max` reasoning;
+All agent stages use GPT Sol. Planning and consolidation use `xhigh` reasoning;
 implementation and review use `high`; fixup uses `xhigh`. The fallback order is
 Opus, then Moonshot Kimi K3, then OpenRouter Kimi K3. Kimi K3 does not support
 `xhigh`, so only Opus is an effective fallback during fixup.
