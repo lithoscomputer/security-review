@@ -1331,7 +1331,7 @@ result file and do not add narration.</pre>
       </div>
       <div class="rung">
         <span class="votes">consolidate</span>
-        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane results without launching more reviewers. A finding blocks only when the current patched code violates the approved security objective, the patch creates or worsens a concrete risk, or it creates or worsens a concrete user-facing defect. Other directly related risks are recorded as residual follow-up. The consolidator returns exactly one outcome: clean, fix, or decline.</span>
+        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane results without launching more reviewers. A finding blocks only when the current patched code violates the approved security objective, the patch creates or worsens a concrete risk, or it creates or worsens a concrete user-facing defect. Other directly related risks are recorded as residual follow-up. The consolidator returns clean or fix.</span>
       </div>
     </div>
 
@@ -1350,16 +1350,12 @@ result file and do not add narration.</pre>
         <span class="what">The patch is earned. A draft pull request carries the fix; the artifacts carry the record — claims, evidence, base commit, and the patch's SHA-256.</span>
       </div>
       <div class="rung marginal">
-        <span class="votes">1 fix</span>
-        <span class="what">One focused GPT Sol fixup at xhigh reasoning addresses the consolidated findings in the current patch. All seven review lanes then run again.</span>
+        <span class="votes">up to 4 fixes</span>
+        <span class="what">A focused GPT Sol fixup at xhigh reasoning addresses the consolidated findings in the current patch. All seven review lanes then run again, for up to four fixups.</span>
       </div>
-      <div class="rung dropped">
-        <span class="votes">2nd blocker</span>
-        <span class="what">Declined. No second fixup and no pull request. The note records the consolidated blocker and the report's original recommendation.</span>
-      </div>
-      <div class="rung dropped">
-        <span class="votes">decline</span>
-        <span class="what">The consolidator found no safe automated repair. The run restores the final tree to the base and writes a decline bundle.</span>
+      <div class="rung marginal">
+        <span class="votes">pending fixes</span>
+        <span class="what">If findings remain after four fixups, the workflow still opens a draft pull request. The patch note and verdict record the pending fixes for the reviewer.</span>
       </div>
       <div class="rung dropped">
         <span class="votes">tampering</span>

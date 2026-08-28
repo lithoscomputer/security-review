@@ -2,7 +2,7 @@
 
 What one `suggest-security-patches` run leaves behind, and the rules the
 deterministic engine follows to produce it. Agents plan, review the plan,
-implement, review in seven lanes, consolidate, and perform at most one fixup.
+implement, review in seven lanes, consolidate, and perform at most four fixups.
 `suggest_patches.py` owns routing and writes every product.
 
 This mirrors the scan workflow's `report-spec.md`: the model judges, the code
@@ -28,8 +28,8 @@ holds only the fix. The directory reaches the operator as run artifacts
 | --- | --- |
 | `patch.diff` | The reviewed diff, byte-faithful. |
 | `verdict.json` | The canonical record, versioned by `recordVersion`. |
-| `PATCH.md` | The note a person reads: what changed, what review established, and — first, not buried — that no tests were run. |
-| `DECLINED.md` | Written instead of `PATCH.md` when no patch was earned: the blocking claim, the reason, the rejected attempt's diffstat, and the report's original recommendation. |
+| `PATCH.md` | The note a person reads: what changed, what review established, any pending fixes, and — first, not buried — that no tests were run. |
+| `DECLINED.md` | Written instead of `PATCH.md` when the workflow stops before it has a usable patch: the reason, the attempt's diffstat when present, and the report's original recommendation. |
 
 ### `patch.diff` — the byte contract
 
@@ -59,8 +59,8 @@ weight:
 | `patchSha256` | SHA-256 of `patch.diff`, or null on a decline |
 | `claims` | Review confidence only: `targeted`, `noNewVulnerability`, `behaviourUnchanged`, each `{state, evidence}` |
 | `reviewLanes` | The latest seven focused review results, with blocking findings separate from residual risks |
-| `consolidation` | The final `clean`, `fix`, or `decline` decision, verified blocking findings, and recorded residual risks |
-| `reviewRound` | `1` initially or `2` after the one allowed fixup |
+| `consolidation` | The final `clean` or `fix` decision, verified blocking findings, and recorded residual risks |
+| `reviewRound` | `1` initially and up to `5` after four fixups |
 | `untested` | Always `true` |
 | `testsRun` | Always the same sentence — this workflow runs no tests |
 | `changedPaths` | The engine's Git-derived changed set, in name-status form |
@@ -149,9 +149,9 @@ misreport them. (The published `changedPaths` is not among them: it comes from
 the pin, so what a reader is told the patch touches is derived from the trusted
 base.) A reviewer forging its own claim record is in any case forging something
 it already controls through its review result. The bound on that is
-routing: whether a run reaches `finalize` at all is decided by context flags
-Fabro holds server-side, so a declined review cannot be edited into
-a published patch — only the wording of an already-passing one. Closing this
+routing and fixup limits are decided by context flags Fabro holds server-side.
+Review findings can no longer suppress generated code; they remain in the
+published record for the pull-request reviewer. Closing the state-derived gap
 fully would need a second trusted channel into `finalize`, and `stdin_source`
 carries exactly one.
 
@@ -160,14 +160,14 @@ legitimate fix edits the engine that judges it. This rule cannot cover `.git/`,
 whose contents are never tracked and so appear in neither the diff nor
 `git status`; hook and repository configuration is inspected directly instead.
 
-**One fixup is allowed.** Seven review lanes run in parallel: exploit closure,
+**Four fixups are allowed.** Seven review lanes run in parallel: exploit closure,
 new attack paths, compatibility and behavior, user-facing behavior, patch
 completeness and evidence, design economy, and performance and lifetime. One consolidator returns
-`clean`, `fix`, or `decline`. Blocking findings alone control that outcome.
-Residual risks are recorded follow-up and do not cause a fix or decline. A
-`fix` updates the current patch in place and runs all seven lanes again. A
-verified second-round finding declines the patch. A server-side `fixup_used`
-flag prevents a second repair cycle. A finding is blocking only when the
+`clean` or `fix`. Blocking findings alone control that outcome. Residual risks
+are recorded follow-up and do not cause a fix. A `fix` updates the current
+patch in place and runs all seven lanes again. After four fixups, any remaining
+findings are published with the draft pull request. A server-side fixup count
+enforces the limit. A finding is blocking only when the
 current patched code violates the approved security objective under supported
 execution, the patch creates or worsens a concrete risk, or it creates or
 worsens a concrete user-facing defect. Rollout, migration, stale-version,

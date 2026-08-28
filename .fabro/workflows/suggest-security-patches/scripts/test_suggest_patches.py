@@ -100,8 +100,8 @@ class ConsolidationTests(unittest.TestCase):
         self.assertEqual(state["consolidation"]["residualRisks"], [residual_risk])
         emitted.assert_called_once_with(review_next="clean")
 
-    def test_first_review_can_route_one_fixup(self):
-        state = {"review_round": 1, "revision_used": False}
+    def test_review_with_findings_routes_a_fixup_below_the_limit(self):
+        state = {"review_round": 4, "fixup_count": 3, "revision_used": True}
         finding = {
             "lane": "exploit-closure",
             "issue": "exploit remains",
@@ -163,24 +163,36 @@ class ConsolidationTests(unittest.TestCase):
             )
 
     def test_mark_fixup_records_the_server_routing_state(self):
-        state = {"revision_used": False}
+        state = {"fixup_count": 0, "revision_used": False}
         emitted = mock.Mock()
         with mock.patch.object(MODULE, "guard", return_value=state), \
                 mock.patch.object(MODULE, "save_state"), \
                 mock.patch.object(MODULE, "emit", emitted):
             MODULE.mark_fixup()
         self.assertTrue(state["revision_used"])
-        emitted.assert_called_once_with(fixup_used=True)
+        self.assertEqual(state["fixup_count"], 1)
+        emitted.assert_called_once_with(fixup_count=1, fixup_used=True)
 
-    def test_second_review_cannot_route_another_fixup(self):
-        state = {"consolidation": {"summary": "old clients still fail"}}
-        emitted = mock.Mock()
-        with mock.patch.object(MODULE, "guard", return_value=state), \
-                mock.patch.object(MODULE, "save_state"), \
-                mock.patch.object(MODULE, "emit", emitted):
-            MODULE.decline_repeat_fix()
-        self.assertEqual(state["status"], "declined")
-        emitted.assert_called_once_with(repeat_fix_declined=True)
+    def test_findings_after_four_fixups_finalize_the_patch(self):
+        state = {"review_round": 5, "fixup_count": 4, "revision_used": True}
+        finding = {
+            "lane": "exploit-closure",
+            "issue": "exploit remains",
+            "evidence": "src/example.py:10",
+            "requiredChange": "close the remaining path",
+        }
+        emitted = self.run_merge(
+            state,
+            {
+                "outcome": "fix",
+                "summary": "pending repair",
+                "findings": [finding],
+                "residualRisks": [],
+            },
+        )
+        self.assertEqual(state["status"], "finalizing")
+        self.assertEqual(state["objections"], [finding])
+        emitted.assert_called_once_with(review_next="finalize")
 
 
 if __name__ == "__main__":

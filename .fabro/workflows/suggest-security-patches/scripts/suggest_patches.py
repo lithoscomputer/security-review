@@ -2,7 +2,7 @@
 """Deterministic engine for the Fabro suggest-security-patches workflow.
 
 One run takes one security finding and produces one reviewed patch, delivered
-as a draft pull request, or a decline that explains itself. Agents plan,
+as a draft pull request, or stops before a usable patch exists. Agents plan,
 implement, review, consolidate, and fix the change; this program owns routing,
 the authoritative changed set, workspace restoration, diff capture, integrity
 checks, and the products.
@@ -115,6 +115,7 @@ DIFF_FLAGS = (
 )
 
 PRODUCTS_PREFIX = "SECURITY-PATCH-"
+MAX_REVIEW_FIXUPS = 4
 
 
 class WorkflowDataError(RuntimeError):
@@ -768,6 +769,7 @@ def write_patch_note(
     lines.extend(claim_lines(record.get("claims") or {}))
     lines.extend(["", "## Review lanes", ""])
     lines.extend(review_lane_lines(record.get("reviewLanes") or {}))
+    consolidation = record.get("consolidation") or {}
     lines.extend(
         [
             "",
@@ -775,13 +777,19 @@ def write_patch_note(
             "",
             "## Consolidation",
             "",
-            clean_text((record.get("consolidation") or {}).get("summary"), 4000)
-            or "_not recorded_",
-            "",
-            "## Changed files",
+            clean_text(consolidation.get("summary"), 4000) or "_not recorded_",
             "",
         ]
     )
+    pending_findings = consolidation.get("findings") or []
+    if pending_findings:
+        lines.extend(
+            [
+                f"**Pending fixes:** {len(pending_findings)} review finding(s) remain. Review them before merging.",
+                "",
+            ]
+        )
+    lines.extend(["## Changed files", ""])
     for entry in record.get("changedPaths") or []:
         lines.append(f"- `{entry}`")
     stat = record.get("diffstat")
@@ -923,6 +931,7 @@ def prepare(args: argparse.Namespace) -> None:
         "base": base,
         "products_dir": f"{PRODUCTS_PREFIX}{now_stamp()}",
         "revision_used": False,
+        "fixup_count": 0,
         "review_round": 0,
         "tampering_signals": hooks["deviation"],
     }
@@ -946,6 +955,7 @@ def prepare(args: argparse.Namespace) -> None:
         finding_located=True,
         finding_id=finding["id"],
         patch_base=base,
+        fixup_count=0,
         fixup_used=False,
     )
 
@@ -1017,12 +1027,15 @@ def assess_change() -> None:
             "the working tree was not clean after the implementer's checkpoint"
         ]
 
-    if refusal:
+    if refusal and int(state.get("fixup_count", 0)) == 0:
         state["status"] = "declined"
         state["decline_reason"] = f"The implementer refused: {refusal}"
         save_state(state)
         emit(declined=True)
         return
+
+    if refusal:
+        state["fixup_stopped_reason"] = f"The fixup agent stopped: {refusal}"
 
     state["status"] = "measuring"
     save_state(state)
@@ -1082,17 +1095,16 @@ def pin_review() -> None:
         return
 
     fingerprint = sha256_bytes(payload)
-    if (
-        state.get("revision_used")
-        and state.get("reviewed_diff_sha256") == fingerprint
-    ):
-        state["status"] = "declined"
-        state["decline_reason"] = (
-            "The fixup left the rejected patch unchanged, so a second review "
-            "would repeat the same result."
+    if int(state.get("fixup_count", 0)) > 0 and state.get(
+        "reviewed_diff_sha256"
+    ) == fingerprint:
+        state["status"] = "finalizing"
+        state["fixup_stopped_reason"] = (
+            "The latest fixup left the patch unchanged. Pending review "
+            "findings remain recorded for the pull request."
         )
         save_state(state)
-        emit(pin_next="decline")
+        emit(pin_next="finalize")
         return
 
     state["status"] = "reviewing"
@@ -1171,7 +1183,7 @@ def record_reviews() -> None:
             f"(reviewer only: {only_reviewer}; change only: {only_engine})"
         )
 
-    round_number = 2 if state.get("revision_used") else 1
+    round_number = int(state.get("fixup_count", 0)) + 1
     state["review_round"] = round_number
     state["review_lanes"] = lanes
     state["reviewed_paths"] = reviewed
@@ -1189,14 +1201,14 @@ def merge_consolidation() -> None:
     findings = result.get("findings")
     residual_risks = result.get("residualRisks")
     if (
-        outcome not in ("clean", "fix", "decline")
+        outcome not in ("clean", "fix")
         or not isinstance(findings, list)
         or not isinstance(residual_risks, list)
     ):
         raise WorkflowDataError("review consolidation returned an invalid outcome")
     if outcome == "clean" and findings:
         raise WorkflowDataError("a clean consolidation cannot retain findings")
-    if outcome in ("fix", "decline") and not findings:
+    if outcome == "fix" and not findings:
         raise WorkflowDataError(f"a {outcome} consolidation must retain findings")
 
     state["consolidation"] = {
@@ -1254,14 +1266,13 @@ def merge_consolidation() -> None:
         emit(review_next="clean")
         return
 
-    if outcome == "decline":
-        state["status"] = "declined"
-        state["decline_reason"] = summary or "No safe automated fix exists."
+    state["objections"] = findings
+    if int(state.get("fixup_count", 0)) >= MAX_REVIEW_FIXUPS:
+        state["status"] = "finalizing"
         save_state(state)
-        emit(review_next="decline")
+        emit(review_next="finalize")
         return
 
-    state["objections"] = findings
     state["status"] = "awaiting_review_fixup"
     save_state(state)
     emit(review_next="fix")
@@ -1269,27 +1280,14 @@ def merge_consolidation() -> None:
 
 def mark_fixup() -> None:
     state = guard()
+    fixup_count = int(state.get("fixup_count", 0)) + 1
+    if fixup_count > MAX_REVIEW_FIXUPS:
+        raise WorkflowDataError("the review fixup limit was exceeded")
+    state["fixup_count"] = fixup_count
     state["revision_used"] = True
     state["status"] = "fixing_review_findings"
     save_state(state)
-    emit(fixup_used=True)
-
-
-def decline_repeat_fix() -> None:
-    state = guard()
-    consolidation = state.get("consolidation")
-    summary = (
-        clean_text(consolidation.get("summary"), 4000)
-        if isinstance(consolidation, Mapping)
-        else ""
-    )
-    state["status"] = "declined"
-    state["decline_reason"] = (
-        "The second review still found a blocking issue. "
-        + (summary or "The patch did not earn a clean second review.")
-    )
-    save_state(state)
-    emit(repeat_fix_declined=True)
+    emit(fixup_count=fixup_count, fixup_used=True)
 
 
 def finalize() -> None:
@@ -1402,7 +1400,6 @@ def build_parser() -> argparse.ArgumentParser:
         "record-reviews",
         "merge-consolidation",
         "mark-fixup",
-        "decline-repeat-fix",
         "finalize",
         "no-patch",
     ):
@@ -1421,7 +1418,6 @@ def main(argv: Sequence[str]) -> int:
         "record-reviews": record_reviews,
         "merge-consolidation": merge_consolidation,
         "mark-fixup": mark_fixup,
-        "decline-repeat-fix": decline_repeat_fix,
         "finalize": finalize,
         "no-patch": no_patch,
     }

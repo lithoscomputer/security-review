@@ -536,7 +536,7 @@ class ReviewConsolidationTests(WorkspaceTest):
             [RESIDUAL_RISK],
         )
 
-    def test_verified_findings_route_one_fixup(self) -> None:
+    def test_verified_findings_route_a_fixup_below_the_limit(self) -> None:
         self.workspace.record_reviews()
         context = self.workspace.consolidate(
             {
@@ -550,22 +550,26 @@ class ReviewConsolidationTests(WorkspaceTest):
         self.assertEqual(self.workspace.state()["objections"], [BLOCKING_FINDING])
         marked = self.workspace.context(self.workspace.engine("mark-fixup"))
         self.assertTrue(marked["fixup_used"])
+        self.assertEqual(marked["fixup_count"], 1)
         self.assertTrue(self.workspace.state()["revision_used"])
 
-    def test_decline_consolidation_stops_without_fixup(self) -> None:
+    def test_decline_is_not_a_review_outcome(self) -> None:
         self.workspace.record_reviews()
-        context = self.workspace.consolidate(
-            {
-                "outcome": "decline",
-                "summary": "No safe automated fix exists.",
-                "findings": [BLOCKING_FINDING],
-                "residualRisks": [],
-            }
+        result = self.workspace.engine(
+            "merge-consolidation",
+            json.dumps(
+                {
+                    "outcome": "decline",
+                    "summary": "No safe automated fix exists.",
+                    "findings": [BLOCKING_FINDING],
+                    "residualRisks": [],
+                }
+            ),
         )
-        self.assertEqual(context["review_next"], "decline")
-        self.assertFalse(self.workspace.state()["revision_used"])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid outcome", result.stderr.decode("utf-8"))
 
-    def test_unchanged_fixup_declines_before_second_review(self) -> None:
+    def test_unchanged_fixup_finalizes_with_pending_findings(self) -> None:
         self.workspace.record_reviews()
         self.workspace.consolidate(
             {
@@ -584,8 +588,9 @@ class ReviewConsolidationTests(WorkspaceTest):
         )
         self.assertFalse(assessed["declined"])
         pinned = self.workspace.pin()
-        self.assertEqual(pinned["pin_next"], "decline")
-        self.assertIn("unchanged", self.workspace.state()["decline_reason"])
+        self.assertEqual(pinned["pin_next"], "finalize")
+        self.assertEqual(self.workspace.state()["status"], "finalizing")
+        self.assertIn("unchanged", self.workspace.state()["fixup_stopped_reason"])
 
     def test_changed_fixup_runs_all_seven_lanes_again(self) -> None:
         self.workspace.record_reviews()
@@ -612,22 +617,28 @@ class ReviewConsolidationTests(WorkspaceTest):
         recorded = self.workspace.record_reviews()
         self.assertEqual(recorded["review_round"], 2)
 
-    def test_second_fix_request_declines(self) -> None:
+    def test_findings_after_four_fixups_finalize_with_pending_fixes(self) -> None:
         state = self.workspace.state()
-        state["consolidation"] = {
-            "outcome": "fix",
-            "summary": "The second review still found a blocker.",
-            "findings": [BLOCKING_FINDING],
-            "residualRisks": [],
-        }
+        state["fixup_count"] = 4
         state_path = (
             self.workspace.path
             / ".fabro/workflows/suggest-security-patches/runtime/state.json"
         )
         state_path.write_text(json.dumps(state), encoding="utf-8")
-        context = self.workspace.context(self.workspace.engine("decline-repeat-fix"))
-        self.assertTrue(context["repeat_fix_declined"])
-        self.assertEqual(self.workspace.state()["status"], "declined")
+        context = self.workspace.consolidate(
+            {
+                "outcome": "fix",
+                "summary": "The fifth review still found a blocker.",
+                "findings": [BLOCKING_FINDING],
+                "residualRisks": [],
+            }
+        )
+        self.assertEqual(context["review_next"], "finalize")
+        self.assertEqual(self.workspace.state()["status"], "finalizing")
+        self.assertEqual(
+            self.workspace.state()["consolidation"]["findings"],
+            [BLOCKING_FINDING],
+        )
 
 
 class ReviewedBytesTests(WorkspaceTest):
@@ -1337,7 +1348,7 @@ class GraphAndConfigurationTests(unittest.TestCase):
         self.assertIn("securityObjective", plan_schema["required"])
         self.assertNotIn("owner_gate", self.graph)
 
-    def test_revisited_agent_nodes_allow_two_runs(self) -> None:
+    def test_revisited_agent_nodes_allow_five_runs(self) -> None:
         for name in (
             "plan",
             "review_plan",
@@ -1354,7 +1365,7 @@ class GraphAndConfigurationTests(unittest.TestCase):
                 r"    " + name + r" \[(.*?)\n    \]", self.graph, flags=re.S
             )
             assert node, name
-            self.assertIn("max_visits=3", node.group(1), name)
+            self.assertIn("max_visits=5", node.group(1), name)
 
     def test_user_facing_review_has_a_narrow_skip_rule(self) -> None:
         prompt = (

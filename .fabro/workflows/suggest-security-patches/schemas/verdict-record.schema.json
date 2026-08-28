@@ -65,9 +65,9 @@
     },
     "consolidation": {
       "type": ["object", "null"],
-      "description": "The latest clean, fix, or decline review decision, blocking findings, and residual risks."
+      "description": "The latest clean or fix review decision, blocking findings, and residual risks."
     },
-    "reviewRound": { "type": "integer", "minimum": 0, "maximum": 2 },
+    "reviewRound": { "type": "integer", "minimum": 0, "maximum": 5 },
     "declineReason": { "type": ["string", "null"] },
     "recommendation": { "type": ["string", "null"] },
     "revisionUsed": { "type": "boolean" }
