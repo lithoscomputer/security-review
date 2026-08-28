@@ -78,6 +78,11 @@ REVIEW_LANES = (
         "compatibility-behavior",
     ),
     (
+        "review_user_facing_behavior",
+        "output.review_user_facing_behavior",
+        "user-facing-behavior",
+    ),
+    (
         "review_completeness",
         "output.review_completeness",
         "patch-completeness-evidence",
@@ -1207,22 +1212,35 @@ def merge_consolidation() -> None:
     }
     lanes = state.get("review_lanes") or {}
 
-    def claim(lane: str) -> Dict[str, str]:
-        lane_result = lanes.get(lane) if isinstance(lanes, Mapping) else None
-        evidence = (
-            one_line(lane_result.get("summary"), 1000)
-            if isinstance(lane_result, Mapping)
-            else summary
+    def claim(*lane_names: str) -> Dict[str, str]:
+        lane_results = (
+            [lanes.get(lane) for lane in lane_names]
+            if isinstance(lanes, Mapping)
+            else []
         )
+        evidence = one_line(
+            " ".join(
+                one_line(result.get("summary"), 1000)
+                for result in lane_results
+                if isinstance(result, Mapping)
+            ),
+            1000,
+        ) or summary
         return {
-            "state": "NOT_CONFIDENT" if lane in verified_lanes else "CONFIDENT",
+            "state": (
+                "NOT_CONFIDENT"
+                if any(lane in verified_lanes for lane in lane_names)
+                else "CONFIDENT"
+            ),
             "evidence": evidence,
         }
 
     state["claims"] = {
         "targeted": claim("patch-completeness-evidence"),
         "noNewVulnerability": claim("new-attack-paths"),
-        "behaviourUnchanged": claim("compatibility-behavior"),
+        "behaviourUnchanged": claim(
+            "compatibility-behavior", "user-facing-behavior"
+        ),
     }
     state["adversarial"] = {
         "introducesNewAttackPath": "new-attack-paths" in verified_lanes,

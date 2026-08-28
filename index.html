@@ -1326,12 +1326,12 @@ result file and do not add narration.</pre>
         <span class="what">Deterministic. Derives the changed set from Git, rejects protected workflow changes, and pins the exact diff against the trusted server-side base before review.</span>
       </div>
       <div class="rung">
-        <span class="votes">6 reviews</span>
-        <span class="what">Six GPT Sol agents at high reasoning run in parallel: exploit closure, new attack paths, compatibility and behavior, completeness and evidence, design economy, and performance and lifetime. The completeness path list must match Git exactly.</span>
+        <span class="votes">7 reviews</span>
+        <span class="what">Seven GPT Sol agents at high reasoning run in parallel: exploit closure, new attack paths, compatibility and behavior, user-facing behavior, completeness and evidence, design economy, and performance and lifetime. The completeness path list must match Git exactly.</span>
       </div>
       <div class="rung">
         <span class="votes">consolidate</span>
-        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane results without launching more reviewers. A finding blocks only when the current patched code violates the approved security objective, or the patch creates or worsens a concrete risk. Other directly related risks are recorded as residual follow-up. The consolidator returns exactly one outcome: clean, fix, or decline.</span>
+        <span class="what">GPT Sol at max reasoning verifies and deduplicates the lane results without launching more reviewers. A finding blocks only when the current patched code violates the approved security objective, the patch creates or worsens a concrete risk, or it creates or worsens a concrete user-facing defect. Other directly related risks are recorded as residual follow-up. The consolidator returns exactly one outcome: clean, fix, or decline.</span>
       </div>
     </div>
 
@@ -1351,7 +1351,7 @@ result file and do not add narration.</pre>
       </div>
       <div class="rung marginal">
         <span class="votes">1 fix</span>
-        <span class="what">One focused GPT Sol fixup at xhigh reasoning addresses the consolidated findings in the current patch. All six review lanes then run again.</span>
+        <span class="what">One focused GPT Sol fixup at xhigh reasoning addresses the consolidated findings in the current patch. All seven review lanes then run again.</span>
       </div>
       <div class="rung dropped">
         <span class="votes">2nd blocker</span>

@@ -30,6 +30,7 @@
             "exploit-closure",
             "new-attack-paths",
             "compatibility-behavior",
+            "user-facing-behavior",
             "patch-completeness-evidence",
             "design-economy",
             "performance-lifetime"
@@ -51,6 +52,7 @@
             "exploit-closure",
             "new-attack-paths",
             "compatibility-behavior",
+            "user-facing-behavior",
             "patch-completeness-evidence",
             "design-economy",
             "performance-lifetime"

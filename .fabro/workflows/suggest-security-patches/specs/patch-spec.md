@@ -2,7 +2,7 @@
 
 What one `suggest-security-patches` run leaves behind, and the rules the
 deterministic engine follows to produce it. Agents plan, review the plan,
-implement, review in six lanes, consolidate, and perform at most one fixup.
+implement, review in seven lanes, consolidate, and perform at most one fixup.
 `suggest_patches.py` owns routing and writes every product.
 
 This mirrors the scan workflow's `report-spec.md`: the model judges, the code
@@ -58,7 +58,7 @@ weight:
 | `base` | The 40-hex commit every reviewed byte applies to |
 | `patchSha256` | SHA-256 of `patch.diff`, or null on a decline |
 | `claims` | Review confidence only: `targeted`, `noNewVulnerability`, `behaviourUnchanged`, each `{state, evidence}` |
-| `reviewLanes` | The latest six focused review results, with blocking findings separate from residual risks |
+| `reviewLanes` | The latest seven focused review results, with blocking findings separate from residual risks |
 | `consolidation` | The final `clean`, `fix`, or `decline` decision, verified blocking findings, and recorded residual risks |
 | `reviewRound` | `1` initially or `2` after the one allowed fixup |
 | `untested` | Always `true` |
@@ -160,18 +160,19 @@ legitimate fix edits the engine that judges it. This rule cannot cover `.git/`,
 whose contents are never tracked and so appear in neither the diff nor
 `git status`; hook and repository configuration is inspected directly instead.
 
-**One fixup is allowed.** Six review lanes run in parallel: exploit closure,
-new attack paths, compatibility and behavior, patch completeness and evidence,
-design economy, and performance and lifetime. One consolidator returns
+**One fixup is allowed.** Seven review lanes run in parallel: exploit closure,
+new attack paths, compatibility and behavior, user-facing behavior, patch
+completeness and evidence, design economy, and performance and lifetime. One consolidator returns
 `clean`, `fix`, or `decline`. Blocking findings alone control that outcome.
 Residual risks are recorded follow-up and do not cause a fix or decline. A
-`fix` updates the current patch in place and runs all six lanes again. A
+`fix` updates the current patch in place and runs all seven lanes again. A
 verified second-round finding declines the patch. A server-side `fixup_used`
 flag prevents a second repair cycle. A finding is blocking only when the
 current patched code violates the approved security objective under supported
-execution, or the patch creates or worsens a concrete risk. Rollout, migration,
-stale-version, historical-state, retirement, and defense-in-depth work are
-residual unless that objective requires them.
+execution, the patch creates or worsens a concrete risk, or it creates or
+worsens a concrete user-facing defect. Rollout, migration, stale-version,
+historical-state, retirement, and defense-in-depth work are residual unless
+that objective requires them.
 
 **Restoration never rewrites history.** Fabro pushes the run branch after every
 checkpoint, so a `reset --hard` would leave the local branch behind its pushed

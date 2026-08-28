@@ -35,7 +35,7 @@ def review_results():
 
 
 class ReviewResultTests(unittest.TestCase):
-    def test_requires_all_six_review_lanes(self):
+    def test_requires_all_seven_review_lanes(self):
         results = review_results()
         results.pop()
         with self.assertRaisesRegex(MODULE.WorkflowDataError, "required review"):
@@ -119,6 +119,25 @@ class ConsolidationTests(unittest.TestCase):
         )
         self.assertEqual(state["status"], "awaiting_review_fixup")
         emitted.assert_called_once_with(review_next="fix")
+
+    def test_user_facing_finding_changes_behavior_confidence(self):
+        state = {"review_round": 1, "revision_used": False}
+        finding = {
+            "lane": "user-facing-behavior",
+            "issue": "The changed state misstates the outcome.",
+            "evidence": "src/example.py:10",
+            "requiredChange": "Describe the actual outcome.",
+        }
+        self.run_merge(
+            state,
+            {
+                "outcome": "fix",
+                "summary": "repair the user-facing state",
+                "findings": [finding],
+                "residualRisks": [],
+            },
+        )
+        self.assertEqual(state["claims"]["behaviourUnchanged"]["state"], "NOT_CONFIDENT")
 
     def test_residual_risks_cannot_route_a_fix(self):
         state = {"review_round": 1, "revision_used": False}

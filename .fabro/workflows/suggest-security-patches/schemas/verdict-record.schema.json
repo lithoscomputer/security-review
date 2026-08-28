@@ -61,7 +61,7 @@
     "adversarial": { "type": ["object", "null"] },
     "reviewLanes": {
       "type": ["object", "null"],
-      "description": "The latest six focused review results, with blocking findings separate from residual risks."
+      "description": "The latest seven focused review results, with blocking findings separate from residual risks."
     },
     "consolidation": {
       "type": ["object", "null"],

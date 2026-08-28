@@ -1,12 +1,12 @@
-Consolidate the six review outputs in `parallel.results`. Do not edit the
+Consolidate the seven review outputs in `parallel.results`. Do not edit the
 checkout and do not run per-finding reviewer agents.
 
 Verify important claims against the current code. Merge duplicate root causes
 and keep concrete blocking findings separate from residual risks. A blocking
 finding must show that the current patched code violates
-`output.review_plan.securityObjective` under supported execution, or that the
-patch creates or worsens a concrete risk. State that connection in every
-finding.
+`output.review_plan.securityObjective` under supported execution, that the
+patch creates or worsens a concrete risk, or that it creates or worsens a
+concrete user-facing defect. State that connection in every finding.
 
 Keep residual risks in `residualRisks`. They are recorded follow-up and never
 cause `fix` or `decline`. Do not promote one only because its follow-up needs

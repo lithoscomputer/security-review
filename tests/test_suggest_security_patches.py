@@ -88,7 +88,7 @@ APPROVED_PLAN = {
 
 CLEAN_CONSOLIDATION = {
     "outcome": "clean",
-    "summary": "All six review lanes found the patch acceptable.",
+    "summary": "All seven review lanes found the patch acceptable.",
     "findings": [],
     "residualRisks": [],
 }
@@ -511,7 +511,7 @@ class ReviewConsolidationTests(WorkspaceTest):
         self.workspace.start()
         self.workspace.generate()
 
-    def test_all_six_review_lanes_are_required(self) -> None:
+    def test_all_seven_review_lanes_are_required(self) -> None:
         results = self.workspace.review_results()
         results.pop()
         result = self.workspace.engine("record-reviews", json.dumps(results))
@@ -587,7 +587,7 @@ class ReviewConsolidationTests(WorkspaceTest):
         self.assertEqual(pinned["pin_next"], "decline")
         self.assertIn("unchanged", self.workspace.state()["decline_reason"])
 
-    def test_changed_fixup_runs_all_six_lanes_again(self) -> None:
+    def test_changed_fixup_runs_all_seven_lanes_again(self) -> None:
         self.workspace.record_reviews()
         self.workspace.consolidate(
             {
@@ -1071,7 +1071,7 @@ class DeliveryTests(WorkspaceTest):
         self.assertTrue(record["untested"])
         self.assertEqual(record["testsRun"], ENGINE.TESTS_RUN_TEXT)
         self.assertEqual(record["reviewRound"], 1)
-        self.assertEqual(len(record["reviewLanes"]), 6)
+        self.assertEqual(len(record["reviewLanes"]), 7)
         self.assertEqual(record["consolidation"]["outcome"], "clean")
 
     def test_patch_applies_to_the_recorded_base(self) -> None:
@@ -1344,6 +1344,7 @@ class GraphAndConfigurationTests(unittest.TestCase):
             "review_exploit_closure",
             "review_new_attack_paths",
             "review_compatibility",
+            "review_user_facing_behavior",
             "review_completeness",
             "review_design_economy",
             "review_performance_lifetime",
@@ -1354,6 +1355,14 @@ class GraphAndConfigurationTests(unittest.TestCase):
             )
             assert node, name
             self.assertIn("max_visits=3", node.group(1), name)
+
+    def test_user_facing_review_has_a_narrow_skip_rule(self) -> None:
+        prompt = (
+            WORKFLOW_ROOT / "prompts/review-user-facing-behavior.md.j2"
+        ).read_text(encoding="utf-8")
+        self.assertIn("return no findings or residual risks immediately", prompt)
+        self.assertIn("concrete defects caused or worsened by the patch", prompt)
+        self.assertIn("Do not impose aesthetic preferences", prompt)
 
     def test_native_failure_policies_exit(self) -> None:
         self.assertIn('on_failure="exit"', self.graph)

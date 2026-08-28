@@ -236,16 +236,17 @@ code changes. The reviewed plan states the observable security objective that
 the current patched code must enforce. Either planning agent asks the owner
 directly only when a product decision materially changes the safe patch, then
 incorporates the answer before it finishes. The run remains blocked until that
-question is answered or canceled. After implementation, six agents review the
+question is answered or canceled. After implementation, seven agents review the
 patch in parallel:
-exploit closure, new attack paths, compatibility and behavior, completeness and
-evidence, design economy, and performance and lifetime. A consolidator returns
-`clean`, `fix`, or `decline`. Blocking findings control that outcome. Directly
-related residual risks are recorded separately and do not cause a fix or
-decline. A finding blocks only when the current patched code violates the
-approved security objective, or the patch creates or worsens a concrete risk.
+exploit closure, new attack paths, compatibility and behavior, user-facing
+behavior, completeness and evidence, design economy, and performance and
+lifetime. A consolidator returns `clean`, `fix`, or `decline`. Blocking findings
+control that outcome. Directly related residual risks are recorded separately
+and do not cause a fix or decline. A finding blocks only when the current
+patched code violates the approved security objective, the patch creates or
+worsens a concrete risk, or it creates or worsens a concrete user-facing defect.
 
-One `fix` result permits one focused fixup. All six review lanes then run again.
+One `fix` result permits one focused fixup. All seven review lanes then run again.
 A second blocking result declines the patch. Every product calls the result a
 **reviewed patch** — never verified or tested. A failed stage exits the run and
 cannot publish a patch.
