@@ -1027,7 +1027,7 @@ def assess_change() -> None:
             "the working tree was not clean after the implementer's checkpoint"
         ]
 
-    if refusal and int(state.get("fixup_count", 0)) == 0:
+    if refusal and not state.get("reviewed_diff_sha256"):
         state["status"] = "declined"
         state["decline_reason"] = f"The implementer refused: {refusal}"
         save_state(state)
@@ -1095,9 +1095,7 @@ def pin_review() -> None:
         return
 
     fingerprint = sha256_bytes(payload)
-    if int(state.get("fixup_count", 0)) > 0 and state.get(
-        "reviewed_diff_sha256"
-    ) == fingerprint:
+    if state.get("reviewed_diff_sha256") == fingerprint:
         state["status"] = "finalizing"
         state["fixup_stopped_reason"] = (
             "The latest fixup left the patch unchanged. Pending review "
