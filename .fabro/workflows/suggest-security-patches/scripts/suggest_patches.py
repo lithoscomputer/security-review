@@ -1095,7 +1095,9 @@ def pin_review() -> None:
         return
 
     fingerprint = sha256_bytes(payload)
-    if state.get("reviewed_diff_sha256") == fingerprint:
+    if int(state.get("fixup_count", 0)) > 0 and state.get(
+        "reviewed_diff_sha256"
+    ) == fingerprint:
         state["status"] = "finalizing"
         state["fixup_stopped_reason"] = (
             "The latest fixup left the patch unchanged. Pending review "
