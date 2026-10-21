@@ -372,3 +372,9 @@ sandbox, use the artifacts-only configuration.
   data.
 - [`DEVELOPING.md`](DEVELOPING.md) covers repository structure, design rules,
   tests, and release checks.
+
+## Workflow certificate trust
+
+The execution images refresh `ca-certificates` and explicitly distrust the
+eMudhra and AAA roots identified in the October 2026 advisory. Recreate
+existing sandboxes after this change; cached or running images remain old.
